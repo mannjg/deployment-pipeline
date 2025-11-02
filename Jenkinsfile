@@ -134,7 +134,22 @@ spec:
 
                         // Also publish Maven artifacts to Nexus
                         sh """
+                            # Create temporary Maven settings.xml with credentials
+                            cat > /tmp/maven-settings.xml <<'MAVEN_SETTINGS'
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+  <servers>
+    <server>
+      <id>nexus</id>
+      <username>${NEXUS_CREDENTIALS_USR}</username>
+      <password>${NEXUS_CREDENTIALS_PSW}</password>
+    </server>
+  </servers>
+</settings>
+MAVEN_SETTINGS
+
                             mvn deploy -DskipTests \
+                                -s /tmp/maven-settings.xml \
                                 -DaltDeploymentRepository=nexus::default::${NEXUS_URL}/repository/maven-snapshots/
                         """
 
