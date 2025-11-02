@@ -94,13 +94,6 @@ spec:
         }
 
         stage('Integration Tests') {
-            when {
-                // Run on MR and merge to main
-                anyOf {
-                    changeRequest()
-                    branch 'main'
-                }
-            }
             steps {
                 container('maven') {
                     echo "Running integration tests with TestContainers..."
@@ -115,10 +108,6 @@ spec:
         }
 
         stage('Build & Publish') {
-            when {
-                // Only on merge to main
-                branch 'main'
-            }
             steps {
                 container('maven') {
                     script {
@@ -153,9 +142,6 @@ spec:
         }
 
         stage('Update Deployment Repo') {
-            when {
-                branch 'main'
-            }
             steps {
                 container('maven') {
                     script {
@@ -206,9 +192,6 @@ Image: ${FULL_IMAGE}" || echo "No changes to commit"
         }
 
         stage('Create Promotion MR') {
-            when {
-                branch 'main'
-            }
             steps {
                 container('maven') {
                     script {
