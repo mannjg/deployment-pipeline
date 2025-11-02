@@ -23,7 +23,8 @@
 
     <!-- Image build properties -->
     <jib.version>3.4.4</jib.version>
-    <image.registry>nexus.local:5000</image.registry>
+    <!-- Use localhost:30500 as Jib also needs host DNS when using Docker socket -->
+    <image.registry>localhost:30500</image.registry>
     <image.group>example</image.group>
     <image.name>${project.artifactId}</image.name>
     <image.tag>${project.version}</image.tag>

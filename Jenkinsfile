@@ -31,7 +31,8 @@ spec:
         APP_GROUP = 'example'
 
         // Registry configuration
-        DOCKER_REGISTRY = 'nexus.local:5000'
+        // Docker runs on host via socket mount, so use localhost NodePort
+        DOCKER_REGISTRY = 'localhost:30500'
         NEXUS_URL = 'http://nexus.local'
 
         // Git repositories (use internal cluster DNS)
