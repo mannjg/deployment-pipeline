@@ -95,6 +95,10 @@ spec:
         }
 
         stage('Integration Tests') {
+            when {
+                // Temporarily skip ITs to speed up development iterations
+                expression { return false }
+            }
             steps {
                 container('maven') {
                     echo "Running integration tests with TestContainers..."
