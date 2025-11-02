@@ -46,45 +46,67 @@ rm -f "${MANIFEST_DIR}"/*.yaml
 # Generate manifests for each app in the environment
 cd "${PROJECT_ROOT}"
 
-log_info "Evaluating CUE configuration..."
+log_info "Querying resources list from CUE..."
 
-# Export the environment configuration
-cue export \
-    --out yaml \
-    ./envs/${ENVIRONMENT}.cue \
-    --path "${ENVIRONMENT}.exampleApp.resources" > "${MANIFEST_DIR}/example-app-raw.yaml"
+# Query the exampleApp resources_list from CUE to discover which resources to export
+resources_output=$(cue export ./envs/${ENVIRONMENT}.cue -e "${ENVIRONMENT}.exampleApp.resources_list" --out json 2>&1)
+resources_status=$?
 
-# Convert the resources map to a YAML stream with document separators
-python3 - "${MANIFEST_DIR}/example-app-raw.yaml" "${MANIFEST_DIR}/example-app.yaml" "${ENVIRONMENT}" <<'PYTHON_SCRIPT'
-import yaml
-import sys
-
-raw_file = sys.argv[1]
-output_file = sys.argv[2]
-env = sys.argv[3]
-
-with open(raw_file, 'r') as f:
-    data = yaml.safe_load(f)
-
-resources = data.get(env, {}).get('exampleApp', {}).get('resources', {})
-
-with open(output_file, 'w') as out:
-    first = True
-    for name, resource in resources.items():
-        if not first:
-            out.write("---\n")
-        first = False
-        out.write(yaml.dump(resource, default_flow_style=False, sort_keys=False))
-PYTHON_SCRIPT
-
-if [ $? -eq 0 ]; then
-    rm -f "${MANIFEST_DIR}/example-app-raw.yaml"
-    log_info "Successfully generated manifests in: ${MANIFEST_DIR}"
-    log_info "Files:"
-    ls -lh "${MANIFEST_DIR}"
-else
-    log_error "Failed to generate manifests"
+# Check if cue export failed
+if [ $resources_status -ne 0 ]; then
+    log_error "Error querying resources_list for exampleApp in ${ENVIRONMENT}:"
+    echo "$resources_output" | sed 's/^/  /'
     exit 1
+fi
+
+# Strip newlines from JSON output
+resources_json=$(echo "$resources_output" | tr -d '\n')
+
+# Handle empty or error output
+if [ -z "$resources_json" ] || [ "$resources_json" = "null" ]; then
+    log_warn "No resources defined for exampleApp in ${ENVIRONMENT}"
+    exit 0
+fi
+
+# Parse JSON array into bash array
+# Remove brackets, quotes, and whitespace, split by comma
+resources_str=$(echo "$resources_json" | sed 's/[][]//g' | sed 's/"//g' | tr -d ' ')
+IFS=',' read -ra resources <<< "$resources_str"
+
+# Build export flags from resources_list
+# Each resource becomes: -e <env>.exampleApp.resources.<resource>
+if [ ${#resources[@]} -gt 0 ] && [ -n "${resources[0]}" ]; then
+    export_flags=""
+    for resource in "${resources[@]}"; do
+        # Trim whitespace
+        resource=$(echo "$resource" | xargs)
+        if [ -n "$resource" ]; then
+            export_flags="$export_flags -e ${ENVIRONMENT}.exampleApp.resources.$resource"
+        fi
+    done
+
+    # Export all app resources in a single command
+    # CUE automatically formats multiple exports with --- separators
+    if [ -n "$export_flags" ]; then
+        log_info "Exporting resources: ${resources[*]}"
+        log_info "Command: cue export ./envs/${ENVIRONMENT}.cue $export_flags --out yaml"
+
+        export_output=$(cue export "./envs/${ENVIRONMENT}.cue" $export_flags --out yaml 2>&1)
+        export_status=$?
+
+        if [ $export_status -eq 0 ]; then
+            echo "$export_output" > "${MANIFEST_DIR}/example-app.yaml"
+            log_info "Successfully generated ${MANIFEST_DIR}/example-app.yaml"
+            log_info "Resources: ${resources[*]}"
+        else
+            log_error "Error exporting resources for exampleApp in ${ENVIRONMENT}:"
+            echo "$export_output" | sed 's/^/  /'
+            exit 1
+        fi
+    fi
+else
+    log_warn "No resources defined for exampleApp in ${ENVIRONMENT}"
+    log_warn "Check that ${ENVIRONMENT}.exampleApp.resources_list exists in ./envs/${ENVIRONMENT}.cue"
 fi
 
 log_info "Manifest generation complete!"

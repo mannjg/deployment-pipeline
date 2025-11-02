@@ -16,10 +16,10 @@ spec:
     app: example-app
     component: backend
   ports:
-  - name: debug
-    protocol: TCP
-    port: 5005
-    targetPort: 5005
+    - name: debug
+      protocol: TCP
+      port: 5005
+      targetPort: 5005
   sessionAffinity: None
 ---
 apiVersion: apps/v1
@@ -49,115 +49,115 @@ spec:
         managed_by: argocd
     spec:
       containers:
-      - name: example-app
-        image: nexus.local:5000/example/example-app:1.0.0-SNAPSHOT
-        env:
-        - name: DEBUG
-          value: 'yes'
-        - name: QUARKUS_HTTP_PORT
-          value: '8080'
-        - name: QUARKUS_LOG_CONSOLE_ENABLE
-          value: 'true'
-        - name: QUARKUS_LOG_LEVEL
-          value: DEBUG
-        - name: ENVIRONMENT
-          value: dev
-        envFrom: []
-        imagePullPolicy: Always
-        livenessProbe:
-          httpGet:
-            path: /health/live
-            port: 8080
-            scheme: HTTP
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-        ports:
-        - name: http
-          containerPort: 8080
-          protocol: TCP
-        - name: debug
-          containerPort: 5005
-          protocol: TCP
-        readinessProbe:
-          httpGet:
-            path: /health/ready
-            port: 8080
-            scheme: HTTP
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
-        resources:
-          requests:
-            cpu: 100m
-            memory: 256Mi
-          limits:
-            cpu: 500m
-            memory: 512Mi
-        volumeMounts:
-        - name: data
-          mountPath: /var/lib/myapp/data
-          readOnly: false
-        - name: config
-          mountPath: /etc/myapp/config
-          readOnly: true
-        - name: cache
-          mountPath: /var/cache/myapp
-          readOnly: false
-        - name: projected-secrets
-          mountPath: /var/secrets
-          readOnly: true
-        securityContext:
-          runAsGroup: 1000
-          runAsNonRoot: true
-          runAsUser: 1000
-          readOnlyRootFilesystem: false
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
+        - name: example-app
+          image: nexus.local:5000/example/example-app:1.0.0-SNAPSHOT
+          env:
+            - name: DEBUG
+              value: "yes"
+            - name: QUARKUS_HTTP_PORT
+              value: "8080"
+            - name: QUARKUS_LOG_CONSOLE_ENABLE
+              value: "true"
+            - name: QUARKUS_LOG_LEVEL
+              value: DEBUG
+            - name: ENVIRONMENT
+              value: dev
+          envFrom: []
+          imagePullPolicy: Always
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: debug
+              containerPort: 5005
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/myapp/data
+              readOnly: false
+            - name: config
+              mountPath: /etc/myapp/config
+              readOnly: true
+            - name: cache
+              mountPath: /var/cache/myapp
+              readOnly: false
+            - name: projected-secrets
+              mountPath: /var/secrets
+              readOnly: true
+          securityContext:
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
       volumes:
-      - name: data
-        persistentVolumeClaim:
-          claimName: example-app-data
-      - name: config
-        configMap:
-          name: example-app-config
-      - name: cache
-        emptyDir:
-          medium: Memory
-          sizeLimit: 256Mi
-      - name: projected-secrets
-        projected:
-          defaultMode: 256
-          sources:
-          - secret:
-              name: example-app-secrets
-              items:
-              - key: db-user
-                path: database/username
-              - key: db-password
-                path: database/password
-          - configMap:
-              name: example-app-config
-              items:
-              - key: redis-url
-                path: config/redis-url
-          - configMap:
-              name: example-app-cluster-ca
-              items:
-              - key: ca.crt
-                path: config/cluster-ca.crt
-          - downwardAPI:
-              items:
-              - path: pod/name
-                fieldRef:
-                  fieldPath: metadata.name
-              - path: pod/namespace
-                fieldRef:
-                  fieldPath: metadata.namespace
+        - name: data
+          persistentVolumeClaim:
+            claimName: example-app-data
+        - name: config
+          configMap:
+            name: example-app-config
+        - name: cache
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+        - name: projected-secrets
+          projected:
+            defaultMode: 256
+            sources:
+              - secret:
+                  name: example-app-secrets
+                  items:
+                    - key: db-user
+                      path: database/username
+                    - key: db-password
+                      path: database/password
+              - configMap:
+                  name: example-app-config
+                  items:
+                    - key: redis-url
+                      path: config/redis-url
+              - configMap:
+                  name: example-app-cluster-ca
+                  items:
+                    - key: ca.crt
+                      path: config/cluster-ca.crt
+              - downwardAPI:
+                  items:
+                    - path: pod/name
+                      fieldRef:
+                        fieldPath: metadata.name
+                    - path: pod/namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace
       securityContext:
         runAsGroup: 1000
         runAsNonRoot: true
@@ -186,12 +186,12 @@ spec:
     app: example-app
     component: backend
   ports:
-  - name: http
-    protocol: TCP
-    port: 80
-    targetPort: 8080
-  - name: http
-    port: 80
-    protocol: TCP
-    targetPort: 8080
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8080
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 8080
   sessionAffinity: None
