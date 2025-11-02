@@ -51,24 +51,26 @@ spec:
         stage('Checkout') {
             steps {
                 checkout scm
-                script {
-                    // Extract version from pom.xml
-                    env.APP_VERSION = sh(
-                        script: "mvn help:evaluate -Dexpression=project.version -q -DforceStdout",
-                        returnStdout: true
-                    ).trim()
+                container('maven') {
+                    script {
+                        // Extract version from pom.xml
+                        env.APP_VERSION = sh(
+                            script: "mvn help:evaluate -Dexpression=project.version -q -DforceStdout",
+                            returnStdout: true
+                        ).trim()
 
-                    // Generate image tag (version + git hash)
-                    env.GIT_SHORT_HASH = sh(
-                        script: "git rev-parse --short HEAD",
-                        returnStdout: true
-                    ).trim()
+                        // Generate image tag (version + git hash)
+                        env.GIT_SHORT_HASH = sh(
+                            script: "git rev-parse --short HEAD",
+                            returnStdout: true
+                        ).trim()
 
-                    env.IMAGE_TAG = "${env.APP_VERSION}-${env.GIT_SHORT_HASH}"
-                    env.FULL_IMAGE = "${env.IMAGE_NAME}:${env.IMAGE_TAG}"
+                        env.IMAGE_TAG = "${env.APP_VERSION}-${env.GIT_SHORT_HASH}"
+                        env.FULL_IMAGE = "${env.IMAGE_NAME}:${env.IMAGE_TAG}"
 
-                    echo "Building ${env.APP_NAME} version ${env.APP_VERSION}"
-                    echo "Image: ${env.FULL_IMAGE}"
+                        echo "Building ${env.APP_NAME} version ${env.APP_VERSION}"
+                        echo "Image: ${env.FULL_IMAGE}"
+                    }
                 }
             }
         }
@@ -237,9 +239,6 @@ Image: ${FULL_IMAGE}" || echo "No changes to commit"
         }
         failure {
             echo "Pipeline failed!"
-        }
-        always {
-            cleanWs()
         }
     }
 }
