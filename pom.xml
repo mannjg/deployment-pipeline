@@ -23,8 +23,8 @@
 
     <!-- Image build properties -->
     <jib.version>3.4.4</jib.version>
-    <!-- Use docker.local via HTTPS ingress -->
-    <image.registry>docker.local</image.registry>
+    <!-- Use internal Nexus service (HTTP acceptable within cluster) -->
+    <image.registry>nexus.nexus.svc.cluster.local:5000</image.registry>
     <image.group>example</image.group>
     <image.name>${project.artifactId}</image.name>
     <image.tag>${project.version}</image.tag>

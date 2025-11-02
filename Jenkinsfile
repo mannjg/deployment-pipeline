@@ -8,10 +8,6 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
-  hostAliases:
-  - ip: "127.0.0.1"
-    hostnames:
-    - "docker.local"
   containers:
   - name: maven
     image: localhost:30500/jenkins-agent-custom:latest
@@ -35,9 +31,9 @@ spec:
         APP_GROUP = 'example'
 
         // Registry configuration
-        // Use HTTPS ingress for Docker registry
-        DOCKER_REGISTRY = 'docker.local'
-        // For external/host access: also docker.local (via ingress)
+        // Use internal cluster DNS (HTTP is acceptable within trusted cluster network)
+        DOCKER_REGISTRY = 'nexus.nexus.svc.cluster.local:5000'
+        // For external/host access: docker.local via HTTPS ingress
         NEXUS_URL = 'http://nexus.local'
 
         // Git repositories (use internal cluster DNS)
@@ -131,6 +127,7 @@ spec:
                                 -Dimage.name=${APP_NAME} \
                                 -Dimage.tag=${IMAGE_TAG} \
                                 -Djib.allowInsecureRegistries=true \
+                                -Djib.sendCredentialsOverHttp=true \
                                 -Djib.to.auth.username=${DOCKER_CREDENTIALS_USR} \
                                 -Djib.to.auth.password=${DOCKER_CREDENTIALS_PSW}
                         """
