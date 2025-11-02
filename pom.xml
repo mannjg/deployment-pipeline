@@ -179,6 +179,8 @@
             </tags>
           </to>
           <container>
+            <!-- Quarkus main class for fast-jar packaging (Quarkus 3.x default) -->
+            <mainClass>io.quarkus.bootstrap.runner.QuarkusEntryPoint</mainClass>
             <jvmFlags>
               <jvmFlag>-Dquarkus.http.host=0.0.0.0</jvmFlag>
               <jvmFlag>-Djava.util.logging.manager=org.jboss.logmanager.LogManager</jvmFlag>
