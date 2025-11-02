@@ -127,6 +127,7 @@ spec:
                                 -Dimage.name=${APP_NAME} \
                                 -Dimage.tag=${IMAGE_TAG} \
                                 -Djib.allowInsecureRegistries=true \
+                                -Djib.sendCredentialsOverHttp=true \
                                 -Djib.to.auth.username=${DOCKER_CREDENTIALS_USR} \
                                 -Djib.to.auth.password=${DOCKER_CREDENTIALS_PSW}
                         """
