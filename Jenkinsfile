@@ -114,19 +114,16 @@ spec:
                     script {
                         echo "Building and publishing Docker image..."
 
-                        // Login to Docker registry
-                        sh """
-                            echo ${DOCKER_CREDENTIALS_PSW} | docker login ${DOCKER_REGISTRY} -u ${DOCKER_CREDENTIALS_USR} --password-stdin
-                        """
-
-                        // Build and push with Jib
+                        // Build and push with Jib (no docker login needed, Jib handles auth)
                         sh """
                             mvn clean package jib:build \
                                 -Dimage.registry=${DOCKER_REGISTRY} \
                                 -Dimage.group=${APP_GROUP} \
                                 -Dimage.name=${APP_NAME} \
                                 -Dimage.tag=${IMAGE_TAG} \
-                                -Djib.allowInsecureRegistries=true
+                                -Djib.allowInsecureRegistries=true \
+                                -Djib.to.auth.username=${DOCKER_CREDENTIALS_USR} \
+                                -Djib.to.auth.password=${DOCKER_CREDENTIALS_PSW}
                         """
 
                         // Also publish Maven artifacts to Nexus
