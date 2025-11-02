@@ -5,8 +5,8 @@ metadata:
   namespace: dev
   labels:
     app: example-app
-    deployment: example-app
     environment: dev
+    deployment: example-app
     managed_by: argocd
   annotations:
     description: Debug service for remote debugging
@@ -29,28 +29,37 @@ metadata:
   namespace: dev
   labels:
     app: example-app
-    deployment: example-app
     environment: dev
+    deployment: example-app
     managed_by: argocd
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: example-app
-      deployment: example-app
       environment: dev
+      deployment: example-app
       managed_by: argocd
   template:
     metadata:
       labels:
         app: example-app
-        deployment: example-app
         environment: dev
+        deployment: example-app
         managed_by: argocd
     spec:
       containers:
         - name: example-app
-          image: nexus.local:5000/example/example-app:1.0.0-SNAPSHOT
+          image: nexus.nexus.svc.cluster.local:5000/example/example-app:1.0.0-SNAPSHOT-ff49645
+          imagePullPolicy: Always
+          envFrom: []
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: debug
+              containerPort: 5005
+              protocol: TCP
           env:
             - name: DEBUG
               value: "yes"
@@ -62,40 +71,6 @@ spec:
               value: DEBUG
             - name: ENVIRONMENT
               value: dev
-          envFrom: []
-          imagePullPolicy: Always
-          livenessProbe:
-            httpGet:
-              path: /health/live
-              port: 8080
-              scheme: HTTP
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-          ports:
-            - name: http
-              containerPort: 8080
-              protocol: TCP
-            - name: debug
-              containerPort: 5005
-              protocol: TCP
-          readinessProbe:
-            httpGet:
-              path: /health/ready
-              port: 8080
-              scheme: HTTP
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 3
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
           volumeMounts:
             - name: data
               mountPath: /var/lib/myapp/data
@@ -109,10 +84,35 @@ spec:
             - name: projected-secrets
               mountPath: /var/secrets
               readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
           securityContext:
-            runAsGroup: 1000
             runAsNonRoot: true
             runAsUser: 1000
+            runAsGroup: 1000
             readOnlyRootFilesystem: false
             allowPrivilegeEscalation: false
             capabilities:
@@ -158,12 +158,12 @@ spec:
                     - path: pod/namespace
                       fieldRef:
                         fieldPath: metadata.namespace
+      serviceAccountName: example-app
       securityContext:
+        runAsUser: 1000
         runAsGroup: 1000
         runAsNonRoot: true
-        runAsUser: 1000
         fsGroup: 1000
-      serviceAccountName: example-app
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -177,8 +177,8 @@ metadata:
   namespace: dev
   labels:
     app: example-app
-    deployment: example-app
     environment: dev
+    deployment: example-app
     managed_by: argocd
 spec:
   type: ClusterIP
@@ -192,6 +192,6 @@ spec:
       targetPort: 8080
     - name: http
       port: 80
-      protocol: TCP
       targetPort: 8080
+      protocol: TCP
   sessionAffinity: None
