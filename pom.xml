@@ -23,8 +23,8 @@
 
     <!-- Image build properties -->
     <jib.version>3.4.4</jib.version>
-    <!-- Use localhost:30500 as Jib also needs host DNS when using Docker socket -->
-    <image.registry>localhost:30500</image.registry>
+    <!-- Use docker.local via HTTPS ingress -->
+    <image.registry>docker.local</image.registry>
     <image.group>example</image.group>
     <image.name>${project.artifactId}</image.name>
     <image.tag>${project.version}</image.tag>
@@ -199,7 +199,6 @@
             </labels>
           </container>
           <allowInsecureRegistries>true</allowInsecureRegistries>
-          <sendCredentialsOverHttp>true</sendCredentialsOverHttp>
         </configuration>
       </plugin>
     </plugins>
