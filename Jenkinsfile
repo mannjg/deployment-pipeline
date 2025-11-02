@@ -33,8 +33,8 @@ spec:
         // Registry configuration
         // Use internal cluster DNS (HTTP is acceptable within trusted cluster network)
         DOCKER_REGISTRY = 'nexus.nexus.svc.cluster.local:5000'
-        // For external/host access: docker.local via HTTPS ingress
-        NEXUS_URL = 'http://nexus.local'
+        // Nexus Maven repository (internal cluster DNS)
+        NEXUS_URL = 'http://nexus.nexus.svc.cluster.local:8081'
 
         // Git repositories (use internal cluster DNS)
         GITLAB_URL = 'http://gitlab.gitlab.svc.cluster.local'
