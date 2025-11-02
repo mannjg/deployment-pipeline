@@ -31,8 +31,9 @@ spec:
         APP_GROUP = 'example'
 
         // Registry configuration
-        // Docker runs on host via socket mount, so use localhost NodePort
-        DOCKER_REGISTRY = 'localhost:30500'
+        // Use cluster-internal service name for Jib (HTTP push)
+        DOCKER_REGISTRY = 'nexus.nexus.svc.cluster.local:5000'
+        // For external/host access use localhost:30500
         NEXUS_URL = 'http://nexus.local'
 
         // Git repositories (use internal cluster DNS)
