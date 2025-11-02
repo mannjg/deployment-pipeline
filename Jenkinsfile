@@ -188,29 +188,31 @@ MAVEN_SETTINGS
                                 git checkout dev || git checkout -b dev
                             '''
 
-                            // Update image version in CUE configuration
-                            // This would use CUE tooling to update the image reference
-                            // For now, we'll create a simple version file
+                            // Update image version in CUE configuration and generate manifests
                             sh """
                                 cd k8s-deployments
-                                mkdir -p services/apps/${APP_NAME}
-                                cat > services/apps/${APP_NAME}/version.txt <<EOF
-APP_VERSION=${APP_VERSION}
-IMAGE_TAG=${IMAGE_TAG}
-FULL_IMAGE=${FULL_IMAGE}
-TIMESTAMP=\$(date -u +%Y-%m-%dT%H:%M:%SZ)
-GIT_COMMIT=${GIT_SHORT_HASH}
-EOF
 
-                                # TODO: Update actual CUE files with new image reference
-                                # cue export -e apps.${APP_NAME}.deployment.image=${FULL_IMAGE} > updated.cue
+                                # Update the image reference in the dev environment CUE file
+                                sed -i 's|image: ".*"|image: "${FULL_IMAGE}"|' envs/dev.cue
 
-                                git add .
+                                # Verify the change
+                                echo "Updated image in envs/dev.cue:"
+                                grep 'image:' envs/dev.cue
+
+                                # Generate Kubernetes manifests from CUE
+                                ./scripts/generate-manifests.sh dev
+
+                                # Stage all changes (CUE file + generated manifests)
+                                git add envs/dev.cue manifests/dev/
+
+                                # Commit with metadata
                                 git commit -m "Update ${APP_NAME} to ${IMAGE_TAG}
 
 Triggered by: ${env.BUILD_URL}
 Git commit: ${GIT_SHORT_HASH}
-Image: ${FULL_IMAGE}" || echo "No changes to commit"
+Image: ${FULL_IMAGE}
+
+Generated manifests from CUE configuration" || echo "No changes to commit"
                             """
 
                             // Push using credential helper
