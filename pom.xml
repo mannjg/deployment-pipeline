@@ -199,6 +199,7 @@
             </labels>
           </container>
           <allowInsecureRegistries>true</allowInsecureRegistries>
+          <sendCredentialsOverHttp>true</sendCredentialsOverHttp>
         </configuration>
       </plugin>
     </plugins>
