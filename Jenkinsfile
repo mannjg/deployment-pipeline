@@ -166,23 +166,35 @@ MAVEN_SETTINGS
                     script {
                         echo "Updating deployment repository..."
 
-                        // Clone deployment repository
-                        sh """
-                            git config --global user.name "Jenkins CI"
-                            git config --global user.email "jenkins@local"
+                        // Use withCredentials for explicit credential binding
+                        withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
+                                                          usernameVariable: 'GIT_USERNAME',
+                                                          passwordVariable: 'GIT_PASSWORD')]) {
+                            sh '''
+                                git config --global user.name "Jenkins CI"
+                                git config --global user.email "jenkins@local"
 
-                            rm -rf k8s-deployments
-                            git clone ${DEPLOYMENT_REPO} k8s-deployments
-                            cd k8s-deployments
+                                rm -rf k8s-deployments
 
-                            # Update dev environment first
-                            git checkout dev || git checkout -b dev
+                                # Configure git credential helper to use provided credentials
+                                git config --global credential.helper store
+                                echo "http://${GIT_USERNAME}:${GIT_PASSWORD}@gitlab.gitlab.svc.cluster.local" > ~/.git-credentials
 
-                            # Update image version in CUE configuration
-                            # This would use CUE tooling to update the image reference
-                            # For now, we'll create a simple version file
-                            mkdir -p services/apps/${APP_NAME}
-                            cat > services/apps/${APP_NAME}/version.txt <<EOF
+                                # Clone using credential helper
+                                git clone http://gitlab.gitlab.svc.cluster.local/example/k8s-deployments.git k8s-deployments
+                                cd k8s-deployments
+
+                                # Update dev environment first
+                                git checkout dev || git checkout -b dev
+                            '''
+
+                            // Update image version in CUE configuration
+                            // This would use CUE tooling to update the image reference
+                            // For now, we'll create a simple version file
+                            sh """
+                                cd k8s-deployments
+                                mkdir -p services/apps/${APP_NAME}
+                                cat > services/apps/${APP_NAME}/version.txt <<EOF
 APP_VERSION=${APP_VERSION}
 IMAGE_TAG=${IMAGE_TAG}
 FULL_IMAGE=${FULL_IMAGE}
@@ -190,18 +202,23 @@ TIMESTAMP=\$(date -u +%Y-%m-%dT%H:%M:%SZ)
 GIT_COMMIT=${GIT_SHORT_HASH}
 EOF
 
-                            # TODO: Update actual CUE files with new image reference
-                            # cue export -e apps.${APP_NAME}.deployment.image=${FULL_IMAGE} > updated.cue
+                                # TODO: Update actual CUE files with new image reference
+                                # cue export -e apps.${APP_NAME}.deployment.image=${FULL_IMAGE} > updated.cue
 
-                            git add .
-                            git commit -m "Update ${APP_NAME} to ${IMAGE_TAG}
+                                git add .
+                                git commit -m "Update ${APP_NAME} to ${IMAGE_TAG}
 
 Triggered by: ${env.BUILD_URL}
 Git commit: ${GIT_SHORT_HASH}
 Image: ${FULL_IMAGE}" || echo "No changes to commit"
+                            """
 
-                            git push origin dev
-                        """
+                            // Push using credential helper
+                            sh '''
+                                cd k8s-deployments
+                                git push origin dev
+                            '''
+                        }
 
                         echo "Deployment repository updated on dev branch"
                         echo "ArgoCD will automatically sync the changes"
