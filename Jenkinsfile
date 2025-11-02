@@ -4,17 +4,16 @@
 pipeline {
     agent {
         kubernetes {
-            label 'jenkins-agent'
             yaml """
 apiVersion: v1
 kind: Pod
-metadata:
-  labels:
-    jenkins: agent
 spec:
   containers:
-  - name: jnlp
+  - name: maven
     image: nexus.local:5000/jenkins-agent-custom:latest
+    command:
+    - cat
+    tty: true
     volumeMounts:
     - name: docker-sock
       mountPath: /var/run/docker.sock
@@ -80,8 +79,10 @@ spec:
                 expression { return true }
             }
             steps {
-                echo "Running unit tests..."
-                sh 'mvn clean test'
+                container('maven') {
+                    echo "Running unit tests..."
+                    sh 'mvn clean test'
+                }
             }
             post {
                 always {
@@ -99,8 +100,10 @@ spec:
                 }
             }
             steps {
-                echo "Running integration tests with TestContainers..."
-                sh 'mvn verify -DskipITs=false'
+                container('maven') {
+                    echo "Running integration tests with TestContainers..."
+                    sh 'mvn verify -DskipITs=false'
+                }
             }
             post {
                 always {
@@ -115,32 +118,34 @@ spec:
                 branch 'main'
             }
             steps {
-                script {
-                    echo "Building and publishing Docker image..."
+                container('maven') {
+                    script {
+                        echo "Building and publishing Docker image..."
 
-                    // Login to Docker registry
-                    sh """
-                        echo ${DOCKER_CREDENTIALS_PSW} | docker login ${DOCKER_REGISTRY} -u ${DOCKER_CREDENTIALS_USR} --password-stdin
-                    """
+                        // Login to Docker registry
+                        sh """
+                            echo ${DOCKER_CREDENTIALS_PSW} | docker login ${DOCKER_REGISTRY} -u ${DOCKER_CREDENTIALS_USR} --password-stdin
+                        """
 
-                    // Build and push with Jib
-                    sh """
-                        mvn clean package jib:build \
-                            -Dimage.registry=${DOCKER_REGISTRY} \
-                            -Dimage.group=${APP_GROUP} \
-                            -Dimage.name=${APP_NAME} \
-                            -Dimage.tag=${IMAGE_TAG} \
-                            -Djib.allowInsecureRegistries=true
-                    """
+                        // Build and push with Jib
+                        sh """
+                            mvn clean package jib:build \
+                                -Dimage.registry=${DOCKER_REGISTRY} \
+                                -Dimage.group=${APP_GROUP} \
+                                -Dimage.name=${APP_NAME} \
+                                -Dimage.tag=${IMAGE_TAG} \
+                                -Djib.allowInsecureRegistries=true
+                        """
 
-                    // Also publish Maven artifacts to Nexus
-                    sh """
-                        mvn deploy -DskipTests \
-                            -DaltDeploymentRepository=nexus::default::${NEXUS_URL}/repository/maven-snapshots/
-                    """
+                        // Also publish Maven artifacts to Nexus
+                        sh """
+                            mvn deploy -DskipTests \
+                                -DaltDeploymentRepository=nexus::default::${NEXUS_URL}/repository/maven-snapshots/
+                        """
 
-                    echo "Published image: ${FULL_IMAGE}"
-                    echo "Published Maven artifact: ${APP_NAME}-${APP_VERSION}"
+                        echo "Published image: ${FULL_IMAGE}"
+                        echo "Published Maven artifact: ${APP_NAME}-${APP_VERSION}"
+                    }
                 }
             }
         }
@@ -150,26 +155,27 @@ spec:
                 branch 'main'
             }
             steps {
-                script {
-                    echo "Updating deployment repository..."
+                container('maven') {
+                    script {
+                        echo "Updating deployment repository..."
 
-                    // Clone deployment repository
-                    sh """
-                        git config --global user.name "Jenkins CI"
-                        git config --global user.email "jenkins@local"
+                        // Clone deployment repository
+                        sh """
+                            git config --global user.name "Jenkins CI"
+                            git config --global user.email "jenkins@local"
 
-                        rm -rf k8s-deployments
-                        git clone ${DEPLOYMENT_REPO} k8s-deployments
-                        cd k8s-deployments
+                            rm -rf k8s-deployments
+                            git clone ${DEPLOYMENT_REPO} k8s-deployments
+                            cd k8s-deployments
 
-                        # Update dev environment first
-                        git checkout dev || git checkout -b dev
+                            # Update dev environment first
+                            git checkout dev || git checkout -b dev
 
-                        # Update image version in CUE configuration
-                        # This would use CUE tooling to update the image reference
-                        # For now, we'll create a simple version file
-                        mkdir -p services/apps/${APP_NAME}
-                        cat > services/apps/${APP_NAME}/version.txt <<EOF
+                            # Update image version in CUE configuration
+                            # This would use CUE tooling to update the image reference
+                            # For now, we'll create a simple version file
+                            mkdir -p services/apps/${APP_NAME}
+                            cat > services/apps/${APP_NAME}/version.txt <<EOF
 APP_VERSION=${APP_VERSION}
 IMAGE_TAG=${IMAGE_TAG}
 FULL_IMAGE=${FULL_IMAGE}
@@ -177,21 +183,22 @@ TIMESTAMP=\$(date -u +%Y-%m-%dT%H:%M:%SZ)
 GIT_COMMIT=${GIT_SHORT_HASH}
 EOF
 
-                        # TODO: Update actual CUE files with new image reference
-                        # cue export -e apps.${APP_NAME}.deployment.image=${FULL_IMAGE} > updated.cue
+                            # TODO: Update actual CUE files with new image reference
+                            # cue export -e apps.${APP_NAME}.deployment.image=${FULL_IMAGE} > updated.cue
 
-                        git add .
-                        git commit -m "Update ${APP_NAME} to ${IMAGE_TAG}
+                            git add .
+                            git commit -m "Update ${APP_NAME} to ${IMAGE_TAG}
 
 Triggered by: ${env.BUILD_URL}
 Git commit: ${GIT_SHORT_HASH}
 Image: ${FULL_IMAGE}" || echo "No changes to commit"
 
-                        git push origin dev
-                    """
+                            git push origin dev
+                        """
 
-                    echo "Deployment repository updated on dev branch"
-                    echo "ArgoCD will automatically sync the changes"
+                        echo "Deployment repository updated on dev branch"
+                        echo "ArgoCD will automatically sync the changes"
+                    }
                 }
             }
         }
@@ -201,21 +208,23 @@ Image: ${FULL_IMAGE}" || echo "No changes to commit"
                 branch 'main'
             }
             steps {
-                script {
-                    echo "Creating MR for stage promotion (draft)..."
+                container('maven') {
+                    script {
+                        echo "Creating MR for stage promotion (draft)..."
 
-                    // This would use GitLab API to create a draft MR from dev to stage
-                    // Showing the diff of what will be deployed
-                    sh """
-                        cd k8s-deployments
+                        // This would use GitLab API to create a draft MR from dev to stage
+                        // Showing the diff of what will be deployed
+                        sh """
+                            cd k8s-deployments
 
-                        # For now, just log the action
-                        # In full implementation, use GitLab API to create MR
-                        echo "Would create draft MR: dev -> stage for ${APP_NAME}:${IMAGE_TAG}"
-                    """
+                            # For now, just log the action
+                            # In full implementation, use GitLab API to create MR
+                            echo "Would create draft MR: dev -> stage for ${APP_NAME}:${IMAGE_TAG}"
+                        """
 
-                    echo "Draft MR created: dev → stage"
-                    echo "Manual review and undraft required before stage deployment"
+                        echo "Draft MR created: dev → stage"
+                        echo "Manual review and undraft required before stage deployment"
+                    }
                 }
             }
         }
