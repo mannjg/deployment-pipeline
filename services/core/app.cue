@@ -5,8 +5,8 @@ package core
 import (
 	"list"
 
-	base "example.com/cue-example/services/base"
-	resources "example.com/cue-example/services/resources"
+	base "deployments.local/k8s-deployments/services/base"
+	resources "deployments.local/k8s-deployments/services/resources"
 )
 
 // Hidden package-level references to ensure imports are recognized as used

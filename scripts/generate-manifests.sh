@@ -49,15 +49,36 @@ cd "${PROJECT_ROOT}"
 log_info "Evaluating CUE configuration..."
 
 # Export the environment configuration
-# This will generate YAML from the CUE definitions
 cue export \
     --out yaml \
-    --outfile "${MANIFEST_DIR}/example-app.yaml" \
     ./envs/${ENVIRONMENT}.cue \
-    ./services/apps/example-app.cue \
-    --path "${ENVIRONMENT}.exampleApp"
+    --path "${ENVIRONMENT}.exampleApp.resources" > "${MANIFEST_DIR}/example-app-raw.yaml"
+
+# Convert the resources map to a YAML stream with document separators
+python3 - "${MANIFEST_DIR}/example-app-raw.yaml" "${MANIFEST_DIR}/example-app.yaml" "${ENVIRONMENT}" <<'PYTHON_SCRIPT'
+import yaml
+import sys
+
+raw_file = sys.argv[1]
+output_file = sys.argv[2]
+env = sys.argv[3]
+
+with open(raw_file, 'r') as f:
+    data = yaml.safe_load(f)
+
+resources = data.get(env, {}).get('exampleApp', {}).get('resources', {})
+
+with open(output_file, 'w') as out:
+    first = True
+    for name, resource in resources.items():
+        if not first:
+            out.write("---\n")
+        first = False
+        out.write(yaml.dump(resource, default_flow_style=False, sort_keys=False))
+PYTHON_SCRIPT
 
 if [ $? -eq 0 ]; then
+    rm -f "${MANIFEST_DIR}/example-app-raw.yaml"
     log_info "Successfully generated manifests in: ${MANIFEST_DIR}"
     log_info "Files:"
     ls -lh "${MANIFEST_DIR}"

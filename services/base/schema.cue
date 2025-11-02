@@ -2,7 +2,7 @@
 // This file defines the configuration schema for applications
 package base
 
-import "example.com/cue-example/k8s"
+import "deployments.local/k8s-deployments/k8s"
 
 // #AppConfig defines the complete schema for application configuration.
 // All configuration should flow through this interface - environments provide
