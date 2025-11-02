@@ -10,7 +10,7 @@ kind: Pod
 spec:
   containers:
   - name: maven
-    image: nexus.local:5000/jenkins-agent-custom:latest
+    image: nexus.nexus.svc.cluster.local:5000/jenkins-agent-custom:latest
     command:
     - cat
     tty: true
