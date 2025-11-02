@@ -8,6 +8,7 @@ import jakarta.ws.rs.core.MediaType;
 
 /**
  * REST API endpoint for greetings
+ * Provides endpoints to get personalized greeting messages
  */
 @Path("/api/greetings")
 @Produces(MediaType.APPLICATION_JSON)
