@@ -236,10 +236,8 @@ Generated manifests from CUE configuration" || echo "No changes to commit"
                                 git push -u origin "$FEATURE_BRANCH" --force
                             '''
 
-                            // Create MR to dev branch
-                            withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
-                                                              usernameVariable: 'GIT_USERNAME',
-                                                              passwordVariable: 'GITLAB_TOKEN')]) {
+                            // Create MR to dev branch using GitLab API token
+                            withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
                                 sh """
                                     cd k8s-deployments
 
@@ -294,9 +292,7 @@ Once merged, ArgoCD will automatically deploy to the dev namespace.
                         echo "Creating MR for stage promotion..."
 
                         // Use GitLab API to create MR from dev to stage
-                        withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
-                                                          usernameVariable: 'GIT_USERNAME',
-                                                          passwordVariable: 'GITLAB_TOKEN')]) {
+                        withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
                             sh """
                                 cd k8s-deployments
 
