@@ -151,3 +151,4 @@ Then make changes to the code and see them reflected immediately at http://local
 ## License
 
 Example application for CI/CD pipeline demonstration.
+# Trigger build
