@@ -65,7 +65,7 @@ pipeline {
                             fi
 
                             # Check if CUE files changed since last manifest commit
-                            CUE_CHANGES=\$(git diff --name-only \${LAST_MANIFEST_COMMIT} HEAD -- 'envs/**/*.cue' 'services/**/*.cue' 'k8s/**/*.cue' 'scripts/generate-manifests.sh')
+                            CUE_CHANGES=\$(git diff --name-only \${LAST_MANIFEST_COMMIT} HEAD | grep -E '\\.(cue|sh)\$')
 
                             if [ -n "\${CUE_CHANGES}" ]; then
                                 echo "CUE files changed:"
@@ -120,7 +120,7 @@ pipeline {
                             git add manifests/
 
                             # Create commit message with details
-                            CUE_FILES=\$(git diff --cached --name-only HEAD~1 -- 'envs/**/*.cue' 'services/**/*.cue' 'k8s/**/*.cue' | tr '\\n' ' ')
+                            CUE_FILES=\$(git log -1 --format="" --name-only \${LAST_MANIFEST_COMMIT}..HEAD | grep '\\.cue\$' | tr '\\n' ' ')
 
                             COMMIT_MSG=\$(cat <<EOF
 chore: regenerate manifests from CUE configuration
