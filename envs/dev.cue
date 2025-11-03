@@ -22,7 +22,7 @@ dev: exampleApp: apps.exampleApp & {
 		// Deployment configuration
 		deployment: {
 			// Image will be updated by CI/CD pipeline
-			image: "docker.local/example/example-app:1.0.0-SNAPSHOT-b4b8889"
+			image: "nexus.nexus.svc.cluster.local:5000/example/example-app:1.0.0-SNAPSHOT-c7b0a99"
 
 			// Lower replicas in dev
 			replicas: 1
