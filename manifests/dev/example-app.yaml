@@ -65,7 +65,7 @@ spec:
     spec:
       containers:
         - name: example-app
-          image: nexus.nexus.svc.cluster.local:5000/example/example-app:1.0.0-SNAPSHOT-ff49645
+          image: nexus.nexus.svc.cluster.local:5000/example/example-app:1.0.0-SNAPSHOT-b4b8889
           env:
             - name: DEBUG
               value: "yes"
