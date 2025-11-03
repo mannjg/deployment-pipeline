@@ -199,9 +199,6 @@ MAVEN_SETTINGS
                                 # Create feature branch for this deployment
                                 FEATURE_BRANCH="update-dev-${IMAGE_TAG}"
                                 git checkout -b "$FEATURE_BRANCH"
-
-                                # Clear credential helper after all git operations
-                                git config --global --unset credential.helper || true
                             '''
 
                             // Update image version in CUE configuration and generate manifests
@@ -232,13 +229,16 @@ Image: ${FULL_IMAGE}
 Generated manifests from CUE configuration" || echo "No changes to commit"
                             """
 
-                            // Push feature branch and create MR (force push to overwrite any existing branch)
+                            // Push feature branch and create MR
                             sh '''
                                 cd k8s-deployments
                                 FEATURE_BRANCH="update-dev-${IMAGE_TAG}"
                                 # Delete remote branch if it exists, then push fresh
                                 git push origin --delete "$FEATURE_BRANCH" 2>/dev/null || echo "Branch does not exist remotely (fine)"
                                 git push -u origin "$FEATURE_BRANCH"
+
+                                # Clear credential helper after all git operations with auth
+                                git config --global --unset credential.helper || true
                             '''
 
                             // Create MR to dev branch using GitLab API token
