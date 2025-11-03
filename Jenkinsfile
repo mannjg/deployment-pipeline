@@ -32,7 +32,7 @@ spec:
 
         // Registry configuration
         // Use internal cluster DNS (HTTP is acceptable within trusted cluster network)
-        DOCKER_REGISTRY = 'nexus.nexus.svc.cluster.local:5000'
+        DOCKER_REGISTRY = 'docker.local'
         // Nexus Maven repository (internal cluster DNS)
         NEXUS_URL = 'http://nexus.nexus.svc.cluster.local:8081'
 
