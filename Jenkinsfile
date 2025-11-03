@@ -229,11 +229,11 @@ Image: ${FULL_IMAGE}
 Generated manifests from CUE configuration" || echo "No changes to commit"
                             """
 
-                            // Push feature branch and create MR
+                            // Push feature branch and create MR (force push to overwrite any existing branch)
                             sh '''
                                 cd k8s-deployments
                                 FEATURE_BRANCH="update-dev-${IMAGE_TAG}"
-                                git push -u origin "$FEATURE_BRANCH"
+                                git push -u origin "$FEATURE_BRANCH" --force
                             '''
 
                             // Create MR to dev branch
