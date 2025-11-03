@@ -263,7 +263,7 @@ Generated manifests from CUE configuration" || echo "No changes to commit"
 
 This merge request updates the dev environment with the latest build.
 
-**Image**: \`${FULL_IMAGE}\`
+**Image**: ${FULL_IMAGE}
 
 ### Review Checklist
 
