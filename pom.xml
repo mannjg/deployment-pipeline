@@ -21,13 +21,14 @@
     <skipITs>true</skipITs>
     <surefire-plugin.version>3.5.2</surefire-plugin.version>
 
-    <!-- Image build properties -->
-    <jib.version>3.4.4</jib.version>
-    <!-- Use internal Nexus service (HTTP acceptable within cluster) -->
-    <image.registry>nexus.nexus.svc.cluster.local:5000</image.registry>
-    <image.group>example</image.group>
-    <image.name>${project.artifactId}</image.name>
-    <image.tag>${project.version}</image.tag>
+    <!-- Container image properties -->
+    <quarkus.container-image.registry>nexus.nexus.svc.cluster.local:5000</quarkus.container-image.registry>
+    <quarkus.container-image.group>example</quarkus.container-image.group>
+    <quarkus.container-image.name>${project.artifactId}</quarkus.container-image.name>
+    <quarkus.container-image.tag>${project.version}</quarkus.container-image.tag>
+    <quarkus.container-image.builder>jib</quarkus.container-image.builder>
+    <quarkus.container-image.insecure>true</quarkus.container-image.insecure>
+    <quarkus.jib.base-jvm-image>registry.access.redhat.com/ubi8/openjdk-17-runtime:1.20</quarkus.jib.base-jvm-image>
   </properties>
 
   <dependencyManagement>
@@ -70,6 +71,12 @@
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
+    </dependency>
+
+    <!-- Container Image - Jib -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-container-image-jib</artifactId>
     </dependency>
 
     <!-- Testing -->
@@ -162,45 +169,6 @@
         </configuration>
       </plugin>
 
-      <!-- Jib Plugin for Docker image builds -->
-      <plugin>
-        <groupId>com.google.cloud.tools</groupId>
-        <artifactId>jib-maven-plugin</artifactId>
-        <version>${jib.version}</version>
-        <configuration>
-          <from>
-            <image>registry.access.redhat.com/ubi8/openjdk-17-runtime:1.20</image>
-          </from>
-          <to>
-            <image>${image.registry}/${image.group}/${image.name}</image>
-            <tags>
-              <tag>${image.tag}</tag>
-              <tag>latest</tag>
-            </tags>
-          </to>
-          <container>
-            <!-- Quarkus main class for fast-jar packaging (Quarkus 3.x default) -->
-            <mainClass>io.quarkus.bootstrap.runner.QuarkusEntryPoint</mainClass>
-            <jvmFlags>
-              <jvmFlag>-Dquarkus.http.host=0.0.0.0</jvmFlag>
-              <jvmFlag>-Djava.util.logging.manager=org.jboss.logmanager.LogManager</jvmFlag>
-            </jvmFlags>
-            <ports>
-              <port>8080</port>
-            </ports>
-            <user>185</user>
-            <environment>
-              <TZ>UTC</TZ>
-            </environment>
-            <labels>
-              <app.name>${project.artifactId}</app.name>
-              <app.version>${project.version}</app.version>
-              <app.build.timestamp>${maven.build.timestamp}</app.build.timestamp>
-            </labels>
-          </container>
-          <allowInsecureRegistries>true</allowInsecureRegistries>
-        </configuration>
-      </plugin>
     </plugins>
   </build>
 
