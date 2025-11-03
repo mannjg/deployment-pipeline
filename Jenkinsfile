@@ -70,8 +70,13 @@ spec:
                         env.IMAGE_TAG = "${env.APP_VERSION}-${env.GIT_SHORT_HASH}"
                         env.FULL_IMAGE = "${env.IMAGE_NAME}:${env.IMAGE_TAG}"
 
+                        // Separate registry for deployment manifests (external ingress for kubelet)
+                        env.DEPLOY_REGISTRY = 'docker.local'
+                        env.IMAGE_FOR_DEPLOY = "${env.DEPLOY_REGISTRY}/${env.APP_GROUP}/${env.APP_NAME}:${env.IMAGE_TAG}"
+
                         echo "Building ${env.APP_NAME} version ${env.APP_VERSION}"
-                        echo "Image: ${env.FULL_IMAGE}"
+                        echo "Image for push: ${env.FULL_IMAGE}"
+                        echo "Image for deploy: ${env.IMAGE_FOR_DEPLOY}"
                     }
                 }
             }
@@ -195,7 +200,8 @@ MAVEN_SETTINGS
                                 cd k8s-deployments
 
                                 # Update the image reference in the dev environment CUE file
-                                sed -i 's|image: ".*"|image: "${FULL_IMAGE}"|' envs/dev.cue
+                                # Use DEPLOY_REGISTRY (docker.local) for kubelet to pull via external ingress
+                                sed -i 's|image: ".*"|image: "${IMAGE_FOR_DEPLOY}"|' envs/dev.cue
 
                                 # Verify the change
                                 echo "Updated image in envs/dev.cue:"
