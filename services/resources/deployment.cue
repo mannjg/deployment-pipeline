@@ -308,7 +308,10 @@ _projectedSecretsVolumeBuilder: {
 
 					securityContext: base.#DefaultPodSecurityContext
 
-					serviceAccountName: appName
+					// ServiceAccount is optional - only set if explicitly configured
+					if appConfig.deployment.serviceAccountName != _|_ {
+						serviceAccountName: appConfig.deployment.serviceAccountName
+					}
 				}
 			}
 		}

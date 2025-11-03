@@ -70,5 +70,14 @@ dev: exampleApp: apps.exampleApp & {
 				},
 			]
 		}
+
+		// ConfigMap data for development environment
+		configMap: {
+			data: {
+				"redis-url": "redis://redis.dev.svc.cluster.local:6379"
+				"log-level": "debug"
+				"feature-flags": "experimental-features=true"
+			}
+		}
 	}
 }

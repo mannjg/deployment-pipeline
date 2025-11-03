@@ -14,6 +14,8 @@ import (
 #_ServiceTemplate:         resources.#ServiceTemplate
 #_DebugServiceTemplate:    resources.#DebugServiceTemplate
 #_ConfigMapTemplate:       resources.#ConfigMapTemplate
+#_PVCTemplate:             resources.#PVCTemplate
+#_SecretTemplate:          resources.#SecretTemplate
 
 // #App is the main application template that apps instantiate.
 // Apps provide their appName, and environments provide appConfig values.
@@ -130,6 +132,22 @@ import (
 				"appName":   appName
 				"appConfig": appConfig
 			}).configmap
+		}
+
+		// Conditionally include PVC when storage is enabled
+		if (appConfig.storage.enablePVC | *true) {
+			pvc: (#_PVCTemplate & {
+				"appName":   appName
+				"appConfig": appConfig
+			}).pvc
+		}
+
+		// Conditionally include secret when secret is enabled
+		if (appConfig.secret.enabled | *true) {
+			secret: (#_SecretTemplate & {
+				"appName":   appName
+				"appConfig": appConfig
+			}).secret
 		}
 
 		// Allow environments to extend individual resources
