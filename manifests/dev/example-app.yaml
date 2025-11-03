@@ -65,7 +65,7 @@ spec:
     spec:
       containers:
         - name: example-app
-          image: nexus.nexus.svc.cluster.local:5000/example/example-app:1.0.0-SNAPSHOT-c7b0a99
+          image: docker.local/example/example-app:1.0.0-SNAPSHOT-bb2a398
           imagePullPolicy: Always
           envFrom: []
           ports:
