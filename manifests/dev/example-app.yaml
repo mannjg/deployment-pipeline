@@ -163,7 +163,6 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
-      serviceAccountName: example-app
   strategy:
     type: RollingUpdate
     rollingUpdate:
