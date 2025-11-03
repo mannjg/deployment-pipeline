@@ -51,6 +51,10 @@ if [ -z "$GITLAB_TOKEN" ]; then
     exit 1
 fi
 
+# Debug: Show token length (not the actual token)
+TOKEN_LENGTH=${#GITLAB_TOKEN}
+log_info "GitLab token present (length: $TOKEN_LENGTH characters)"
+
 log_info "Creating merge request in GitLab..."
 log_info "Source: $SOURCE_BRANCH → Target: $TARGET_BRANCH"
 
@@ -135,5 +139,19 @@ else
     echo ""
     echo "Response:"
     echo "$RESPONSE_BODY" | head -20
+    echo ""
+    echo "Debug info:"
+    echo "- GitLab URL: $GITLAB_URL"
+    echo "- Project: $PROJECT_PATH (encoded: $PROJECT_PATH_ENCODED)"
+    echo "- Source branch: $SOURCE_BRANCH"
+    echo "- Target branch: $TARGET_BRANCH"
+    echo "- Token length: ${#GITLAB_TOKEN} characters"
+    echo ""
+    if [ "$HTTP_CODE" -eq 401 ]; then
+        log_error "Authentication failed. The GitLab token may be:"
+        echo "  1. Incorrect or expired"
+        echo "  2. Missing required scopes (needs 'api' scope)"
+        echo "  3. Not a personal access token (password won't work)"
+    fi
     exit 1
 fi
