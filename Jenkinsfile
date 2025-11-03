@@ -299,6 +299,9 @@ Once merged, ArgoCD will automatically deploy to the dev namespace.
                                                           usernameVariable: 'GIT_USERNAME',
                                                           passwordVariable: 'GIT_PASSWORD')]) {
                             sh '''
+                                # Configure git credential helper (ephemeral, no files)
+                                git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
+
                                 cd k8s-deployments
 
                                 # Fetch and checkout stage branch
@@ -345,6 +348,9 @@ Promoting from dev to stage environment" || echo "No changes to commit"
                                 # Delete remote branch if it exists, then push fresh
                                 git push origin --delete "$PROMOTE_BRANCH" 2>/dev/null || echo "Branch does not exist remotely (fine)"
                                 git push -u origin "$PROMOTE_BRANCH"
+
+                                # Clear credential helper after all git operations with auth
+                                git config --global --unset credential.helper || true
                             '''
 
                             // Create MR to stage branch
@@ -407,6 +413,9 @@ Once this MR is merged, ArgoCD will automatically deploy to the stage namespace.
                                                           usernameVariable: 'GIT_USERNAME',
                                                           passwordVariable: 'GIT_PASSWORD')]) {
                             sh '''
+                                # Configure git credential helper (ephemeral, no files)
+                                git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
+
                                 cd k8s-deployments
 
                                 # Fetch and checkout prod branch
@@ -453,6 +462,9 @@ Promoting from stage to prod environment" || echo "No changes to commit"
                                 # Delete remote branch if it exists, then push fresh
                                 git push origin --delete "$PROMOTE_BRANCH" 2>/dev/null || echo "Branch does not exist remotely (fine)"
                                 git push -u origin "$PROMOTE_BRANCH"
+
+                                # Clear credential helper after all git operations with auth
+                                git config --global --unset credential.helper || true
                             '''
 
                             // Create MR to prod branch
