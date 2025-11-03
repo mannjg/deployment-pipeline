@@ -44,7 +44,7 @@ spec:
         NEXUS_CREDENTIALS = credentials('nexus-credentials')
         DOCKER_CREDENTIALS = credentials('docker-registry-credentials')
         GITLAB_CREDENTIALS = credentials('gitlab-credentials')
-        GITLAB_API_TOKEN = credentials('gitlab-api-token')
+        GITLAB_API_TOKEN = credentials('gitlab-api-token-secret')
 
         // Computed image reference
         IMAGE_NAME = "${DOCKER_REGISTRY}/${APP_GROUP}/${APP_NAME}"
