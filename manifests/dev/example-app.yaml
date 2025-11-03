@@ -5,8 +5,8 @@ metadata:
   namespace: dev
   labels:
     app: example-app
-    environment: dev
     deployment: example-app
+    environment: dev
     managed_by: argocd
 data:
   redis-url: redis://redis.dev.svc.cluster.local:6379
@@ -20,8 +20,8 @@ metadata:
   namespace: dev
   labels:
     app: example-app
-    environment: dev
     deployment: example-app
+    environment: dev
     managed_by: argocd
   annotations:
     description: Debug service for remote debugging
@@ -44,37 +44,28 @@ metadata:
   namespace: dev
   labels:
     app: example-app
-    environment: dev
     deployment: example-app
+    environment: dev
     managed_by: argocd
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: example-app
-      environment: dev
       deployment: example-app
+      environment: dev
       managed_by: argocd
   template:
     metadata:
       labels:
         app: example-app
-        environment: dev
         deployment: example-app
+        environment: dev
         managed_by: argocd
     spec:
       containers:
         - name: example-app
           image: docker.local/example/example-app:1.0.0-SNAPSHOT-bb2a398
-          imagePullPolicy: Always
-          envFrom: []
-          ports:
-            - name: http
-              containerPort: 8080
-              protocol: TCP
-            - name: debug
-              containerPort: 5005
-              protocol: TCP
           env:
             - name: DEBUG
               value: "yes"
@@ -86,26 +77,8 @@ spec:
               value: DEBUG
             - name: ENVIRONMENT
               value: dev
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/myapp/data
-              readOnly: false
-            - name: config
-              mountPath: /etc/myapp/config
-              readOnly: true
-            - name: cache
-              mountPath: /var/cache/myapp
-              readOnly: false
-            - name: projected-secrets
-              mountPath: /var/secrets
-              readOnly: true
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
+          envFrom: []
+          imagePullPolicy: Always
           livenessProbe:
             httpGet:
               path: /health/live
@@ -115,6 +88,13 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: debug
+              containerPort: 5005
+              protocol: TCP
           readinessProbe:
             httpGet:
               path: /health/ready
@@ -124,93 +104,28 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
-            readOnlyRootFilesystem: false
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/myapp/config
+              readOnly: true
+          securityContext: {}
       volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: example-app-data
         - name: config
           configMap:
             name: example-app-config
-        - name: cache
-          emptyDir:
-            medium: Memory
-            sizeLimit: 256Mi
-        - name: projected-secrets
-          projected:
-            defaultMode: 256
-            sources:
-              - secret:
-                  name: example-app-secrets
-                  items:
-                    - key: db-user
-                      path: database/username
-                    - key: db-password
-                      path: database/password
-              - configMap:
-                  name: example-app-config
-                  items:
-                    - key: redis-url
-                      path: config/redis-url
-              - downwardAPI:
-                  items:
-                    - path: pod/name
-                      fieldRef:
-                        fieldPath: metadata.name
-                    - path: pod/namespace
-                      fieldRef:
-                        fieldPath: metadata.namespace
-      securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
-        runAsNonRoot: true
-        fsGroup: 1000
+      securityContext: {}
   strategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 1
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: example-app-data
-  namespace: dev
-  labels:
-    app: example-app
-    environment: dev
-    deployment: example-app
-    managed_by: argocd
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: microk8s-hostpath
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: example-app-secrets
-  namespace: dev
-  labels:
-    app: example-app
-    environment: dev
-    deployment: example-app
-    managed_by: argocd
-type: Opaque
-data:
-  db-user: YXBwdXNlcg==
-  db-password: Y2hhbmdlbWU=
 ---
 apiVersion: v1
 kind: Service
@@ -219,8 +134,8 @@ metadata:
   namespace: dev
   labels:
     app: example-app
-    environment: dev
     deployment: example-app
+    environment: dev
     managed_by: argocd
 spec:
   type: ClusterIP
