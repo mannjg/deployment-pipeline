@@ -460,16 +460,8 @@ MAVEN_SETTINGS
                     // Archive build artifacts
                     archiveArtifacts artifacts: '**/target/*.jar', allowEmptyArchive: true, fingerprint: true
 
-                    // Clean workspace to save disk space
-                    echo "Cleaning workspace..."
-                    cleanWs(
-                        deleteDirs: true,
-                        patterns: [
-                            [pattern: 'target/', type: 'INCLUDE'],
-                            [pattern: 'k8s-deployments/', type: 'INCLUDE'],
-                            [pattern: '.m2/repository/', type: 'INCLUDE']
-                        ]
-                    )
+                    // Note: Workspace cleanup not needed - Kubernetes pods are ephemeral
+                    echo "Build artifacts archived. Pod will be cleaned up automatically."
                 }
             }
         }
