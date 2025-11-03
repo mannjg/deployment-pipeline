@@ -130,7 +130,8 @@ spec:
                                 -Dquarkus.container-image.tag=${IMAGE_TAG} \
                                 -Dquarkus.container-image.insecure=true \
                                 -Dquarkus.container-image.username=${DOCKER_CREDENTIALS_USR} \
-                                -Dquarkus.container-image.password=${DOCKER_CREDENTIALS_PSW}
+                                -Dquarkus.container-image.password=${DOCKER_CREDENTIALS_PSW} \
+                                -DsendCredentialsOverHttp=true
                         """
 
                         // Also publish Maven artifacts to Nexus
