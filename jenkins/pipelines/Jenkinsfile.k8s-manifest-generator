@@ -58,8 +58,8 @@ spec:
     }
 
     environment {
-        REPO_URL = 'http://gitlab.local/example/k8s-deployments.git'
-        GIT_CREDENTIALS = credentials('gitlab-token')
+        REPO_URL = 'http://gitlab.gitlab.svc.cluster.local/example/k8s-deployments.git'
+        GIT_CREDENTIALS = credentials('gitlab-credentials')
         GIT_AUTHOR_NAME = 'Jenkins CI'
         GIT_AUTHOR_EMAIL = 'jenkins@deployment-pipeline.local'
         GIT_COMMITTER_NAME = 'Jenkins CI'
@@ -195,7 +195,7 @@ EOF
 
                             # Push to origin
                             BRANCH=\${BRANCH_NAME:-main}
-                            git push http://\${GIT_CREDENTIALS_USR}:\${GIT_CREDENTIALS_PSW}@gitlab.local/example/k8s-deployments.git HEAD:\${BRANCH}
+                            git push http://\${GIT_CREDENTIALS_USR}:\${GIT_CREDENTIALS_PSW}@gitlab.gitlab.svc.cluster.local/example/k8s-deployments.git HEAD:\${BRANCH}
 
                             echo "Successfully committed and pushed manifest changes to \${BRANCH}"
                         """
