@@ -22,7 +22,7 @@ prod: exampleApp: apps.exampleApp & {
 		// Deployment configuration
 		deployment: {
 			// Image will be updated by CI/CD pipeline
-			image: "nexus.local:5000/example/example-app:1.0.0-SNAPSHOT"
+			image: "docker.local/example/example-app:1.0.0-SNAPSHOT"
 
 			// Production replicas for HA
 			replicas: 3
