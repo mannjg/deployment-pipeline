@@ -89,9 +89,6 @@ spec:
         // Timeout for entire pipeline
         timeout(time: 1, unit: 'HOURS')
 
-        // Timestamps in console
-        timestamps()
-
         // Disable concurrent builds for same branch
         disableConcurrentBuilds()
     }
