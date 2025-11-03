@@ -57,15 +57,21 @@ log_info "Source: $SOURCE_BRANCH → Target: $TARGET_BRANCH"
 # Create the merge request using GitLab API
 # Documentation: https://docs.gitlab.com/ee/api/merge_requests.html#create-mr
 
-# Use Python to properly construct JSON payload with escaped strings
-JSON_PAYLOAD=$(python3 -c "import json, sys; print(json.dumps({
-    'source_branch': '''$SOURCE_BRANCH''',
-    'target_branch': '''$TARGET_BRANCH''',
-    'title': '''$TITLE''',
-    'description': '''$DESCRIPTION''',
-    'remove_source_branch': False,
-    'squash': False
-}))")
+# Escape strings for JSON by replacing special characters
+# This handles newlines, quotes, and backslashes
+escape_json() {
+    local string="$1"
+    # Replace backslash with \\, then newline with \n, then double-quote with \"
+    printf '%s' "$string" | sed 's/\\/\\\\/g' | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g'
+}
+
+SOURCE_ESCAPED=$(escape_json "$SOURCE_BRANCH")
+TARGET_ESCAPED=$(escape_json "$TARGET_BRANCH")
+TITLE_ESCAPED=$(escape_json "$TITLE")
+DESC_ESCAPED=$(escape_json "$DESCRIPTION")
+
+# Construct JSON payload
+JSON_PAYLOAD="{\"source_branch\":\"$SOURCE_ESCAPED\",\"target_branch\":\"$TARGET_ESCAPED\",\"title\":\"$TITLE_ESCAPED\",\"description\":\"$DESC_ESCAPED\",\"remove_source_branch\":false,\"squash\":false}"
 
 MR_RESPONSE=$(curl -s -w "\n%{http_code}" \
     --request POST \
