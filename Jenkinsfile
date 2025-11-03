@@ -189,9 +189,6 @@ MAVEN_SETTINGS
 
                                 # Clone using credential helper
                                 git clone http://gitlab.gitlab.svc.cluster.local/example/k8s-deployments.git k8s-deployments
-
-                                # Clear credential helper after clone
-                                git config --global --unset credential.helper
                                 cd k8s-deployments
 
                                 # Fetch latest dev branch
@@ -202,6 +199,9 @@ MAVEN_SETTINGS
                                 # Create feature branch for this deployment
                                 FEATURE_BRANCH="update-dev-${IMAGE_TAG}"
                                 git checkout -b "$FEATURE_BRANCH"
+
+                                # Clear credential helper after all git operations
+                                git config --global --unset credential.helper || true
                             '''
 
                             // Update image version in CUE configuration and generate manifests
