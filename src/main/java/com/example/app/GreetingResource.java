@@ -29,4 +29,11 @@ public class GreetingResource {
     public Greeting helloName(@PathParam("name") String name) {
         return greetingService.createGreeting(name);
     }
+
+    @GET
+    @Path("/version")
+    @Produces(MediaType.TEXT_PLAIN)
+    public String version() {
+        return "v2.0.0 - E2E Test Release";
+    }
 }
