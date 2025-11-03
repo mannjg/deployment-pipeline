@@ -57,18 +57,26 @@ log_info "Source: $SOURCE_BRANCH → Target: $TARGET_BRANCH"
 # Create the merge request using GitLab API
 # Documentation: https://docs.gitlab.com/ee/api/merge_requests.html#create-mr
 
+# Use jq to properly construct JSON payload with escaped strings
+JSON_PAYLOAD=$(jq -n \
+    --arg source "$SOURCE_BRANCH" \
+    --arg target "$TARGET_BRANCH" \
+    --arg title "$TITLE" \
+    --arg desc "$DESCRIPTION" \
+    '{
+        source_branch: $source,
+        target_branch: $target,
+        title: $title,
+        description: $desc,
+        remove_source_branch: false,
+        squash: false
+    }')
+
 MR_RESPONSE=$(curl -s -w "\n%{http_code}" \
     --request POST \
     --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
     --header "Content-Type: application/json" \
-    --data "{
-        \"source_branch\": \"$SOURCE_BRANCH\",
-        \"target_branch\": \"$TARGET_BRANCH\",
-        \"title\": \"$TITLE\",
-        \"description\": \"$DESCRIPTION\",
-        \"remove_source_branch\": false,
-        \"squash\": false
-    }" \
+    --data "$JSON_PAYLOAD" \
     "${GITLAB_URL}/api/v4/projects/${PROJECT_PATH_ENCODED}/merge_requests")
 
 # Split response and HTTP code
