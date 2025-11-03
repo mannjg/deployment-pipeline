@@ -179,6 +179,32 @@ import "deployments.local/k8s-deployments/k8s"
 			}]
 		}
 	}
+
+	// ===== Storage Configuration =====
+	// Configuration for persistent storage resources
+
+	storage?: {
+		// Enable PVC creation
+		enablePVC: bool | *true
+
+		// PVC configuration
+		pvc?: {
+			storageSize:      string | *"1Gi"
+			storageClassName: string | *"microk8s-hostpath"
+			accessModes: [...string] | *["ReadWriteOnce"]
+		}
+	}
+
+	// ===== Secret Configuration =====
+	// Configuration for application secrets
+
+	secret?: {
+		// Enable secret creation
+		enabled: bool | *true
+
+		// Secret data (base64 encoded values)
+		data?: [string]: string
+	}
 }
 
 // #VolumesConfig defines the volume configuration for an application.

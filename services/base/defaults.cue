@@ -186,7 +186,8 @@ package base
 ]
 
 #DefaultProjectedClusterCAItems: [
-	{key: "ca.crt", path: "config/cluster-ca.crt"},
+	// Empty by default - environments can provide cluster CA if needed
+	// Example: {key: "ca.crt", path: "config/cluster-ca.crt"}
 ]
 
 // Volume Settings
