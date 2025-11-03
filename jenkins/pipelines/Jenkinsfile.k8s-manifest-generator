@@ -7,8 +7,6 @@
  * This ensures the pipeline owns manifest generation - never run generate-manifests.sh manually!
  */
 
-@Library('shared-pipeline-library') _
-
 pipeline {
     agent {
         kubernetes {
