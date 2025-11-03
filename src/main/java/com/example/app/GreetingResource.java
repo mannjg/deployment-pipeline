@@ -35,6 +35,6 @@ public class GreetingResource {
     @Path("/version")
     @Produces(MediaType.TEXT_PLAIN)
     public String version() {
-        return "v2.0.0 - E2E Test Release";
+        return "v2.1.0 - Alphabetized YAML Test";
     }
 }
