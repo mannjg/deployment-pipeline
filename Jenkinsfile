@@ -121,15 +121,16 @@ spec:
 
                         // Build and push with Jib (no docker login needed, Jib handles auth)
                         sh """
-                            mvn clean package jib:build \
-                                -Dimage.registry=${DOCKER_REGISTRY} \
-                                -Dimage.group=${APP_GROUP} \
-                                -Dimage.name=${APP_NAME} \
-                                -Dimage.tag=${IMAGE_TAG} \
-                                -Djib.allowInsecureRegistries=true \
-                                -DsendCredentialsOverHttp=true \
-                                -Djib.to.auth.username=${DOCKER_CREDENTIALS_USR} \
-                                -Djib.to.auth.password=${DOCKER_CREDENTIALS_PSW}
+                            mvn clean package \
+                                -Dquarkus.container-image.build=true \
+                                -Dquarkus.container-image.push=true \
+                                -Dquarkus.container-image.registry=${DOCKER_REGISTRY} \
+                                -Dquarkus.container-image.group=${APP_GROUP} \
+                                -Dquarkus.container-image.name=${APP_NAME} \
+                                -Dquarkus.container-image.tag=${IMAGE_TAG} \
+                                -Dquarkus.container-image.insecure=true \
+                                -Dquarkus.container-image.username=${DOCKER_CREDENTIALS_USR} \
+                                -Dquarkus.container-image.password=${DOCKER_CREDENTIALS_PSW}
                         """
 
                         // Also publish Maven artifacts to Nexus
