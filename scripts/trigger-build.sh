@@ -25,11 +25,16 @@ CRUMB=$(jq -r '.crumb' "$CRUMB_FILE")
 echo "Crumb: ${CRUMB:0:16}..."
 
 # Trigger build (use buildWithParameters to work with both parameterized and non-parameterized jobs)
+# Skip stage and prod promotions for faster testing
 echo "Triggering build for job: $JOB_NAME"
+echo "Parameters: SKIP_STAGE_PROMOTION=true, SKIP_PROD_PROMOTION=true"
 HTTP_STATUS=$(curl -X POST "${JENKINS_URL}/job/${JOB_NAME}/buildWithParameters" \
   -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
   -u "admin:${JENKINS_PASSWORD}" \
   -H "Jenkins-Crumb: ${CRUMB}" \
+  -d "SKIP_INTEGRATION_TESTS=false" \
+  -d "SKIP_STAGE_PROMOTION=true" \
+  -d "SKIP_PROD_PROMOTION=true" \
   -w "%{http_code}" \
   -s -o /dev/null)
 
