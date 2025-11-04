@@ -4,6 +4,9 @@ import jakarta.enterprise.context.ApplicationScoped;
 
 /**
  * Business logic for creating greetings
+ *
+ * TODO: Add Redis caching layer for frequently requested greetings
+ * Redis configuration is available via REDIS_URL environment variable
  */
 @ApplicationScoped
 public class GreetingService {
