@@ -22,10 +22,10 @@ prod: exampleApp: apps.exampleApp & {
 		// Deployment configuration
 		deployment: {
 			// Image will be updated by CI/CD pipeline
-			image: "docker.local/example/example-app:1.0.0-SNAPSHOT-dbbe21e"
+			image: "docker.local/example/example-app:1.0.0-SNAPSHOT"
 
 			// Production replicas for HA
-			replicas: 1
+			replicas: 3
 
 			// Production resource limits
 			resources: {

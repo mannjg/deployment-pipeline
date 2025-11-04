@@ -1,52 +1,52 @@
 apiVersion: v1
-data:
-  feature-flags: experimental-features=true
-  log-level: debug
-  redis-url: redis://redis.dev.svc.cluster.local:6379
 kind: ConfigMap
 metadata:
+  name: example-app-config
+  namespace: dev
   labels:
     app: example-app
     deployment: example-app
     environment: dev
     managed_by: argocd
-  name: example-app-config
-  namespace: dev
+data:
+  redis-url: redis://redis.dev.svc.cluster.local:6379
+  log-level: debug
+  feature-flags: experimental-features=true
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  annotations:
-    description: Debug service for remote debugging
+  name: example-app-debug
+  namespace: dev
   labels:
     app: example-app
     deployment: example-app
     environment: dev
     managed_by: argocd
-  name: example-app-debug
-  namespace: dev
+  annotations:
+    description: Debug service for remote debugging
 spec:
-  ports:
-    - name: debug
-      port: 5005
-      protocol: TCP
-      targetPort: 5005
+  type: ClusterIP
   selector:
     app: example-app
     component: backend
+  ports:
+    - name: debug
+      protocol: TCP
+      port: 5005
+      targetPort: 5005
   sessionAffinity: None
-  type: ClusterIP
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: example-app
+  namespace: dev
   labels:
     app: example-app
     deployment: example-app
     environment: dev
     managed_by: argocd
-  name: example-app
-  namespace: dev
 spec:
   replicas: 1
   selector:
@@ -55,11 +55,6 @@ spec:
       deployment: example-app
       environment: dev
       managed_by: argocd
-  strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 1
-    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -69,7 +64,9 @@ spec:
         managed_by: argocd
     spec:
       containers:
-        - env:
+        - name: example-app
+          image: docker.local/example/example-app:1.0.0-SNAPSHOT-dbbe21e
+          env:
             - name: DEBUG
               value: "yes"
             - name: QUARKUS_HTTP_PORT
@@ -81,10 +78,8 @@ spec:
             - name: ENVIRONMENT
               value: dev
           envFrom: []
-          image: docker.local/example/example-app:1.0.0-SNAPSHOT-e020c2f
           imagePullPolicy: Always
           livenessProbe:
-            failureThreshold: 3
             httpGet:
               path: /health/live
               port: 8080
@@ -92,16 +87,15 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
-          name: example-app
+            failureThreshold: 3
           ports:
-            - containerPort: 8080
-              name: http
+            - name: http
+              containerPort: 8080
               protocol: TCP
-            - containerPort: 5005
-              name: debug
+            - name: debug
+              containerPort: 5005
               protocol: TCP
           readinessProbe:
-            failureThreshold: 3
             httpGet:
               path: /health/ready
               port: 8080
@@ -109,42 +103,48 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
+            failureThreshold: 3
           resources:
-            limits:
-              cpu: 500m
-              memory: 512Mi
             requests:
               cpu: 100m
               memory: 256Mi
-          securityContext: {}
+            limits:
+              cpu: 500m
+              memory: 512Mi
           volumeMounts:
-            - mountPath: /etc/myapp/config
-              name: config
+            - name: config
+              mountPath: /etc/myapp/config
               readOnly: true
-      securityContext: {}
+          securityContext: {}
       volumes:
-        - configMap:
+        - name: config
+          configMap:
             name: example-app-config
-          name: config
+      securityContext: {}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
 ---
 apiVersion: v1
 kind: Service
 metadata:
+  name: example-app
+  namespace: dev
   labels:
     app: example-app
     deployment: example-app
     environment: dev
     managed_by: argocd
-  name: example-app
-  namespace: dev
 spec:
-  ports:
-    - name: http
-      port: 80
-      protocol: TCP
-      targetPort: 8080
+  type: ClusterIP
   selector:
     app: example-app
     component: backend
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8080
   sessionAffinity: None
-  type: ClusterIP

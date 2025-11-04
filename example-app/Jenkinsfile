@@ -44,6 +44,55 @@ def updateEnvironmentAndCreateMR(String environment, String branchPrefix, String
                         git checkout -b "\${FEATURE_BRANCH}"
                     """
 
+                    // **NEW: Sync deployment/app.cue from application repo (only for dev)**
+                    if (environment == 'dev') {
+                        sh """
+                            cd k8s-deployments
+
+                            # Ensure target directory exists
+                            mkdir -p services/apps
+
+                            # Check if deployment/app.cue exists in application repo
+                            if [ -f "\${WORKSPACE}/deployment/app.cue" ]; then
+                                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                                echo "Syncing deployment configuration..."
+                                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                                echo "Source: \${WORKSPACE}/deployment/app.cue"
+                                echo "Target: services/apps/\${APP_NAME}.cue"
+                                echo ""
+
+                                # Copy app-specific CUE config from source repo
+                                cp \${WORKSPACE}/deployment/app.cue services/apps/\${APP_NAME}.cue
+
+                                # Validate the synced CUE file
+                                echo "Validating synced configuration..."
+                                if command -v cue &> /dev/null; then
+                                    if cue vet -c=false ./services/apps/\${APP_NAME}.cue; then
+                                        echo "✓ Synced configuration is valid"
+                                    else
+                                        echo "✗ ERROR: Synced configuration validation failed!"
+                                        exit 1
+                                    fi
+                                else
+                                    echo "⚠ WARNING: cue command not found, skipping validation"
+                                fi
+
+                                # Show what changed in the deployment config
+                                echo ""
+                                if git diff --quiet services/apps/\${APP_NAME}.cue; then
+                                    echo "  No changes in deployment configuration"
+                                else
+                                    echo "Configuration changes:"
+                                    git diff services/apps/\${APP_NAME}.cue | head -50
+                                fi
+                                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                            else
+                                echo "⚠ WARNING: No deployment/app.cue found in application repository"
+                                echo "           Skipping config sync (application may not have deployment config)"
+                            fi
+                        """
+                    }
+
                     // Update environment configuration and generate manifests
                     sh """
                         cd k8s-deployments
@@ -57,17 +106,36 @@ def updateEnvironmentAndCreateMR(String environment, String branchPrefix, String
                         # Generate Kubernetes manifests from CUE configuration
                         ./scripts/generate-manifests.sh ${environment}
 
-                        # Stage all changes (CUE file + generated manifests)
-                        git add envs/${environment}.cue manifests/${environment}/
+                        # Stage all changes (synced config + CUE file + generated manifests)
+                        git add services/apps/ envs/${environment}.cue manifests/${environment}/ 2>/dev/null || git add envs/${environment}.cue manifests/${environment}/
 
                         # Commit with metadata
-                        git commit -m "${mrTitle}
+                        COMMIT_MSG="${mrTitle}
 
-Triggered by: \${BUILD_URL}
+Automated deployment update from application CI/CD pipeline.
+
+Changes:"
+
+                        # Add sync info for dev environment
+                        if [ "${environment}" = "dev" ]; then
+                            if [ -f "services/apps/\${APP_NAME}.cue" ]; then
+                                COMMIT_MSG="\${COMMIT_MSG}
+- Synced services/apps/\${APP_NAME}.cue from source repository"
+                            fi
+                        fi
+
+                        COMMIT_MSG="\${COMMIT_MSG}
+- Updated ${environment} environment image to \${IMAGE_TAG}
+- Regenerated Kubernetes manifests
+
+Build: \${BUILD_URL}
 Git commit: \${GIT_SHORT_HASH}
 Image: \${FULL_IMAGE}
+Deploy image: ${IMAGE_FOR_DEPLOY}
 
-Auto-generated manifest update for ${environment} environment" || echo "No changes to commit"
+Generated manifests from CUE configuration."
+
+                        git commit -m "\${COMMIT_MSG}" || echo "No changes to commit"
                     """
 
                     // Push feature branch and create merge request
