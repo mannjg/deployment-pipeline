@@ -201,6 +201,55 @@ MAVEN_SETTINGS
                                 git checkout -b "$FEATURE_BRANCH"
                             '''
 
+                            // **NEW: Sync deployment/app.cue from application repo to k8s-deployments**
+                            sh """
+                                cd k8s-deployments
+
+                                # Ensure target directory exists
+                                mkdir -p services/apps
+
+                                # Check if deployment/app.cue exists in application repo
+                                if [ -f "${WORKSPACE}/deployment/app.cue" ]; then
+                                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                                    echo "Syncing deployment configuration..."
+                                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+                                    # Copy app-specific CUE config from source repo
+                                    echo "Source: ${WORKSPACE}/deployment/app.cue"
+                                    echo "Target: services/apps/${APP_NAME}.cue"
+                                    cp ${WORKSPACE}/deployment/app.cue services/apps/${APP_NAME}.cue
+
+                                    # Validate the synced CUE file
+                                    echo ""
+                                    echo "Validating synced configuration..."
+                                    if command -v cue &> /dev/null; then
+                                        if cue vet -c=false ./services/apps/${APP_NAME}.cue; then
+                                            echo "✓ Synced configuration is valid"
+                                        else
+                                            echo "✗ ERROR: Synced configuration validation failed!"
+                                            exit 1
+                                        fi
+                                    else
+                                        echo "⚠ CUE not found - skipping validation"
+                                    fi
+
+                                    # Show what changed
+                                    echo ""
+                                    echo "Configuration changes:"
+                                    if git diff --quiet services/apps/${APP_NAME}.cue; then
+                                        echo "  No changes in deployment configuration"
+                                    else
+                                        echo "  Deployment configuration updated:"
+                                        git diff services/apps/${APP_NAME}.cue | head -30
+                                    fi
+                                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                                    echo ""
+                                else
+                                    echo "⚠ Warning: deployment/app.cue not found in ${WORKSPACE}"
+                                    echo "  Skipping configuration sync"
+                                fi
+                            """
+
                             // Update image version in CUE configuration and generate manifests
                             sh """
                                 cd k8s-deployments
@@ -216,17 +265,25 @@ MAVEN_SETTINGS
                                 # Generate Kubernetes manifests from CUE
                                 ./scripts/generate-manifests.sh dev
 
-                                # Stage all changes (CUE file + generated manifests)
-                                git add envs/dev.cue manifests/dev/
+                                # Stage all changes (synced app config + env CUE file + generated manifests)
+                                git add services/apps/${APP_NAME}.cue envs/dev.cue manifests/dev/
 
                                 # Commit with metadata
                                 git commit -m "Update ${APP_NAME} to ${IMAGE_TAG}
 
-Triggered by: ${env.BUILD_URL}
+Automated deployment update from application CI/CD pipeline.
+
+Changes:
+- Synced services/apps/${APP_NAME}.cue from source repository
+- Updated dev environment image to ${IMAGE_TAG}
+- Regenerated Kubernetes manifests
+
+Build: ${env.BUILD_URL}
 Git commit: ${GIT_SHORT_HASH}
 Image: ${FULL_IMAGE}
+Deploy image: ${IMAGE_FOR_DEPLOY}
 
-Generated manifests from CUE configuration" || echo "No changes to commit"
+Generated manifests from CUE configuration." || echo "No changes to commit"
                             """
 
                             // Push feature branch and create MR
