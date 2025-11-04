@@ -65,7 +65,7 @@ spec:
     spec:
       containers:
         - name: example-app
-          image: docker.local/example/example-app:1.0.0-SNAPSHOT-dbbe21e
+          image: docker.local/example/example-app:1.0.0-SNAPSHOT-b4b8889
           env:
             - name: DEBUG
               value: "yes"
@@ -112,20 +112,105 @@ spec:
               cpu: 500m
               memory: 512Mi
           volumeMounts:
+            - name: data
+              mountPath: /var/lib/myapp/data
+              readOnly: false
             - name: config
               mountPath: /etc/myapp/config
               readOnly: true
-          securityContext: {}
+            - name: cache
+              mountPath: /var/cache/myapp
+              readOnly: false
+            - name: projected-secrets
+              mountPath: /var/secrets
+              readOnly: true
+          securityContext:
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
       volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: example-app-data
         - name: config
           configMap:
             name: example-app-config
-      securityContext: {}
+        - name: cache
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+        - name: projected-secrets
+          projected:
+            defaultMode: 256
+            sources:
+              - secret:
+                  name: example-app-secrets
+                  items:
+                    - key: db-user
+                      path: database/username
+                    - key: db-password
+                      path: database/password
+              - configMap:
+                  name: example-app-config
+                  items:
+                    - key: redis-url
+                      path: config/redis-url
+              - downwardAPI:
+                  items:
+                    - path: pod/name
+                      fieldRef:
+                        fieldPath: metadata.name
+                    - path: pod/namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace
+      securityContext:
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
   strategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 1
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: example-app-data
+  namespace: dev
+  labels:
+    app: example-app
+    deployment: example-app
+    environment: dev
+    managed_by: argocd
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: microk8s-hostpath
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: example-app-secrets
+  namespace: dev
+  labels:
+    app: example-app
+    deployment: example-app
+    environment: dev
+    managed_by: argocd
+type: Opaque
+data:
+  db-user: YXBwdXNlcg==
+  db-password: Y2hhbmdlbWU=
 ---
 apiVersion: v1
 kind: Service

@@ -53,29 +53,25 @@ package base
 // This file contains default security context configurations for containers and pods.
 // These are fixed security best practices meant to be used as-is to ensure consistent
 // security posture across all deployments.
-//
-// NOTE: Security contexts are currently disabled to allow container images to use
-// their built-in conventions (e.g., UBI images use UID 185 for jboss user).
-// If you need to enforce specific security contexts, uncomment and customize below.
 
-// Container Security Context - DISABLED to use image defaults
+// Container Security Context
 
 #DefaultContainerSecurityContext: {
-	// runAsNonRoot:             true
-	// runAsUser:                1000
-	// runAsGroup:               1000
-	// readOnlyRootFilesystem:   false
-	// allowPrivilegeEscalation: false
-	// capabilities: drop: ["ALL"]
+	runAsNonRoot:             true
+	runAsUser:                1000
+	runAsGroup:               1000
+	readOnlyRootFilesystem:   false
+	allowPrivilegeEscalation: false
+	capabilities: drop: ["ALL"]
 }
 
-// Pod Security Context - DISABLED to use image defaults
+// Pod Security Context
 
 #DefaultPodSecurityContext: {
-	// runAsNonRoot: true
-	// runAsUser:    1000
-	// runAsGroup:   1000
-	// fsGroup:      1000
+	runAsNonRoot: true
+	runAsUser:    1000
+	runAsGroup:   1000
+	fsGroup:      1000
 }
 
 // Health Check Probe Definitions
