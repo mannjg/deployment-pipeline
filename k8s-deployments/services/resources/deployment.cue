@@ -112,7 +112,7 @@ _projectedSecretsVolumeBuilder: {
 	])
 
 	_dataVolumes: [
-		if (_volumeConfig.enableDataVolume | *true) {
+		if (_volumeConfig.enableDataVolume | *false) {
 			name: "data"
 			persistentVolumeClaim: {
 				claimName: _volumeConfig.dataVolumePVCName | *"\(appName)-data"
@@ -124,7 +124,7 @@ _projectedSecretsVolumeBuilder: {
 		// Config volume is enabled if:
 		// 1. Explicitly enabled via volumeConfig.enableConfigVolume, OR
 		// 2. configMap is provided (which auto-creates the ConfigMap)
-		if (_volumeConfig.enableConfigVolume | *true) || (appConfig.configMap != _|_) {
+		if (_volumeConfig.enableConfigVolume | *false) || (appConfig.configMap != _|_) {
 			name: "config"
 			configMap: {
 				name: _volumeConfig.configVolumeConfigMapName | *"\(appName)-config"
@@ -137,7 +137,7 @@ _projectedSecretsVolumeBuilder: {
 	]
 
 	_cacheVolumes: [
-		if (_volumeConfig.enableCacheVolume | *true) {
+		if (_volumeConfig.enableCacheVolume | *false) {
 			let cacheSettings = _volumeConfig.cacheVolumeSettings | *base.#DefaultCacheVolumeSettings
 			{
 				name: "cache"
@@ -153,7 +153,7 @@ _projectedSecretsVolumeBuilder: {
 	_projectedSecretsHelper: _projectedSecretsVolumeBuilder & {
 		let projConfig = _volumeConfig.projectedSecretsConfig | *{}
 
-		enabled:            _volumeConfig.enableProjectedSecretsVolume | *true
+		enabled:            _volumeConfig.enableProjectedSecretsVolume | *false
 		secretItems:        projConfig.secretItems | *base.#DefaultProjectedSecretItems
 		configMapItems:     projConfig.configMapItems | *base.#DefaultProjectedConfigMapItems
 		clusterCAItems:     projConfig.clusterCAItems | *base.#DefaultProjectedClusterCAItems
@@ -179,7 +179,7 @@ _projectedSecretsVolumeBuilder: {
 	])
 
 	_dataVolumeMounts: [
-		if (_volumeConfig.enableDataVolume | *true) {
+		if (_volumeConfig.enableDataVolume | *false) {
 			base.#DefaultDataVolumeMount
 		},
 	]
@@ -188,7 +188,7 @@ _projectedSecretsVolumeBuilder: {
 		// Config volume mount is enabled if:
 		// 1. Explicitly enabled via volumeConfig.enableConfigVolume, OR
 		// 2. configMap is provided (which auto-creates the ConfigMap)
-		if (_volumeConfig.enableConfigVolume | *true) || (appConfig.configMap != _|_) {
+		if (_volumeConfig.enableConfigVolume | *false) || (appConfig.configMap != _|_) {
 			base.#DefaultConfigVolumeMount & {
 				if appConfig.configMap != _|_ && appConfig.configMap.mount != _|_ {
 					let mountConfig = appConfig.configMap.mount
@@ -205,13 +205,13 @@ _projectedSecretsVolumeBuilder: {
 	]
 
 	_cacheVolumeMounts: [
-		if (_volumeConfig.enableCacheVolume | *true) {
+		if (_volumeConfig.enableCacheVolume | *false) {
 			base.#DefaultCacheVolumeMount
 		},
 	]
 
 	_projectedSecretsVolumeMounts: [
-		if (_volumeConfig.enableProjectedSecretsVolume | *true) {
+		if (_volumeConfig.enableProjectedSecretsVolume | *false) {
 			base.#DefaultProjectedSecretsVolumeMount
 		},
 	]

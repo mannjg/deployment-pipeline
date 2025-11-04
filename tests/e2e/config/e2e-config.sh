@@ -116,7 +116,8 @@ export PROD_SAFETY_WAIT="30"
 # =============================================================================
 
 # Directory for storing test state and artifacts
-export E2E_STATE_DIR="${SCRIPT_DIR:-/tmp}/state/$(date +%Y%m%d-%H%M%S)"
+# Note: This will be overridden by test-full-pipeline.sh with proper path
+export E2E_STATE_DIR="${E2E_STATE_DIR:-/tmp/e2e-state-$(date +%Y%m%d-%H%M%S)}"
 
 # =============================================================================
 # Debugging and Logging

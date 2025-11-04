@@ -1,21 +1,26 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: example-app
-  namespace: prod
   labels:
     app: example-app
     deployment: example-app
     environment: prod
     managed_by: argocd
+  name: example-app
+  namespace: prod
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: example-app
       deployment: example-app
       environment: prod
       managed_by: argocd
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -24,10 +29,17 @@ spec:
         environment: prod
         managed_by: argocd
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: example-app
+                topologyKey: kubernetes.io/hostname
+              weight: 100
       containers:
-        - name: example-app
-          image: docker.local/example/example-app:1.0.0-SNAPSHOT
-          env:
+        - env:
             - name: QUARKUS_HTTP_PORT
               value: "8080"
             - name: QUARKUS_LOG_CONSOLE_ENABLE
@@ -37,8 +49,10 @@ spec:
             - name: ENVIRONMENT
               value: prod
           envFrom: []
+          image: docker.local/example/example-app:1.2.0-SNAPSHOT-dfb74c8
           imagePullPolicy: Always
           livenessProbe:
+            failureThreshold: 3
             httpGet:
               path: /health/live
               port: 8080
@@ -46,12 +60,13 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 3
+          name: example-app
           ports:
-            - name: http
-              containerPort: 8080
+            - containerPort: 8080
+              name: http
               protocol: TCP
           readinessProbe:
+            failureThreshold: 3
             httpGet:
               path: /health/ready
               port: 8080
@@ -59,142 +74,36 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
-            failureThreshold: 3
           resources:
-            requests:
-              cpu: 500m
-              memory: 1Gi
             limits:
               cpu: 2000m
               memory: 2Gi
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/myapp/data
-              readOnly: false
-            - name: config
-              mountPath: /etc/myapp/config
-              readOnly: true
-            - name: cache
-              mountPath: /var/cache/myapp
-              readOnly: false
-            - name: projected-secrets
-              mountPath: /var/secrets
-              readOnly: true
-          securityContext:
-            runAsGroup: 1000
-            runAsNonRoot: true
-            runAsUser: 1000
-            readOnlyRootFilesystem: false
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: example-app-data
-        - name: config
-          configMap:
-            name: example-app-config
-        - name: cache
-          emptyDir:
-            medium: Memory
-            sizeLimit: 256Mi
-        - name: projected-secrets
-          projected:
-            defaultMode: 256
-            sources:
-              - secret:
-                  name: example-app-secrets
-                  items:
-                    - key: db-user
-                      path: database/username
-                    - key: db-password
-                      path: database/password
-              - configMap:
-                  name: example-app-config
-                  items:
-                    - key: redis-url
-                      path: config/redis-url
-              - downwardAPI:
-                  items:
-                    - path: pod/name
-                      fieldRef:
-                        fieldPath: metadata.name
-                    - path: pod/namespace
-                      fieldRef:
-                        fieldPath: metadata.namespace
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
-                  matchLabels:
-                    app: example-app
-                topologyKey: kubernetes.io/hostname
-      securityContext:
-        runAsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: example-app-data
-  namespace: prod
-  labels:
-    app: example-app
-    deployment: example-app
-    environment: prod
-    managed_by: argocd
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: microk8s-hostpath
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: example-app-secrets
-  namespace: prod
-  labels:
-    app: example-app
-    deployment: example-app
-    environment: prod
-    managed_by: argocd
-type: Opaque
-data:
-  db-user: YXBwdXNlcg==
-  db-password: Y2hhbmdlbWU=
+            requests:
+              cpu: 500m
+              memory: 1Gi
+          securityContext: {}
+          volumeMounts: []
+      securityContext: {}
+      volumes: []
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: example-app
-  namespace: prod
   labels:
     app: example-app
     deployment: example-app
     environment: prod
     managed_by: argocd
+  name: example-app
+  namespace: prod
 spec:
-  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 8080
   selector:
     app: example-app
     component: backend
-  ports:
-    - name: http
-      protocol: TCP
-      port: 80
-      targetPort: 8080
   sessionAffinity: None
+  type: ClusterIP

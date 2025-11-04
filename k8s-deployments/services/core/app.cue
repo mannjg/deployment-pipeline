@@ -135,7 +135,7 @@ import (
 		}
 
 		// Conditionally include PVC when storage is enabled
-		if (appConfig.storage.enablePVC | *true) {
+		if (appConfig.storage.enablePVC | *false) {
 			pvc: (#_PVCTemplate & {
 				"appName":   appName
 				"appConfig": appConfig
@@ -143,7 +143,7 @@ import (
 		}
 
 		// Conditionally include secret when secret is enabled
-		if (appConfig.secret.enabled | *true) {
+		if (appConfig.secret.enabled | *false) {
 			secret: (#_SecretTemplate & {
 				"appName":   appName
 				"appConfig": appConfig

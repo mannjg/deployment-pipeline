@@ -1,52 +1,52 @@
 apiVersion: v1
+data:
+  feature-flags: experimental-features=true
+  log-level: debug
+  redis-url: redis://redis.dev.svc.cluster.local:6379
 kind: ConfigMap
 metadata:
-  name: example-app-config
-  namespace: dev
   labels:
     app: example-app
     deployment: example-app
     environment: dev
     managed_by: argocd
-data:
-  redis-url: redis://redis.dev.svc.cluster.local:6379
-  log-level: debug
-  feature-flags: experimental-features=true
+  name: example-app-config
+  namespace: dev
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: example-app-debug
-  namespace: dev
+  annotations:
+    description: Debug service for remote debugging
   labels:
     app: example-app
     deployment: example-app
     environment: dev
     managed_by: argocd
-  annotations:
-    description: Debug service for remote debugging
+  name: example-app-debug
+  namespace: dev
 spec:
-  type: ClusterIP
+  ports:
+    - name: debug
+      port: 5005
+      protocol: TCP
+      targetPort: 5005
   selector:
     app: example-app
     component: backend
-  ports:
-    - name: debug
-      protocol: TCP
-      port: 5005
-      targetPort: 5005
   sessionAffinity: None
+  type: ClusterIP
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: example-app
-  namespace: dev
   labels:
     app: example-app
     deployment: example-app
     environment: dev
     managed_by: argocd
+  name: example-app
+  namespace: dev
 spec:
   replicas: 1
   selector:
@@ -55,6 +55,11 @@ spec:
       deployment: example-app
       environment: dev
       managed_by: argocd
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -64,9 +69,7 @@ spec:
         managed_by: argocd
     spec:
       containers:
-        - name: example-app
-          image: docker.local/example/example-app:1.0.0-SNAPSHOT-b4b8889
-          env:
+        - env:
             - name: DEBUG
               value: "yes"
             - name: QUARKUS_HTTP_PORT
@@ -78,8 +81,10 @@ spec:
             - name: ENVIRONMENT
               value: dev
           envFrom: []
+          image: docker.local/example/example-app:1.0.0-SNAPSHOT-e020c2f
           imagePullPolicy: Always
           livenessProbe:
+            failureThreshold: 3
             httpGet:
               path: /health/live
               port: 8080
@@ -87,15 +92,16 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 3
+          name: example-app
           ports:
-            - name: http
-              containerPort: 8080
+            - containerPort: 8080
+              name: http
               protocol: TCP
-            - name: debug
-              containerPort: 5005
+            - containerPort: 5005
+              name: debug
               protocol: TCP
           readinessProbe:
+            failureThreshold: 3
             httpGet:
               path: /health/ready
               port: 8080
@@ -103,133 +109,42 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
-            failureThreshold: 3
           resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
             limits:
               cpu: 500m
               memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext: {}
           volumeMounts:
-            - name: data
-              mountPath: /var/lib/myapp/data
-              readOnly: false
-            - name: config
-              mountPath: /etc/myapp/config
+            - mountPath: /etc/myapp/config
+              name: config
               readOnly: true
-            - name: cache
-              mountPath: /var/cache/myapp
-              readOnly: false
-            - name: projected-secrets
-              mountPath: /var/secrets
-              readOnly: true
-          securityContext:
-            runAsGroup: 1000
-            runAsNonRoot: true
-            runAsUser: 1000
-            readOnlyRootFilesystem: false
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
+      securityContext: {}
       volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: example-app-data
-        - name: config
-          configMap:
+        - configMap:
             name: example-app-config
-        - name: cache
-          emptyDir:
-            medium: Memory
-            sizeLimit: 256Mi
-        - name: projected-secrets
-          projected:
-            defaultMode: 256
-            sources:
-              - secret:
-                  name: example-app-secrets
-                  items:
-                    - key: db-user
-                      path: database/username
-                    - key: db-password
-                      path: database/password
-              - configMap:
-                  name: example-app-config
-                  items:
-                    - key: redis-url
-                      path: config/redis-url
-              - downwardAPI:
-                  items:
-                    - path: pod/name
-                      fieldRef:
-                        fieldPath: metadata.name
-                    - path: pod/namespace
-                      fieldRef:
-                        fieldPath: metadata.namespace
-      securityContext:
-        runAsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 1
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: example-app-data
-  namespace: dev
-  labels:
-    app: example-app
-    deployment: example-app
-    environment: dev
-    managed_by: argocd
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: microk8s-hostpath
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: example-app-secrets
-  namespace: dev
-  labels:
-    app: example-app
-    deployment: example-app
-    environment: dev
-    managed_by: argocd
-type: Opaque
-data:
-  db-user: YXBwdXNlcg==
-  db-password: Y2hhbmdlbWU=
+          name: config
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: example-app
-  namespace: dev
   labels:
     app: example-app
     deployment: example-app
     environment: dev
     managed_by: argocd
+  name: example-app
+  namespace: dev
 spec:
-  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 8080
   selector:
     app: example-app
     component: backend
-  ports:
-    - name: http
-      protocol: TCP
-      port: 80
-      targetPort: 8080
   sessionAffinity: None
+  type: ClusterIP

@@ -109,6 +109,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Set state directory before loading config
+export E2E_STATE_DIR="$SCRIPT_DIR/state/$(date +%Y%m%d-%H%M%S)"
+
 # Load E2E configuration
 if [ -f "$SCRIPT_DIR/config/e2e-config.sh" ]; then
     source "$SCRIPT_DIR/config/e2e-config.sh"

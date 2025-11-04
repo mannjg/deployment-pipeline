@@ -184,8 +184,8 @@ import "deployments.local/k8s-deployments/k8s"
 	// Configuration for persistent storage resources
 
 	storage?: {
-		// Enable PVC creation
-		enablePVC: bool | *true
+		// Enable PVC creation (disabled by default for stateless apps)
+		enablePVC: bool | *false
 
 		// PVC configuration
 		pvc?: {
@@ -199,8 +199,8 @@ import "deployments.local/k8s-deployments/k8s"
 	// Configuration for application secrets
 
 	secret?: {
-		// Enable secret creation
-		enabled: bool | *true
+		// Enable secret creation (disabled by default)
+		enabled: bool | *false
 
 		// Secret data (base64 encoded values)
 		data?: [string]: string
@@ -209,21 +209,22 @@ import "deployments.local/k8s-deployments/k8s"
 
 // #VolumesConfig defines the volume configuration for an application.
 // This makes volumes configurable instead of hardcoded.
+// Volumes are disabled by default for stateless applications.
 #VolumesConfig: {
-	// Enable standard data volume (PVC)
-	enableDataVolume: bool | *true
+	// Enable standard data volume (PVC) - disabled by default
+	enableDataVolume: bool | *false
 
 	// Data volume PVC name (if enableDataVolume is true)
 	dataVolumePVCName?: string
 
-	// Enable standard config volume (ConfigMap)
-	enableConfigVolume: bool | *true
+	// Enable standard config volume (ConfigMap) - disabled by default
+	enableConfigVolume: bool | *false
 
 	// Config volume ConfigMap name (if enableConfigVolume is true)
 	configVolumeConfigMapName?: string
 
-	// Enable standard cache volume (EmptyDir)
-	enableCacheVolume: bool | *true
+	// Enable standard cache volume (EmptyDir) - disabled by default
+	enableCacheVolume: bool | *false
 
 	// Cache volume settings
 	cacheVolumeSettings?: {
@@ -231,8 +232,8 @@ import "deployments.local/k8s-deployments/k8s"
 		sizeLimit: string | *#DefaultCacheVolumeSettings.sizeLimit
 	}
 
-	// Enable projected secrets volume
-	enableProjectedSecretsVolume: bool | *true
+	// Enable projected secrets volume - disabled by default
+	enableProjectedSecretsVolume: bool | *false
 
 	// Projected secrets configuration (if enableProjectedSecretsVolume is true)
 	projectedSecretsConfig?: {

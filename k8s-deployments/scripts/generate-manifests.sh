@@ -95,7 +95,7 @@ if [ ${#resources[@]} -gt 0 ] && [ -n "${resources[0]}" ]; then
         export_status=$?
 
         if [ $export_status -eq 0 ]; then
-            echo "$export_output" > "${MANIFEST_DIR}/example-app.yaml"
+            echo "$export_output" | yq 'sort_keys(..)' > "${MANIFEST_DIR}/example-app.yaml"
             log_info "Successfully generated ${MANIFEST_DIR}/example-app.yaml"
             log_info "Resources: ${resources[*]}"
         else

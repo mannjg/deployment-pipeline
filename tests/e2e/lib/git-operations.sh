@@ -197,17 +197,18 @@ create_e2e_feature_branch() {
     timestamp=$(date +%s)
     local feature_branch="e2e-test-${timestamp}"
 
-    log_info "Creating E2E feature branch: $feature_branch from $base_branch"
+    # All logs to stderr to avoid polluting return value
+    log_info "Creating E2E feature branch: $feature_branch from $base_branch" >&2
 
     # Ensure we have latest base branch
-    fetch_remote origin
+    fetch_remote origin >&2
 
     # Switch to base branch and pull latest
-    switch_branch "$base_branch" || return 1
-    pull_current_branch || return 1
+    switch_branch "$base_branch" >&2 || return 1
+    pull_current_branch >&2 || return 1
 
     # Create feature branch
-    create_branch "$feature_branch" || return 1
+    create_branch "$feature_branch" >&2 || return 1
 
     echo "$feature_branch"
     return 0
