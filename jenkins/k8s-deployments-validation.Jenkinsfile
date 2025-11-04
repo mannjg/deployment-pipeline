@@ -245,11 +245,20 @@ All checks passed successfully.
 Safe to merge this change.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-                // Update GitLab commit status
-                updateGitlabCommitStatus(
-                    name: 'k8s-deployments-validation',
-                    state: 'success'
-                )
+                // Update GitLab commit status via API
+                container('validator') {
+                    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+                        sh """
+                            curl -X POST "http://gitlab.gitlab.svc.cluster.local/api/v4/projects/2/statuses/${env.GIT_COMMIT}" \
+                              -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                              -d "state=success" \
+                              -d "name=k8s-deployments-validation" \
+                              -d "target_url=${env.BUILD_URL}" \
+                              -d "description=All validation checks passed" \
+                              || echo "⚠ Could not update GitLab status (non-blocking)"
+                        """
+                    }
+                }
             }
         }
 
@@ -266,11 +275,20 @@ Check logs above for error details.
 Build URL: ${env.BUILD_URL}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-                // Update GitLab commit status
-                updateGitlabCommitStatus(
-                    name: 'k8s-deployments-validation',
-                    state: 'failed'
-                )
+                // Update GitLab commit status via API
+                container('validator') {
+                    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+                        sh """
+                            curl -X POST "http://gitlab.gitlab.svc.cluster.local/api/v4/projects/2/statuses/${env.GIT_COMMIT}" \
+                              -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                              -d "state=failed" \
+                              -d "name=k8s-deployments-validation" \
+                              -d "target_url=${env.BUILD_URL}" \
+                              -d "description=Validation checks failed - see Jenkins logs" \
+                              || echo "⚠ Could not update GitLab status (non-blocking)"
+                        """
+                    }
+                }
             }
         }
 
