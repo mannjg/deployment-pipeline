@@ -109,4 +109,22 @@ else
     log_warn "Check that ${ENVIRONMENT}.exampleApp.resources_list exists in ./envs/${ENVIRONMENT}.cue"
 fi
 
+# Generate ArgoCD Application manifests
+log_info "Generating ArgoCD Application manifest..."
+ARGOCD_MANIFEST_DIR="${PROJECT_ROOT}/manifests/argocd"
+mkdir -p "${ARGOCD_MANIFEST_DIR}"
+
+# Export ArgoCD Application for this environment
+argocd_export_output=$(cue export "./envs/${ENVIRONMENT}.cue" -e "${ENVIRONMENT}.argoApp.application" --out yaml 2>&1)
+argocd_export_status=$?
+
+if [ $argocd_export_status -eq 0 ]; then
+    echo "$argocd_export_output" > "${ARGOCD_MANIFEST_DIR}/example-app-${ENVIRONMENT}.yaml"
+    log_info "Successfully generated ${ARGOCD_MANIFEST_DIR}/example-app-${ENVIRONMENT}.yaml"
+else
+    log_warn "Could not generate ArgoCD Application for ${ENVIRONMENT}:"
+    echo "$argocd_export_output" | sed 's/^/  /'
+    log_warn "This is not critical if ArgoCD is not being used"
+fi
+
 log_info "Manifest generation complete!"

@@ -3,6 +3,7 @@ package envs
 
 import (
 	"deployments.local/k8s-deployments/services/apps"
+	"deployments.local/k8s-deployments/argocd"
 )
 
 // Staging environment settings for example-app
@@ -70,5 +71,23 @@ stage: exampleApp: apps.exampleApp & {
 				},
 			]
 		}
+	}
+}
+
+// ArgoCD Application configuration for stage environment
+stage: argoApp: argocd.#ArgoApplication & {
+	argoConfig: {
+		app:         "example-app"
+		environment: "stage"
+		namespace:   "stage"
+
+		// Git source configuration
+		repoURL:        "\(argocd.#DefaultGitLabRepoBase)/example/k8s-deployments.git"
+		targetRevision: "stage"
+		path:           "manifests/stage"
+
+		// Use default sync policy and ignore differences
+		syncPolicy:        argocd.#DefaultSyncPolicy
+		ignoreDifferences: argocd.#DefaultIgnoreDifferences
 	}
 }

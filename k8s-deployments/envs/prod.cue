@@ -3,6 +3,7 @@ package envs
 
 import (
 	"deployments.local/k8s-deployments/services/apps"
+	"deployments.local/k8s-deployments/argocd"
 )
 
 // Production environment settings for example-app
@@ -98,5 +99,23 @@ prod: exampleApp: apps.exampleApp & {
 				}
 			}
 		}
+	}
+}
+
+// ArgoCD Application configuration for prod environment
+prod: argoApp: argocd.#ArgoApplication & {
+	argoConfig: {
+		app:         "example-app"
+		environment: "prod"
+		namespace:   "prod"
+
+		// Git source configuration
+		repoURL:        "\(argocd.#DefaultGitLabRepoBase)/example/k8s-deployments.git"
+		targetRevision: "prod"
+		path:           "manifests/prod"
+
+		// Use default sync policy and ignore differences
+		syncPolicy:        argocd.#DefaultSyncPolicy
+		ignoreDifferences: argocd.#DefaultIgnoreDifferences
 	}
 }

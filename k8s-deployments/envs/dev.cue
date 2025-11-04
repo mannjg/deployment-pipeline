@@ -3,6 +3,7 @@ package envs
 
 import (
 	"deployments.local/k8s-deployments/services/apps"
+	"deployments.local/k8s-deployments/argocd"
 )
 
 // Development environment settings for example-app
@@ -79,5 +80,23 @@ dev: exampleApp: apps.exampleApp & {
 				"feature-flags": "experimental-features=true"
 			}
 		}
+	}
+}
+
+// ArgoCD Application configuration for dev environment
+dev: argoApp: argocd.#ArgoApplication & {
+	argoConfig: {
+		app:         "example-app"
+		environment: "dev"
+		namespace:   "dev"
+
+		// Git source configuration
+		repoURL:        "\(argocd.#DefaultGitLabRepoBase)/example/k8s-deployments.git"
+		targetRevision: "dev"
+		path:           "manifests/dev"
+
+		// Use default sync policy and ignore differences
+		syncPolicy:        argocd.#DefaultSyncPolicy
+		ignoreDifferences: argocd.#DefaultIgnoreDifferences
 	}
 }
