@@ -1,0 +1,89 @@
+# Lightweight Jenkins Agent Image
+# Uses JDK 17 from base image, adds Maven, Docker CLI, CUE CLI
+# Optimized for limited disk space environments
+
+FROM jenkins/inbound-agent:latest-jdk17
+
+USER root
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    git \
+    unzip \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    && rm -rf /var/lib/apt/lists/*
+
+# Verify Java installation (using JDK 17 from base image)
+RUN java -version
+
+# Install Maven 3.9.6
+ARG MAVEN_VERSION=3.9.6
+RUN mkdir -p /opt/maven && \
+    cd /opt/maven && \
+    wget -q https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
+    tar -xzf apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
+    rm apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
+    mv apache-maven-${MAVEN_VERSION} maven-${MAVEN_VERSION}
+
+ENV MAVEN_HOME=/opt/maven/maven-${MAVEN_VERSION}
+ENV PATH=$MAVEN_HOME/bin:$PATH
+
+# Verify Maven installation
+RUN mvn --version
+
+# Install Docker CLI
+RUN mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+      $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    apt-get update && \
+    apt-get install -y docker-ce-cli docker-buildx-plugin && \
+    rm -rf /var/lib/apt/lists/*
+
+# Verify Docker CLI installation
+RUN docker --version
+
+# Install CUE CLI
+ARG CUE_VERSION=v0.11.1
+RUN cd /tmp && \
+    wget -q https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/cue_${CUE_VERSION}_linux_amd64.tar.gz && \
+    tar -xzf cue_${CUE_VERSION}_linux_amd64.tar.gz && \
+    mv cue /usr/local/bin/cue && \
+    chmod +x /usr/local/bin/cue && \
+    rm cue_${CUE_VERSION}_linux_amd64.tar.gz
+
+# Verify CUE installation
+RUN cue version
+
+# Install kubectl (for deployment automation)
+RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+    install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && \
+    rm kubectl
+
+# Verify kubectl installation
+RUN kubectl version --client
+
+# Create Maven local repository directory
+RUN mkdir -p /home/jenkins/.m2/repository && \
+    chown -R jenkins:jenkins /home/jenkins/.m2
+
+# Switch back to jenkins user
+USER jenkins
+
+# Set working directory
+WORKDIR /home/jenkins
+
+# Display installed versions
+RUN echo "=== Installed Software ===" && \
+    echo "Java: $(java -version 2>&1 | head -1)" && \
+    echo "Maven: $(mvn --version | head -1)" && \
+    echo "Docker: $(docker --version)" && \
+    echo "CUE: $(cue version)" && \
+    echo "kubectl: $(kubectl version --client --short 2>/dev/null || kubectl version --client)"
+
+CMD ["/usr/local/bin/jenkins-agent"]

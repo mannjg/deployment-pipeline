@@ -1,0 +1,122 @@
+---
+# Lightweight Nexus Repository Deployment
+# Simplified for resource-constrained environments
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nexus-data
+  namespace: nexus
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus
+  namespace: nexus
+  labels:
+    app: nexus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nexus
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: nexus
+    spec:
+      securityContext:
+        fsGroup: 200
+      containers:
+      - name: nexus
+        image: sonatype/nexus3:3.74.0
+        ports:
+        - name: http
+          containerPort: 8081
+          protocol: TCP
+        - name: docker
+          containerPort: 5000
+          protocol: TCP
+        env:
+        - name: INSTALL4J_ADD_VM_PARAMS
+          value: "-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m"
+        volumeMounts:
+        - name: nexus-data
+          mountPath: /nexus-data
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1500m
+            memory: 1536Mi
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8081
+          initialDelaySeconds: 180
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8081
+          initialDelaySeconds: 120
+          periodSeconds: 10
+          timeoutSeconds: 10
+      volumes:
+      - name: nexus-data
+        persistentVolumeClaim:
+          claimName: nexus-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexus
+  namespace: nexus
+  labels:
+    app: nexus
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8081
+    targetPort: 8081
+    protocol: TCP
+  - name: docker
+    port: 5000
+    targetPort: 5000
+    protocol: TCP
+  selector:
+    app: nexus
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nexus
+  namespace: nexus
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
+spec:
+  ingressClassName: public
+  rules:
+  - host: nexus.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nexus
+            port:
+              number: 8081

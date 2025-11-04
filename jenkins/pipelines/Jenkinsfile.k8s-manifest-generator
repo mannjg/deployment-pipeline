@@ -1,0 +1,219 @@
+/**
+ * Jenkins Pipeline: K8s Manifest Generator
+ *
+ * Purpose: Automatically generate Kubernetes manifests from CUE configuration files
+ * Trigger: Changes to CUE files in k8s-deployments repository (envs/, services/, k8s/)
+ *
+ * This ensures the pipeline owns manifest generation - never run generate-manifests.sh manually!
+ */
+
+@Library('shared-pipeline-library') _
+
+pipeline {
+    agent {
+        kubernetes {
+            label 'jenkins-agent'
+            defaultContainer 'jnlp'
+            yaml """
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    jenkins: agent
+spec:
+  containers:
+  - name: jnlp
+    image: docker.local/jenkins/agent:light
+    imagePullPolicy: Always
+    env:
+    - name: CONTAINER_ENV_VAR
+      value: jnlp
+  - name: cue
+    image: cuelang/cue:v0.14.2
+    command:
+    - cat
+    tty: true
+  - name: git
+    image: alpine/git:latest
+    command:
+    - cat
+    tty: true
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+"""
+        }
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
+        timeout(time: 10, unit: 'MINUTES')
+    }
+
+    triggers {
+        // Poll SCM every 5 minutes for changes to CUE files
+        pollSCM('H/5 * * * *')
+    }
+
+    environment {
+        REPO_URL = 'http://gitlab.gitlab.svc.cluster.local/example/k8s-deployments.git'
+        GIT_CREDENTIALS = credentials('gitlab-credentials')
+        GIT_AUTHOR_NAME = 'Jenkins CI'
+        GIT_AUTHOR_EMAIL = 'jenkins@deployment-pipeline.local'
+        GIT_COMMITTER_NAME = 'Jenkins CI'
+        GIT_COMMITTER_EMAIL = 'jenkins@deployment-pipeline.local'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                container('git') {
+                    script {
+                        // Clone the repository
+                        sh """
+                            git clone ${REPO_URL} k8s-deployments
+                            cd k8s-deployments
+
+                            # Configure git
+                            git config user.name "${GIT_AUTHOR_NAME}"
+                            git config user.email "${GIT_AUTHOR_EMAIL}"
+
+                            # Checkout the branch (default to main if BRANCH_NAME not set)
+                            BRANCH=\${BRANCH_NAME:-main}
+                            git checkout \${BRANCH}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Check for CUE Changes') {
+            steps {
+                container('git') {
+                    script {
+                        // Check if there are any CUE file changes since last manifest generation
+                        def cueChanged = sh(
+                            script: """
+                                cd k8s-deployments
+
+                                # Check if manifests directory exists
+                                if [ ! -d "manifests" ]; then
+                                    echo "true"
+                                    exit 0
+                                fi
+
+                                # Get last commit that modified manifests
+                                LAST_MANIFEST_COMMIT=\$(git log -1 --format="%H" -- manifests/ 2>/dev/null || echo "")
+
+                                if [ -z "\${LAST_MANIFEST_COMMIT}" ]; then
+                                    echo "true"
+                                    exit 0
+                                fi
+
+                                # Check if CUE files changed since last manifest commit
+                                CUE_CHANGES=\$(git diff --name-only \${LAST_MANIFEST_COMMIT} HEAD -- 'envs/**/*.cue' 'services/**/*.cue' 'k8s/**/*.cue' 'scripts/generate-manifests.sh')
+
+                                if [ -n "\${CUE_CHANGES}" ]; then
+                                    echo "CUE files changed:"
+                                    echo "\${CUE_CHANGES}"
+                                    echo "true"
+                                else
+                                    echo "false"
+                                fi
+                            """,
+                            returnStdout: true
+                        ).trim()
+
+                        env.CUE_CHANGED = cueChanged.contains('true') ? 'true' : 'false'
+
+                        if (env.CUE_CHANGED == 'false') {
+                            echo "No CUE changes detected. Skipping manifest generation."
+                            currentBuild.result = 'NOT_BUILT'
+                            error("No CUE changes - skipping build")
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Generate Manifests') {
+            steps {
+                container('cue') {
+                    script {
+                        sh """
+                            cd k8s-deployments
+
+                            # Run the manifest generation script
+                            chmod +x scripts/generate-manifests.sh
+                            ./scripts/generate-manifests.sh
+
+                            # List generated manifests
+                            echo "Generated manifests:"
+                            find manifests -name '*.yaml' -type f
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Commit and Push') {
+            steps {
+                container('git') {
+                    script {
+                        sh """
+                            cd k8s-deployments
+
+                            # Check if there are changes to commit
+                            if git diff --quiet manifests/; then
+                                echo "No manifest changes to commit"
+                                exit 0
+                            fi
+
+                            # Stage manifest changes
+                            git add manifests/
+
+                            # Create commit message with details
+                            CUE_FILES=\$(git diff --cached --name-only HEAD~1 -- 'envs/**/*.cue' 'services/**/*.cue' 'k8s/**/*.cue' | tr '\\n' ' ')
+
+                            COMMIT_MSG=\$(cat <<EOF
+chore: regenerate manifests from CUE configuration
+
+Automated manifest generation triggered by CUE changes.
+
+CUE files modified:
+\${CUE_FILES}
+
+Generated by: Jenkins CI (k8s-manifest-generator)
+Build: ${BUILD_URL}
+EOF
+)
+
+                            # Commit the changes
+                            git commit -m "\${COMMIT_MSG}"
+
+                            # Push to origin
+                            BRANCH=\${BRANCH_NAME:-main}
+                            git push http://\${GIT_CREDENTIALS_USR}:\${GIT_CREDENTIALS_PSW}@gitlab.gitlab.svc.cluster.local/example/k8s-deployments.git HEAD:\${BRANCH}
+
+                            echo "Successfully committed and pushed manifest changes to \${BRANCH}"
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Manifest generation completed successfully"
+        }
+        failure {
+            echo "Manifest generation failed"
+        }
+        cleanup {
+            cleanWs()
+        }
+    }
+}

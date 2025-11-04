@@ -1,0 +1,158 @@
+# GitLab Helm Chart Values
+# Using official GitLab Chart: https://gitlab.com/gitlab-org/charts/gitlab
+
+global:
+  # External URL for GitLab
+  hosts:
+    domain: local
+    https: false
+    externalIP:  # Will be set during installation
+    gitlab:
+      name: gitlab.local
+    registry:
+      name: registry.gitlab.local
+
+  # Ingress configuration
+  ingress:
+    enabled: true
+    class: public
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: "0"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+      nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
+    configureCertmanager: false
+    tls:
+      enabled: false
+
+  # Edition - CE (Community Edition)
+  edition: ce
+
+  # Initial root password (will be generated)
+  initialRootPassword: {}
+
+  # Time zone
+  time_zone: UTC
+
+  # GitLab Shell
+  shell:
+    port: 22
+
+# Component-specific configurations
+
+# GitLab Rails (main application)
+gitlab:
+  gitlab-shell:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 1
+
+  webservice:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 1
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+
+  sidekiq:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 1
+    resources:
+      requests:
+        cpu: 250m
+        memory: 1Gi
+      limits:
+        cpu: 1
+        memory: 2Gi
+
+  gitaly:
+    enabled: true
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+# PostgreSQL database
+postgresql:
+  install: true
+  image:
+    tag: 14.10
+  auth:
+    username: gitlab
+    password: gitlab
+    database: gitlabhq_production
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 1Gi
+
+# Redis cache
+redis:
+  install: true
+  architecture: standalone
+  auth:
+    enabled: true
+    password: gitlab
+  master:
+    persistence:
+      enabled: true
+      size: 5Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+# Container Registry (we're using Nexus instead, so disable)
+registry:
+  enabled: false
+
+# Prometheus monitoring (disable for lightweight setup)
+prometheus:
+  install: false
+
+# Grafana monitoring (disable for lightweight setup)
+grafana:
+  enabled: false
+
+# Nginx ingress (using MicroK8s ingress instead)
+nginx-ingress:
+  enabled: false
+
+# Cert-manager (not needed for local setup)
+certmanager:
+  install: false
+
+# GitLab Runner (will be configured separately)
+gitlab-runner:
+  install: false
+
+# Shared settings
+shared-secrets:
+  enabled: true
+  rbac:
+    create: true
+
+# MinIO (S3-compatible storage - disable, using local storage)
+minio:
+  enabled: false

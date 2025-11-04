@@ -36,10 +36,3 @@ Thumbs.db
 *.bak
 *.swp
 *~
-
-# Nested git repositories (for CI/CD demo with gitlab.local)
-# These directories have their own .git folders that point to gitlab.local
-# The root repo tracks their source code but ignores their git metadata
-example-app/.git/
-k8s-deployments/.git/
-argocd/.git/

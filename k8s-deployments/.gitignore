@@ -1,0 +1,19 @@
+# Generated manifests (tracked but good to have in gitignore for local testing)
+# manifests/**/*.yaml
+
+# CUE build artifacts
+*.tmp
+*.bak
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*~
+*.swp

@@ -1,0 +1,150 @@
+apiVersion: v1
+data:
+  feature-flags: experimental-features=true
+  log-level: debug
+  redis-url: redis://redis.dev.svc.cluster.local:6379
+kind: ConfigMap
+metadata:
+  labels:
+    app: example-app
+    deployment: example-app
+    environment: dev
+    managed_by: argocd
+  name: example-app-config
+  namespace: dev
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    description: Debug service for remote debugging
+  labels:
+    app: example-app
+    deployment: example-app
+    environment: dev
+    managed_by: argocd
+  name: example-app-debug
+  namespace: dev
+spec:
+  ports:
+    - name: debug
+      port: 5005
+      protocol: TCP
+      targetPort: 5005
+  selector:
+    app: example-app
+    component: backend
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: example-app
+    deployment: example-app
+    environment: dev
+    managed_by: argocd
+  name: example-app
+  namespace: dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: example-app
+      deployment: example-app
+      environment: dev
+      managed_by: argocd
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: example-app
+        deployment: example-app
+        environment: dev
+        managed_by: argocd
+    spec:
+      containers:
+        - env:
+            - name: DEBUG
+              value: "yes"
+            - name: QUARKUS_HTTP_PORT
+              value: "8080"
+            - name: QUARKUS_LOG_CONSOLE_ENABLE
+              value: "true"
+            - name: QUARKUS_LOG_LEVEL
+              value: DEBUG
+            - name: ENVIRONMENT
+              value: dev
+          envFrom: []
+          image: docker.local/example/example-app:1.0.0-SNAPSHOT-e020c2f
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /health/live
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          name: example-app
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+            - containerPort: 5005
+              name: debug
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /health/ready
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext: {}
+          volumeMounts:
+            - mountPath: /etc/myapp/config
+              name: config
+              readOnly: true
+      securityContext: {}
+      volumes:
+        - configMap:
+            name: example-app-config
+          name: config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: example-app
+    deployment: example-app
+    environment: dev
+    managed_by: argocd
+  name: example-app
+  namespace: dev
+spec:
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: example-app
+    component: backend
+  sessionAffinity: None
+  type: ClusterIP

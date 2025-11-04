@@ -1,0 +1,120 @@
+# Jenkins Helm Chart Values
+# Using official Jenkins Helm Chart
+
+controller:
+  # Jenkins controller configuration
+  image:
+    registry: docker.io
+    repository: jenkins/jenkins
+    tag: "2.479-jdk17"
+
+  # Admin credentials
+  admin:
+    username: "admin"
+    # Admin password will be auto-generated
+    # Retrieve with: kubectl get secret -n jenkins jenkins -o jsonpath="{.data.jenkins-admin-password}" | base64 --decode
+
+  # Service configuration
+  serviceType: ClusterIP
+  servicePort: 8080
+
+  # Ingress configuration
+  ingress:
+    enabled: true
+    ingressClassName: public
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: "0"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    hostName: jenkins.local
+    path: /
+    pathType: Prefix
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+
+  # Java options
+  javaOpts: "-Xmx1g -Xms512m"
+
+  # Jenkins Configuration as Code (JCasC)
+  JCasC:
+    defaultConfig: true
+    configScripts:
+      welcome-message: |
+        jenkins:
+          systemMessage: "Welcome to the CI/CD Pipeline Demo\n\n"
+      security: |
+        jenkins:
+          securityRealm:
+            local:
+              allowsSignup: false
+          authorizationStrategy:
+            loggedInUsersCanDoAnything:
+              allowAnonymousRead: false
+
+  # Install plugins
+  installPlugins:
+    - kubernetes:4358.v6b_9051ba_aa_87
+    - workflow-aggregator:600.vb_57cdd26fdd7
+    - git:5.7.1
+    - configuration-as-code:1900.v1e167e2b_bd2f
+    - gitlab-plugin:1.9.4
+    - docker-workflow:580.vc0c340686b_54
+    - pipeline-stage-view:2.35
+    - credentials-binding:713.ve4cb_8839a_9c5
+    - job-dsl:1.93
+    - matrix-auth:3.2.4
+    - pipeline-utility-steps:2.17.0
+    - http_request:1.20
+
+  # Additional init scripts
+  initScripts: []
+
+  # Persistent volume
+  persistence:
+    enabled: true
+    size: "8Gi"
+    storageClass: "microk8s-hostpath"
+
+# Agent configuration
+agent:
+  enabled: true
+
+  # Use custom agent image
+  image:
+    repository: "jenkins-agent-custom"
+    tag: "latest"
+
+  # Resource limits for agents
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+
+  # Pod templates will be configured via Jenkins UI or JCasC later
+  podTemplates: {}
+
+# RBAC
+rbac:
+  create: true
+  readSecrets: true
+
+# Service Account
+serviceAccount:
+  create: true
+  name: jenkins
+  annotations: {}
+
+# Persistence for agent workspace
+persistence:
+  enabled: true
+  storageClass: "microk8s-hostpath"
+  size: "10Gi"

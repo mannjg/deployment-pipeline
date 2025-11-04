@@ -1,0 +1,487 @@
+// Production-Ready Jenkinsfile for example-app CI/CD pipeline
+// Refactored for maintainability, reliability, and production best practices
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Updates environment configuration and creates GitLab merge request
+ * @param environment Target environment (dev/stage/prod)
+ * @param branchPrefix Prefix for feature branch name
+ * @param mrTitle Title for the merge request
+ * @param mrDescription Detailed description for the merge request
+ */
+def updateEnvironmentAndCreateMR(String environment, String branchPrefix, String mrTitle, String mrDescription) {
+    container('maven') {
+        script {
+            echo "[${environment.toUpperCase()}] Creating environment update and MR..."
+
+            withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
+                                              usernameVariable: 'GIT_USERNAME',
+                                              passwordVariable: 'GIT_PASSWORD')]) {
+                try {
+                    // Setup git credentials (ephemeral, memory-only)
+                    sh '''
+                        git config --global user.name "Jenkins CI"
+                        git config --global user.email "jenkins@local"
+                        git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
+                    '''
+
+                    // Clone or update deployment repository
+                    sh """
+                        rm -rf k8s-deployments
+                        git clone ${DEPLOYMENT_REPO} k8s-deployments
+                        cd k8s-deployments
+
+                        # Fetch and checkout target environment branch
+                        git fetch origin ${environment}
+                        git checkout ${environment}
+                        git pull origin ${environment}
+
+                        # Create feature branch for this update
+                        FEATURE_BRANCH="${branchPrefix}-\${IMAGE_TAG}"
+                        git checkout -b "\${FEATURE_BRANCH}"
+                    """
+
+                    // Update environment configuration and generate manifests
+                    sh """
+                        cd k8s-deployments
+
+                        # Update image reference in environment CUE file
+                        sed -i 's|image: ".*"|image: "${IMAGE_FOR_DEPLOY}"|' envs/${environment}.cue
+
+                        echo "[${environment.toUpperCase()}] Updated image in envs/${environment}.cue:"
+                        grep 'image:' envs/${environment}.cue
+
+                        # Generate Kubernetes manifests from CUE configuration
+                        ./scripts/generate-manifests.sh ${environment}
+
+                        # Stage all changes (CUE file + generated manifests)
+                        git add envs/${environment}.cue manifests/${environment}/
+
+                        # Commit with metadata
+                        git commit -m "${mrTitle}
+
+Triggered by: \${BUILD_URL}
+Git commit: \${GIT_SHORT_HASH}
+Image: \${FULL_IMAGE}
+
+Auto-generated manifest update for ${environment} environment" || echo "No changes to commit"
+                    """
+
+                    // Push feature branch and create merge request
+                    sh """
+                        cd k8s-deployments
+                        FEATURE_BRANCH="${branchPrefix}-\${IMAGE_TAG}"
+
+                        # Delete remote branch if it exists, then push fresh
+                        git push origin --delete "\${FEATURE_BRANCH}" 2>/dev/null || echo "Branch does not exist remotely"
+                        git push -u origin "\${FEATURE_BRANCH}"
+
+                        # Create MR using GitLab API
+                        export GITLAB_TOKEN="${GITLAB_API_TOKEN}"
+                        export GITLAB_URL="${GITLAB_URL}"
+
+                        ./scripts/create-gitlab-mr.sh \
+                            "\${FEATURE_BRANCH}" \
+                            ${environment} \
+                            "${mrTitle}" \
+                            "${mrDescription}"
+                    """
+
+                    echo "[${environment.toUpperCase()}] ✓ MR created successfully: ${branchPrefix}-${env.IMAGE_TAG} → ${environment}"
+
+                } finally {
+                    // Always cleanup git credentials, even on failure
+                    sh 'git config --global --unset credential.helper || true'
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Creates Maven settings.xml with Nexus credentials
+ */
+def createMavenSettings() {
+    sh """
+        cat > /tmp/maven-settings.xml <<'MAVEN_SETTINGS'
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+  <servers>
+    <server>
+      <id>nexus</id>
+      <username>\${NEXUS_CREDENTIALS_USR}</username>
+      <password>\${NEXUS_CREDENTIALS_PSW}</password>
+    </server>
+  </servers>
+</settings>
+MAVEN_SETTINGS
+    """
+}
+
+// ============================================================================
+// PIPELINE DEFINITION
+// ============================================================================
+
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: maven
+    image: localhost:30500/jenkins-agent-custom:latest
+    command:
+    - cat
+    tty: true
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "2000m"
+    volumeMounts:
+    - name: docker-sock
+      mountPath: /var/run/docker.sock
+  volumes:
+  - name: docker-sock
+    hostPath:
+      path: /var/run/docker.sock
+"""
+        }
+    }
+
+    options {
+        timeout(time: 1, unit: 'HOURS')
+        buildDiscarder(logRotator(numToKeepStr: '10', daysToKeepStr: '30'))
+        disableConcurrentBuilds()
+    }
+
+    parameters {
+        booleanParam(
+            name: 'SKIP_INTEGRATION_TESTS',
+            defaultValue: false,
+            description: 'Skip integration tests to speed up build'
+        )
+        booleanParam(
+            name: 'SKIP_STAGE_PROMOTION',
+            defaultValue: false,
+            description: 'Skip creating stage promotion MR'
+        )
+        booleanParam(
+            name: 'SKIP_PROD_PROMOTION',
+            defaultValue: false,
+            description: 'Skip creating prod promotion MR'
+        )
+    }
+
+    environment {
+        // Application metadata
+        APP_NAME = 'example-app'
+        APP_GROUP = 'example'
+
+        // Registry configuration (internal cluster DNS)
+        DOCKER_REGISTRY = 'nexus.nexus.svc.cluster.local:5000'
+        NEXUS_URL = 'http://nexus.nexus.svc.cluster.local:8081'
+
+        // Git repositories (internal cluster DNS)
+        GITLAB_URL = 'http://gitlab.gitlab.svc.cluster.local'
+        DEPLOYMENT_REPO = "${GITLAB_URL}/example/k8s-deployments.git"
+
+        // Credentials
+        NEXUS_CREDENTIALS = credentials('nexus-credentials')
+        DOCKER_CREDENTIALS = credentials('docker-registry-credentials')
+        GITLAB_CREDENTIALS = credentials('gitlab-credentials')
+        GITLAB_API_TOKEN = credentials('gitlab-api-token-secret')
+
+        // Computed image reference
+        IMAGE_NAME = "${DOCKER_REGISTRY}/${APP_GROUP}/${APP_NAME}"
+    }
+
+    stages {
+        stage('Checkout & Setup') {
+            steps {
+                checkout scm
+                container('maven') {
+                    script {
+                        echo "=== Checkout & Setup ==="
+
+                        // Extract version from pom.xml
+                        env.APP_VERSION = sh(
+                            script: "mvn help:evaluate -Dexpression=project.version -q -DforceStdout",
+                            returnStdout: true
+                        ).trim()
+
+                        // Generate image tag (version + git hash)
+                        env.GIT_SHORT_HASH = sh(
+                            script: "git rev-parse --short HEAD",
+                            returnStdout: true
+                        ).trim()
+
+                        env.IMAGE_TAG = "${env.APP_VERSION}-${env.GIT_SHORT_HASH}"
+
+                        // Validate IMAGE_TAG
+                        if (!env.IMAGE_TAG || env.IMAGE_TAG.contains(' ')) {
+                            error("Invalid IMAGE_TAG generated: '${env.IMAGE_TAG}'")
+                        }
+
+                        env.FULL_IMAGE = "${env.IMAGE_NAME}:${env.IMAGE_TAG}"
+
+                        // Separate registry for deployment manifests (external ingress for kubelet)
+                        env.DEPLOY_REGISTRY = 'docker.local'
+                        env.IMAGE_FOR_DEPLOY = "${env.DEPLOY_REGISTRY}/${env.APP_GROUP}/${env.APP_NAME}:${env.IMAGE_TAG}"
+
+                        echo "✓ Application: ${env.APP_NAME} v${env.APP_VERSION}"
+                        echo "✓ Git commit: ${env.GIT_SHORT_HASH}"
+                        echo "✓ Image tag: ${env.IMAGE_TAG}"
+                        echo "✓ Push target: ${env.FULL_IMAGE}"
+                        echo "✓ Deploy target: ${env.IMAGE_FOR_DEPLOY}"
+                    }
+                }
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                container('maven') {
+                    timeout(time: 15, unit: 'MINUTES') {
+                        echo "=== Running Unit Tests ==="
+                        sh 'mvn clean test'
+                    }
+                }
+            }
+            post {
+                always {
+                    junit '**/target/surefire-reports/*.xml'
+                }
+            }
+        }
+
+        stage('Integration Tests') {
+            when {
+                expression { return !params.SKIP_INTEGRATION_TESTS }
+            }
+            steps {
+                container('maven') {
+                    timeout(time: 20, unit: 'MINUTES') {
+                        echo "=== Running Integration Tests ==="
+                        sh 'mvn verify -DskipITs=false'
+                    }
+                }
+            }
+            post {
+                always {
+                    junit '**/target/failsafe-reports/*.xml'
+                }
+            }
+        }
+
+        stage('Build & Publish') {
+            steps {
+                container('maven') {
+                    script {
+                        timeout(time: 30, unit: 'MINUTES') {
+                            echo "=== Building and Publishing Artifacts ==="
+
+                            // Build and push Docker image with Jib
+                            echo "Building Docker image..."
+                            sh """
+                                mvn clean package \
+                                    -Dquarkus.container-image.build=true \
+                                    -Dquarkus.container-image.push=true \
+                                    -Dquarkus.container-image.registry=${DOCKER_REGISTRY} \
+                                    -Dquarkus.container-image.group=${APP_GROUP} \
+                                    -Dquarkus.container-image.name=${APP_NAME} \
+                                    -Dquarkus.container-image.tag=${IMAGE_TAG} \
+                                    -Dquarkus.container-image.insecure=true \
+                                    -Dquarkus.container-image.username=${DOCKER_CREDENTIALS_USR} \
+                                    -Dquarkus.container-image.password=${DOCKER_CREDENTIALS_PSW} \
+                                    -DsendCredentialsOverHttp=true
+                            """
+
+                            // Publish Maven artifacts to Nexus
+                            echo "Publishing Maven artifacts to Nexus..."
+                            createMavenSettings()
+
+                            sh """
+                                mvn deploy -DskipTests \
+                                    -s /tmp/maven-settings.xml \
+                                    -DaltDeploymentRepository=nexus::default::${NEXUS_URL}/repository/maven-snapshots/
+                            """
+
+                            echo "✓ Published Docker image: ${FULL_IMAGE}"
+                            echo "✓ Published Maven artifact: ${APP_NAME}-${APP_VERSION}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Update Dev Environment') {
+            steps {
+                script {
+                    updateEnvironmentAndCreateMR(
+                        'dev',
+                        'update-dev',
+                        "Deploy ${env.APP_NAME} to dev: ${env.IMAGE_TAG}",
+                        """## Automatic Deployment to Dev
+
+**Application**: ${env.APP_NAME}
+**Image Tag**: ${env.IMAGE_TAG}
+**Build**: ${env.BUILD_URL}
+**Git Commit**: ${env.GIT_SHORT_HASH}
+
+### Changes
+
+This merge request updates the dev environment with the latest build.
+
+**Image**: ${env.FULL_IMAGE}
+
+### Review Checklist
+
+- [ ] Image tag is correct
+- [ ] CUE configuration updated
+- [ ] Manifests regenerated successfully
+- [ ] Ready to deploy to dev
+
+Once merged, ArgoCD will automatically deploy to the dev namespace.
+
+---
+*Generated by Jenkins CI/CD Pipeline*"""
+                    )
+                }
+            }
+        }
+
+        stage('Promote to Stage') {
+            when {
+                expression { return !params.SKIP_STAGE_PROMOTION }
+            }
+            steps {
+                script {
+                    updateEnvironmentAndCreateMR(
+                        'stage',
+                        'promote-stage',
+                        "Promote ${env.APP_NAME} to stage: ${env.IMAGE_TAG}",
+                        """## Automatic Promotion from Dev
+
+**Application**: ${env.APP_NAME}
+**Image Tag**: ${env.IMAGE_TAG}
+**Build**: ${env.BUILD_URL}
+**Git Commit**: ${env.GIT_SHORT_HASH}
+
+### Changes
+
+This merge request updates the stage environment with the image currently deployed in dev.
+
+**Image**: ${env.FULL_IMAGE}
+
+### Testing
+
+- ✅ Unit tests passed
+- ✅ ${params.SKIP_INTEGRATION_TESTS ? 'Integration tests skipped' : 'Integration tests passed'}
+- ✅ Build successful
+- ✅ Deployed to dev environment
+
+### Deployment
+
+Once this MR is merged, ArgoCD will automatically deploy to the stage namespace.
+
+---
+*Generated by Jenkins CI/CD Pipeline*"""
+                    )
+                }
+            }
+        }
+
+        stage('Promote to Prod') {
+            when {
+                expression { return !params.SKIP_PROD_PROMOTION }
+            }
+            steps {
+                script {
+                    updateEnvironmentAndCreateMR(
+                        'prod',
+                        'promote-prod',
+                        "Promote ${env.APP_NAME} to prod: ${env.IMAGE_TAG}",
+                        """## Automatic Promotion from Stage
+
+**Application**: ${env.APP_NAME}
+**Image Tag**: ${env.IMAGE_TAG}
+**Build**: ${env.BUILD_URL}
+**Git Commit**: ${env.GIT_SHORT_HASH}
+
+### Changes
+
+This merge request updates the prod environment with the image currently deployed in stage.
+
+**Image**: ${env.FULL_IMAGE}
+
+### Testing
+
+- ✅ Unit tests passed
+- ✅ ${params.SKIP_INTEGRATION_TESTS ? 'Integration tests skipped' : 'Integration tests passed'}
+- ✅ Build successful
+- ✅ Deployed to dev environment
+- ✅ Promoted to stage environment
+
+### Deployment
+
+Once this MR is merged, ArgoCD will automatically deploy to the prod namespace.
+
+⚠️ **Production Deployment** - Please review carefully before merging.
+
+---
+*Generated by Jenkins CI/CD Pipeline*"""
+                    )
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo """
+=======================================================
+✓ PIPELINE COMPLETED SUCCESSFULLY
+=======================================================
+Application: ${env.APP_NAME}
+Version: ${env.APP_VERSION}
+Git Commit: ${env.GIT_SHORT_HASH}
+Image: ${env.FULL_IMAGE}
+Build URL: ${env.BUILD_URL}
+=======================================================
+"""
+        }
+        failure {
+            echo """
+=======================================================
+✗ PIPELINE FAILED
+=======================================================
+Application: ${env.APP_NAME}
+Build URL: ${env.BUILD_URL}
+Check logs above for error details
+=======================================================
+"""
+        }
+        always {
+            container('maven') {
+                script {
+                    // Cleanup temporary files and credentials
+                    sh '''
+                        echo "Performing cleanup..."
+                        git config --global --unset credential.helper || true
+                        rm -rf k8s-deployments || true
+                        rm -f /tmp/maven-settings.xml || true
+                        echo "✓ Cleanup completed"
+                    '''
+                }
+            }
+        }
+    }
+}

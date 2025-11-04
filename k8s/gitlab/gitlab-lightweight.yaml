@@ -1,0 +1,198 @@
+---
+# GitLab Lightweight Deployment
+# Using official GitLab CE Docker image
+# Suitable for local development and testing
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitlab-config
+  namespace: gitlab
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitlab-logs
+  namespace: gitlab
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitlab-data
+  namespace: gitlab
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitlab-config
+  namespace: gitlab
+data:
+  GITLAB_OMNIBUS_CONFIG: |
+    external_url 'http://gitlab.local'
+    gitlab_rails['gitlab_shell_ssh_port'] = 2222
+
+    # Disable HTTPS
+    nginx['listen_https'] = false
+
+    # PostgreSQL settings
+    postgresql['shared_buffers'] = "256MB"
+
+    # Disable unused services for lightweight setup
+    prometheus_monitoring['enable'] = false
+    grafana['enable'] = false
+    alertmanager['enable'] = false
+
+    # Container registry (disabled - using Nexus)
+    registry['enable'] = false
+
+    # GitLab Pages (disabled)
+    pages_external_url = nil
+    gitlab_pages['enable'] = false
+
+    # Reduce worker processes for single-user setup
+    puma['worker_processes'] = 2
+    sidekiq['max_concurrency'] = 10
+
+    # Time zone
+    gitlab_rails['time_zone'] = 'UTC'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitlab
+  namespace: gitlab
+  labels:
+    app: gitlab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitlab
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: gitlab
+    spec:
+      hostname: gitlab
+      containers:
+      - name: gitlab
+        image: gitlab/gitlab-ce:16.9.0-ce.0
+        ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+        - name: ssh
+          containerPort: 22
+          protocol: TCP
+        env:
+        - name: GITLAB_OMNIBUS_CONFIG
+          valueFrom:
+            configMapKeyRef:
+              name: gitlab-config
+              key: GITLAB_OMNIBUS_CONFIG
+        - name: GITLAB_ROOT_PASSWORD
+          value: "changeme123"  # Will be changed on first login
+        - name: GITLAB_SHARED_RUNNERS_REGISTRATION_TOKEN
+          value: "gitlab-runner-token"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/gitlab
+        - name: logs
+          mountPath: /var/log/gitlab
+        - name: data
+          mountPath: /var/opt/gitlab
+        resources:
+          requests:
+            cpu: 1
+            memory: 4Gi
+          limits:
+            cpu: 2
+            memory: 8Gi
+        livenessProbe:
+          httpGet:
+            path: /help
+            port: 80
+          initialDelaySeconds: 200
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /help
+            port: 80
+          initialDelaySeconds: 180
+          periodSeconds: 10
+          timeoutSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: gitlab-config
+      - name: logs
+        persistentVolumeClaim:
+          claimName: gitlab-logs
+      - name: data
+        persistentVolumeClaim:
+          claimName: gitlab-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitlab
+  namespace: gitlab
+  labels:
+    app: gitlab
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  - name: ssh
+    port: 22
+    targetPort: 22
+    protocol: TCP
+  selector:
+    app: gitlab
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gitlab
+  namespace: gitlab
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
+spec:
+  ingressClassName: public
+  rules:
+  - host: gitlab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: gitlab
+            port:
+              number: 80

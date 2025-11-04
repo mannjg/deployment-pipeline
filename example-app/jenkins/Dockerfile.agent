@@ -1,0 +1,111 @@
+# Custom Jenkins Agent Image
+# Includes: JDK 21, Maven, Docker CLI, CUE CLI
+
+FROM jenkins/inbound-agent:latest-jdk17 as base
+
+USER root
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    git \
+    unzip \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install OpenJDK 21
+RUN mkdir -p /opt/java && \
+    cd /opt/java && \
+    wget -q https://download.oracle.com/java/21/latest/jdk-21_linux-x64_bin.tar.gz && \
+    tar -xzf jdk-21_linux-x64_bin.tar.gz && \
+    rm jdk-21_linux-x64_bin.tar.gz && \
+    mv jdk-21.* jdk-21
+
+# Set JAVA_HOME for JDK 21
+ENV JAVA_HOME=/opt/java/jdk-21
+ENV PATH=$JAVA_HOME/bin:$PATH
+
+# Verify Java installation
+RUN java -version
+
+# Install Maven 3.9.6
+ARG MAVEN_VERSION=3.9.6
+RUN mkdir -p /opt/maven && \
+    cd /opt/maven && \
+    wget -q https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
+    tar -xzf apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
+    rm apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
+    mv apache-maven-${MAVEN_VERSION} maven-${MAVEN_VERSION}
+
+ENV MAVEN_HOME=/opt/maven/maven-${MAVEN_VERSION}
+ENV PATH=$MAVEN_HOME/bin:$PATH
+
+# Verify Maven installation
+RUN mvn --version
+
+# Install Docker CLI
+RUN mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+      $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    apt-get update && \
+    apt-get install -y docker-ce-cli docker-buildx-plugin && \
+    rm -rf /var/lib/apt/lists/*
+
+# Verify Docker CLI installation
+RUN docker --version
+
+# Install CUE CLI
+ARG CUE_VERSION=v0.14.2
+RUN cd /tmp && \
+    wget -q https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/cue_${CUE_VERSION}_linux_amd64.tar.gz && \
+    tar -xzf cue_${CUE_VERSION}_linux_amd64.tar.gz && \
+    mv cue /usr/local/bin/cue && \
+    chmod +x /usr/local/bin/cue && \
+    rm cue_${CUE_VERSION}_linux_amd64.tar.gz
+
+# Verify CUE installation
+RUN cue version
+
+# Install kubectl (for deployment automation)
+RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+    install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && \
+    rm kubectl
+
+# Verify kubectl installation
+RUN kubectl version --client
+
+# Install yq (for YAML processing)
+ARG YQ_VERSION=v4.44.1
+RUN cd /tmp && \
+    wget -q https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64 && \
+    mv yq_linux_amd64 /usr/local/bin/yq && \
+    chmod +x /usr/local/bin/yq
+
+# Verify yq installation
+RUN yq --version
+
+# Create Maven local repository directory
+RUN mkdir -p /home/jenkins/.m2/repository && \
+    chown -R jenkins:jenkins /home/jenkins/.m2
+
+# Switch back to jenkins user
+USER jenkins
+
+# Set working directory
+WORKDIR /home/jenkins
+
+# Display installed versions
+RUN echo "=== Installed Software ===" && \
+    echo "Java: $(java -version 2>&1 | head -1)" && \
+    echo "Maven: $(mvn --version | head -1)" && \
+    echo "Docker: $(docker --version)" && \
+    echo "CUE: $(cue version)" && \
+    echo "kubectl: $(kubectl version --client --short 2>/dev/null || kubectl version --client)" && \
+    echo "yq: $(yq --version)"
+
+CMD ["/usr/local/bin/jenkins-agent"]
