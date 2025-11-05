@@ -30,10 +30,6 @@ exampleApp: core.#App & {
 			name: "REDIS_TIMEOUT_SECONDS"
 			value: "5"
 		},
-		{
-			name: "FEATURE_ENHANCED_LOGGING"
-			value: "enabled"
-		},
 	]
 
 	// Application-level configuration
