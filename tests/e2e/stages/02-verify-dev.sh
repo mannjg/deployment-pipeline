@@ -88,8 +88,38 @@ stage_02_verify_dev() {
         return 1
     fi
 
+    # Wait for rollout to complete to ensure new pods are fully deployed
+    log_info "Waiting for deployment rollout to complete..."
+    if ! $kubectl_cmd rollout status deployment/"${DEPLOYMENT_NAME}" -n dev --timeout=300s; then
+        log_error "Deployment rollout did not complete within timeout"
+        return 1
+    fi
+    log_pass "Deployment rollout completed successfully"
+
+    # Verify the deployed image matches the expected image from Jenkins
+    if [ -f "${E2E_STATE_DIR}/expected_image.txt" ]; then
+        local expected_image
+        expected_image=$(cat "${E2E_STATE_DIR}/expected_image.txt")
+
+        local actual_image
+        actual_image=$($kubectl_cmd get deployment "${DEPLOYMENT_NAME}" -n dev -o jsonpath='{.spec.template.spec.containers[0].image}')
+
+        log_info "Expected image: $expected_image"
+        log_info "Actual image:   $actual_image"
+
+        if [ "$actual_image" = "$expected_image" ]; then
+            log_pass "Deployed image matches expected version"
+        else
+            log_error "Image mismatch! Expected: $expected_image, Got: $actual_image"
+            log_error "The deployment may not have updated to the new version"
+            return 1
+        fi
+    else
+        log_warn "No expected image file found - skipping image verification"
+    fi
+
     # Verify the deployed version (if version is exposed)
-    if [ -n "${VERSION_CHECK_COMMAND}" ]; then
+    if [ -n "${VERSION_CHECK_COMMAND:-}" ]; then
         log_info "Checking deployed version..."
 
         local deployed_version
@@ -106,7 +136,7 @@ stage_02_verify_dev() {
     fi
 
     # Verify application responds to health check (if configured)
-    if [ -n "${DEV_HEALTH_ENDPOINT}" ]; then
+    if [ -n "${DEV_HEALTH_ENDPOINT:-}" ]; then
         log_info "Checking application health endpoint..."
 
         local health_status
