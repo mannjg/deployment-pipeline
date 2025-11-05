@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../../../k8s-deployments/tests/lib/common.sh"
 source "$SCRIPT_DIR/../lib/git-operations.sh"
 source "$SCRIPT_DIR/../lib/jenkins-api.sh"
+source "$SCRIPT_DIR/../lib/gitlab-api.sh"
 
 # Load E2E configuration
 if [ -f "$SCRIPT_DIR/../config/e2e-config.sh" ]; then
@@ -90,13 +91,29 @@ stage_01_trigger_build() {
     test_version="e2e-test-$(date +%Y%m%d-%H%M%S)"
 
     if [ "${TEST_REPO}" = "example-app" ]; then
-        # For example-app, modify pom.xml or create a benign test file
+        # For example-app, bump the Maven version to trigger a new Docker image build
         log_info "Creating application code change..."
-        local test_file="src/test/resources/e2e-test-marker.txt"
-        mkdir -p "$(dirname "$test_file")"
-        echo "E2E Test Marker - ${test_version}" > "$test_file"
-        git add "$test_file"
-        git commit -m "E2E test: Add test marker ${test_version}"
+
+        # Generate unique version with timestamp
+        local new_version="1.2.0-e2e-$(date +%Y%m%d%H%M%S)"
+
+        # Update pom.xml version using Maven
+        if [ -f "pom.xml" ]; then
+            log_info "Bumping Maven version to: ${new_version}"
+
+            # Use Maven versions plugin to set version (more robust than sed)
+            if mvn versions:set -DnewVersion="${new_version}" -DgenerateBackupPoms=false -q 2>&1 | grep -v "^\[" | grep -v "^$" | head -20; then
+                log_pass "Maven version updated successfully"
+            else
+                log_warn "Maven command produced output (may be normal)"
+            fi
+
+            git add pom.xml
+            git commit -m "E2E test: Bump version to ${new_version}"
+        else
+            log_error "pom.xml not found"
+            return 1
+        fi
     else
         # For k8s-deployments, use version bump
         log_info "Creating configuration change..."
@@ -148,32 +165,56 @@ stage_01_trigger_build() {
     echo "$dev_commit_sha" > "${E2E_STATE_DIR}/dev_commit_sha.txt"
     log_pass "Dev branch updated: $dev_commit_sha"
 
-    # Trigger Jenkins build
-    log_info "Triggering Jenkins build..."
+    # Trigger SCM poll to ensure Jenkins has latest commits
+    log_info "Triggering Jenkins SCM poll to fetch latest commits..."
+    
+    # Check Jenkins is accessible
     check_jenkins_api || {
         log_error "Jenkins API not accessible"
         return 1
     }
-
-    local build_params=""
-    if [ -n "${JENKINS_BUILD_PARAMS}" ]; then
-        build_params="${JENKINS_BUILD_PARAMS}"
+    
+    # Trigger SCM poll via Jenkins API
+    local jenkins_url
+    jenkins_url=$(get_jenkins_api_url)
+    
+    local poll_response
+    poll_response=$(curl -s -w "
+%{http_code}" \
+        --user "${JENKINS_USER}:${JENKINS_TOKEN}" \
+        --request POST \
+        "${jenkins_url}/job/${JENKINS_JOB_NAME}/polling" 2>&1)
+    
+    local poll_code
+    poll_code=$(echo "$poll_response" | tail -n1)
+    
+    if [ "$poll_code" = "200" ] || [ "$poll_code" = "201" ]; then
+        log_pass "SCM poll triggered successfully"
+    else
+        log_warn "SCM poll trigger returned HTTP $poll_code (may not be supported)"
     fi
-
+    
+    # Wait for SCM poll to complete and fetch latest commits
+    log_info "Waiting for Jenkins to fetch latest commits..."
+    sleep 10
+    
+    # Now manually trigger build with latest commits
+    log_info "Triggering Jenkins build..."
     local queue_item
-    if [ -n "$build_params" ]; then
-        queue_item=$(trigger_jenkins_build "${JENKINS_JOB_NAME}" "$build_params")
+    if [ -n "${JENKINS_BUILD_PARAMS:-}" ]; then
+        # Pass parameters as separate arguments (word splitting intentional)
+        queue_item=$(trigger_jenkins_build "${JENKINS_JOB_NAME}" $JENKINS_BUILD_PARAMS)
     else
         queue_item=$(trigger_jenkins_build "${JENKINS_JOB_NAME}")
     fi
-
+    
     if [ $? -ne 0 ]; then
         log_error "Failed to trigger Jenkins build"
         return 1
     fi
-
+    
     # Wait for build to start and get build number
-    local build_number
+    local build_number=""
     if [ -n "$queue_item" ]; then
         log_info "Waiting for build to start (queue item: $queue_item)..."
         build_number=$(get_build_number_from_queue "$queue_item" 120)
@@ -182,7 +223,7 @@ stage_01_trigger_build() {
         sleep 10
         build_number=$(get_latest_build_number "${JENKINS_JOB_NAME}")
     fi
-
+    
     if [ -z "$build_number" ] || [ "$build_number" = "null" ]; then
         log_error "Could not determine build number"
         return 1
@@ -205,6 +246,173 @@ stage_01_trigger_build() {
         get_build_console_output "${JENKINS_JOB_NAME}" "$build_number" 50
 
         return 1
+    fi
+
+    # If testing example-app, merge the Jenkins-created MR in k8s-deployments
+    if [ "${TEST_REPO}" = "example-app" ]; then
+        log_info "Looking for Jenkins-created MR in k8s-deployments..."
+
+        # k8s-deployments project ID in GitLab
+        local k8s_project_id="${K8S_DEPLOYMENTS_PROJECT_ID:-2}"
+
+        # Wait a moment for Jenkins to create the MR
+        sleep 5
+
+        # Get the expected image tag from Jenkins console output
+        local expected_image
+        expected_image=$(get_build_console_output "${JENKINS_JOB_NAME}" "$build_number" 300 | \
+            grep "Deploy image:" | tail -1 | sed 's/.*Deploy image: //' | tr -d '\r')
+
+        if [ -n "$expected_image" ]; then
+            log_pass "Expected image: $expected_image"
+            echo "$expected_image" > "${E2E_STATE_DIR}/expected_image.txt"
+        else
+            log_warn "Could not determine expected image from Jenkins output"
+        fi
+
+        # Get the most recent open MR targeting dev branch
+        local jenkins_mr_iid
+        jenkins_mr_iid=$(curl -s --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+            "${GITLAB_URL}/api/v4/projects/${k8s_project_id}/merge_requests?state=opened&target_branch=dev&per_page=1" | \
+            jq -r '.[0].iid' 2>/dev/null)
+
+        if [ -n "$jenkins_mr_iid" ] && [ "$jenkins_mr_iid" != "null" ]; then
+            log_pass "Found Jenkins MR !${jenkins_mr_iid}"
+            echo "$jenkins_mr_iid" > "${E2E_STATE_DIR}/jenkins_mr_iid.txt"
+
+            # Approve the MR
+            log_info "Approving MR !${jenkins_mr_iid}..."
+            approve_merge_request "$k8s_project_id" "$jenkins_mr_iid" || {
+                log_warn "Failed to approve MR (may not require approval)"
+            }
+
+            # Merge the MR
+            log_info "Merging MR !${jenkins_mr_iid}..."
+            if merge_merge_request "$k8s_project_id" "$jenkins_mr_iid"; then
+                log_pass "Jenkins MR merged successfully"
+
+                # Wait for merge to complete
+                if wait_for_merge "$k8s_project_id" "$jenkins_mr_iid" 60; then
+                    log_pass "MR merge confirmed"
+
+                    # Force ArgoCD to refresh and sync immediately to avoid waiting for git poll interval
+                    log_info "Forcing ArgoCD refresh for dev environment..."
+                    if kubectl patch application "${ARGOCD_APP_PREFIX}-dev" -n argocd --type merge \
+                        -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}' 2>/dev/null; then
+                        log_pass "ArgoCD refresh triggered for dev"
+                    else
+                        log_warn "Failed to trigger ArgoCD refresh (may require manual sync)"
+                    fi
+                else
+                    log_error "MR merge confirmation timeout"
+                    return 1
+                fi
+            else
+                # Merge failed - likely conflicts, try to rebase and retry
+                log_warn "Failed to merge Jenkins MR (may have conflicts), attempting to resolve..."
+
+                # Navigate to k8s-deployments
+                local deployment_pipeline_root
+                deployment_pipeline_root="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+                local k8s_repo_path="${deployment_pipeline_root}/${K8S_DEPLOYMENTS_PATH}"
+
+                if [ -d "$k8s_repo_path" ]; then
+                    cd "$k8s_repo_path" || return 1
+
+                    # Fetch latest
+                    git fetch origin || true
+
+                    # Get MR source branch name
+                    local mr_source_branch
+                    mr_source_branch=$(curl -s --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                        "${GITLAB_URL}/api/v4/projects/${k8s_project_id}/merge_requests/${jenkins_mr_iid}" | \
+                        jq -r '.source_branch')
+
+                    if [ -n "$mr_source_branch" ] && [ "$mr_source_branch" != "null" ]; then
+                        log_info "Rebasing MR branch $mr_source_branch onto latest dev..."
+
+                        # Stash any local changes that might interfere
+                        if ! git diff --quiet || ! git diff --cached --quiet; then
+                            log_info "Stashing local changes..."
+                            git stash push -m "E2E test: temporary stash before rebase" || true
+                        fi
+
+                        # Checkout the MR's source branch
+                        git checkout "$mr_source_branch" 2>&1 || git checkout -b "$mr_source_branch" "origin/$mr_source_branch" 2>&1 || {
+                            log_error "Failed to checkout MR branch"
+                            return 1
+                        }
+
+                        # Rebase onto latest dev
+                        if git rebase "origin/${DEV_BRANCH}" 2>&1; then
+                            log_pass "Rebase successful"
+
+                            # Push the rebased branch
+                            git push -f origin "$mr_source_branch" 2>&1 || {
+                                log_error "Failed to push rebased branch"
+                                return 1
+                            }
+
+                            log_pass "Rebased branch pushed, retrying merge..."
+
+                            # Wait for GitLab to process the push
+                            sleep 5
+
+                            # Retry the merge
+                            if merge_merge_request "$k8s_project_id" "$jenkins_mr_iid"; then
+                                log_pass "Jenkins MR merged successfully after rebase"
+
+                                if wait_for_merge "$k8s_project_id" "$jenkins_mr_iid" 60; then
+                                    log_pass "MR merge confirmed"
+                                else
+                                    log_error "MR merge confirmation timeout"
+                                    return 1
+                                fi
+                            else
+                                # Merge still failed - check if changes are already in target
+                                log_warn "Failed to merge MR even after rebase, checking if changes already applied..."
+
+                                # Check if expected image is already in dev manifests
+                                local manifest_image=""
+                                if [ -f "manifests/dev/example-app.yaml" ]; then
+                                    manifest_image=$(git show "origin/${DEV_BRANCH}:manifests/dev/example-app.yaml" 2>/dev/null | grep "image:" | awk '{print $2}' || echo "")
+                                fi
+
+                                if [ -n "$manifest_image" ] && [ "$manifest_image" = "$expected_image" ]; then
+                                    log_pass "Dev branch already contains expected image: $expected_image"
+                                    log_info "Closing stale MR !${jenkins_mr_iid} since changes are already applied"
+
+                                    # Close the MR since changes are already applied
+                                    curl -s --request PUT \
+                                        --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                                        --header "Content-Type: application/json" \
+                                        --data '{"state_event": "close"}' \
+                                        "${GITLAB_URL}/api/v4/projects/${k8s_project_id}/merge_requests/${jenkins_mr_iid}" >/dev/null
+
+                                    log_pass "Changes already in dev, continuing with test"
+                                else
+                                    log_error "Manifest image ($manifest_image) doesn't match expected ($expected_image)"
+                                    log_error "Failed to merge MR and changes are not in dev"
+                                    return 1
+                                fi
+                            fi
+                        else
+                            log_error "Rebase failed, conflicts may require manual resolution"
+                            git rebase --abort 2>&1 || true
+                            return 1
+                        fi
+                    else
+                        log_error "Could not determine MR source branch"
+                        return 1
+                    fi
+                else
+                    log_error "k8s-deployments path not found"
+                    return 1
+                fi
+            fi
+        else
+            log_warn "No open MR found in k8s-deployments (Jenkins may not have created one yet)"
+        fi
     fi
 
     echo

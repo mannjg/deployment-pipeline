@@ -148,6 +148,15 @@ This is an automated test merge request. It will be automatically merged and can
         return 1
     }
 
+    # Force ArgoCD to refresh and sync immediately to avoid waiting for git poll interval
+    log_info "Forcing ArgoCD refresh for prod environment..."
+    if kubectl patch application "${ARGOCD_APP_PREFIX}-prod" -n argocd --type merge \
+        -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}' 2>/dev/null; then
+        log_pass "ArgoCD refresh triggered for prod"
+    else
+        log_warn "Failed to trigger ArgoCD refresh (may require manual sync)"
+    fi
+
     # Get the merged commit SHA
     local prod_commit
     prod_commit=$(get_branch_commit "$project_id" "${PROD_BRANCH}")

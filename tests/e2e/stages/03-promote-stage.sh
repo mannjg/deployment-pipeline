@@ -36,24 +36,25 @@ stage_03_promote_stage() {
         return 1
     }
 
-    # Get GitLab project ID
-    log_info "Getting GitLab project ID..."
-    local project_id
-    project_id=$(get_gitlab_project_id)
+    # Use k8s-deployments project ID from GitLab
+    # Stages 3-6 promote between branches within k8s-deployments repository
+    local project_id="${K8S_DEPLOYMENTS_PROJECT_ID:-2}"
+    log_pass "Using k8s-deployments project ID: $project_id"
+    echo "$project_id" > "${E2E_STATE_DIR}/gitlab_project_id.txt"
 
-    if [ -z "$project_id" ]; then
-        log_error "Could not determine GitLab project ID"
+    # Navigate to k8s-deployments repository
+    log_info "Fetching latest changes from k8s-deployments..."
+    local deployment_pipeline_root
+    deployment_pipeline_root="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+    local k8s_repo_path="${deployment_pipeline_root}/${K8S_DEPLOYMENTS_PATH}"
+
+    if [ ! -d "$k8s_repo_path/.git" ]; then
+        log_error "k8s-deployments repository not found: $k8s_repo_path"
         return 1
     fi
 
-    log_pass "GitLab project ID: $project_id"
-    echo "$project_id" > "${E2E_STATE_DIR}/gitlab_project_id.txt"
-
-    # Fetch latest changes
-    log_info "Fetching latest changes..."
-    local repo_root
-    repo_root=$(get_repo_root)
-    cd "$repo_root" || return 1
+    cd "$k8s_repo_path" || return 1
+    log_info "Working in: $(pwd)"
 
     fetch_remote origin || {
         log_error "Failed to fetch from remote"
@@ -132,6 +133,15 @@ This is an automated test merge request. It will be automatically merged and can
         log_error "Timeout waiting for MR to merge"
         return 1
     }
+
+    # Force ArgoCD to refresh and sync immediately to avoid waiting for git poll interval
+    log_info "Forcing ArgoCD refresh for stage environment..."
+    if kubectl patch application "${ARGOCD_APP_PREFIX}-stage" -n argocd --type merge \
+        -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}' 2>/dev/null; then
+        log_pass "ArgoCD refresh triggered for stage"
+    else
+        log_warn "Failed to trigger ArgoCD refresh (may require manual sync)"
+    fi
 
     # Get the merged commit SHA
     local stage_commit
