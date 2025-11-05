@@ -65,7 +65,7 @@ spec:
     spec:
       containers:
         - name: example-app
-          image: docker.local/example/example-app:1.2.0-SNAPSHOT-0ccf124
+          image: docker.local/example/example-app:1.2.0-e2e-20251104192756-4c2001f
           env:
             - name: DEBUG
               value: "yes"
@@ -77,8 +77,6 @@ spec:
               value: redis://redis.cache.svc.cluster.local:6379
             - name: REDIS_TIMEOUT_SECONDS
               value: "5"
-            - name: FEATURE_ENHANCED_LOGGING
-              value: enabled
             - name: QUARKUS_LOG_LEVEL
               value: DEBUG
             - name: ENVIRONMENT
