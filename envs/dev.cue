@@ -22,7 +22,7 @@ dev: exampleApp: apps.exampleApp & {
 		// Deployment configuration
 		deployment: {
 			// Image will be updated by CI/CD pipeline
-			image: "docker.local/example/example-app:1.2.0-e2e-20251105052730-e257157"
+			image: "docker.local/example/example-app:1.2.0-e2e-20251105054410-2d3cfdd"
 
 			// Lower replicas in dev
 			replicas: 1
