@@ -106,7 +106,7 @@ stage_06_verify_prod() {
     fi
 
     # Verify application responds to health check (if configured)
-    if [ -n "${PROD_HEALTH_ENDPOINT}" ]; then
+    if [ -n "${PROD_HEALTH_ENDPOINT:-}" ]; then
         log_info "Checking application health endpoint..."
 
         local health_status

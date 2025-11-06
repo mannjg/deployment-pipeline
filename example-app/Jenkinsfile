@@ -376,10 +376,20 @@ spec:
                             echo "Publishing Maven artifacts to Nexus..."
                             createMavenSettings()
 
+                            // Determine repository based on version type
+                            def repoPath
+                            if (env.APP_VERSION.endsWith('-SNAPSHOT')) {
+                                repoPath = 'maven-snapshots'
+                                echo "Deploying SNAPSHOT version to maven-snapshots repository"
+                            } else {
+                                repoPath = 'maven-releases'
+                                echo "Deploying release version to maven-releases repository"
+                            }
+
                             sh """
                                 mvn deploy -DskipTests \
                                     -s /tmp/maven-settings.xml \
-                                    -DaltDeploymentRepository=nexus::default::${NEXUS_URL}/repository/maven-snapshots/
+                                    -DaltDeploymentRepository=nexus::default::${NEXUS_URL}/repository/${repoPath}/
                             """
 
                             echo "✓ Published Docker image: ${FULL_IMAGE}"

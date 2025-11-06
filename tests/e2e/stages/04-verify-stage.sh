@@ -89,7 +89,7 @@ stage_04_verify_stage() {
     fi
 
     # Verify the deployed version (if version is exposed)
-    if [ -n "${VERSION_CHECK_COMMAND}" ]; then
+    if [ -n "${VERSION_CHECK_COMMAND:-}" ]; then
         log_info "Checking deployed version..."
 
         local deployed_version
@@ -106,7 +106,7 @@ stage_04_verify_stage() {
     fi
 
     # Verify application responds to health check (if configured)
-    if [ -n "${STAGE_HEALTH_ENDPOINT}" ]; then
+    if [ -n "${STAGE_HEALTH_ENDPOINT:-}" ]; then
         log_info "Checking application health endpoint..."
 
         local health_status

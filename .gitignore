@@ -43,3 +43,7 @@ Thumbs.db
 example-app/.git/
 k8s-deployments/.git/
 argocd/.git/
+
+# E2E test state directories (keep only .gitkeep)
+tests/e2e/state/*
+!tests/e2e/state/.gitkeep

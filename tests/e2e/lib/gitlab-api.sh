@@ -49,18 +49,69 @@ create_merge_request() {
     local api_url
     api_url=$(get_gitlab_api_url)
 
+    # Check if MR already exists
+    log_debug "Checking for existing open MRs..."
+    local existing_mrs
+    existing_mrs=$(curl -s \
+        --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+        "${api_url}/projects/${project_id}/merge_requests?state=opened&source_branch=${source_branch}&target_branch=${target_branch}")
+
+    local existing_mr_count
+    existing_mr_count=$(echo "$existing_mrs" | jq '. | length' 2>/dev/null || echo "0")
+
+    if [ "$existing_mr_count" -gt 0 ]; then
+        local mr_iid
+        mr_iid=$(echo "$existing_mrs" | jq -r '.[0].iid')
+
+        log_info "Fetching full details for existing MR !${mr_iid}..."
+
+        # Fetch full MR details to get accurate conflict status
+        local mr_info
+        mr_info=$(curl -s \
+            --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+            "${api_url}/projects/${project_id}/merge_requests/${mr_iid}")
+
+        local has_conflicts
+        has_conflicts=$(echo "$mr_info" | jq -r '.has_conflicts')
+        local merge_status
+        merge_status=$(echo "$mr_info" | jq -r '.merge_status')
+
+        log_info "Found existing MR !${mr_iid}: has_conflicts=$has_conflicts, merge_status=$merge_status"
+
+        # Close MR if: has conflicts, cannot be merged, or still checking (to avoid waiting for potential conflicts)
+        if [ "$has_conflicts" = "true" ] || [ "$merge_status" = "cannot_be_merged" ] || [ "$merge_status" = "checking" ]; then
+            log_warn "Existing MR !${mr_iid} cannot be safely reused (has_conflicts=$has_conflicts, merge_status=$merge_status)"
+            log_info "Closing MR and creating a new one..."
+            close_merge_request "$project_id" "$mr_iid" 2>/dev/null || true
+        else
+            log_warn "MR already exists for $source_branch -> $target_branch: !${mr_iid}"
+            log_info "Reusing existing merge request: !${mr_iid}"
+            echo "$mr_iid"
+            return 0
+        fi
+    fi
+
+    # Use jq to properly encode JSON payload (handles newlines, quotes, etc.)
+    local payload
+    payload=$(jq -n \
+        --arg source "$source_branch" \
+        --arg target "$target_branch" \
+        --arg title "$title" \
+        --arg desc "$description" \
+        '{
+            source_branch: $source,
+            target_branch: $target,
+            title: $title,
+            description: $desc,
+            remove_source_branch: false
+        }')
+
     local response
     response=$(curl -s -w "\n%{http_code}" \
         --request POST \
         --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
         --header "Content-Type: application/json" \
-        --data "{
-            \"source_branch\": \"$source_branch\",
-            \"target_branch\": \"$target_branch\",
-            \"title\": \"$title\",
-            \"description\": \"$description\",
-            \"remove_source_branch\": false
-        }" \
+        --data "$payload" \
         "${api_url}/projects/${project_id}/merge_requests" 2>&1)
 
     local http_code
@@ -72,11 +123,57 @@ create_merge_request() {
         local mr_iid
         mr_iid=$(echo "$body" | jq -r '.iid')
         log_pass "Merge request created: !${mr_iid}"
+
+        # Wait for GitLab to process the MR and check for conflicts
+        log_info "Verifying new MR !${mr_iid} has no conflicts..."
+        sleep 3
+
+        local new_mr_info
+        new_mr_info=$(curl -s \
+            --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+            "${api_url}/projects/${project_id}/merge_requests/${mr_iid}")
+
+        local new_has_conflicts
+        new_has_conflicts=$(echo "$new_mr_info" | jq -r '.has_conflicts')
+        local new_merge_status
+        new_merge_status=$(echo "$new_mr_info" | jq -r '.merge_status')
+
+        log_debug "New MR status: has_conflicts=$new_has_conflicts, merge_status=$new_merge_status"
+
+        # If newly created MR has conflicts, this indicates branch divergence
+        if [ "$new_has_conflicts" = "true" ]; then
+            log_error "Newly created MR !${mr_iid} has merge conflicts"
+            log_error "This indicates branch divergence between $source_branch and $target_branch"
+            log_error "Manual intervention required: branches must be synchronized"
+
+            # Close the conflicting MR
+            close_merge_request "$project_id" "$mr_iid" 2>/dev/null || true
+
+            return 1
+        fi
+
+        log_pass "MR !${mr_iid} is conflict-free"
         echo "$mr_iid"
         return 0
     else
         log_error "Failed to create merge request (HTTP $http_code)"
+        log_debug "API Response:"
         echo "$body" | jq '.' 2>/dev/null || echo "$body"
+
+        # Check if error is due to duplicate MR (race condition)
+        if echo "$body" | jq -e '.message | contains("already exists")' > /dev/null 2>&1; then
+            log_warn "A merge request for $source_branch -> $target_branch was just created"
+            # Try to fetch it one more time
+            existing_mrs=$(curl -s \
+                --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                "${api_url}/projects/${project_id}/merge_requests?state=opened&source_branch=${source_branch}&target_branch=${target_branch}")
+            mr_iid=$(echo "$existing_mrs" | jq -r '.[0].iid' 2>/dev/null)
+            if [ -n "$mr_iid" ] && [ "$mr_iid" != "null" ]; then
+                log_info "Found existing MR: !${mr_iid}"
+                echo "$mr_iid"
+                return 0
+            fi
+        fi
         return 1
     fi
 }
@@ -123,13 +220,29 @@ merge_merge_request() {
     local api_url
     api_url=$(get_gitlab_api_url)
 
-    local mr_status
-    mr_status=$(curl -s \
+    local mr_info
+    mr_info=$(curl -s \
         --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-        "${api_url}/projects/${project_id}/merge_requests/${mr_iid}" | \
-        jq -r '.merge_status')
+        "${api_url}/projects/${project_id}/merge_requests/${mr_iid}")
 
-    log_debug "MR merge_status: $mr_status"
+    local mr_status
+    mr_status=$(echo "$mr_info" | jq -r '.merge_status')
+
+    local has_conflicts
+    has_conflicts=$(echo "$mr_info" | jq -r '.has_conflicts')
+
+    local detailed_status
+    detailed_status=$(echo "$mr_info" | jq -r '.detailed_merge_status')
+
+    log_debug "MR merge_status: $mr_status, has_conflicts: $has_conflicts, detailed_merge_status: $detailed_status"
+
+    # Check for merge conflicts
+    if [ "$has_conflicts" = "true" ]; then
+        log_error "MR has merge conflicts and cannot be merged automatically"
+        log_error "Detailed merge status: $detailed_status"
+        echo "$mr_info" | jq '.'
+        return 1
+    fi
 
     if [ "$mr_status" != "can_be_merged" ]; then
         log_warn "MR cannot be merged yet (status: $mr_status), waiting..."

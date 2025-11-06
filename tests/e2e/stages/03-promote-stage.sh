@@ -36,105 +36,63 @@ stage_03_promote_stage() {
         return 1
     }
 
-    # Use k8s-deployments project ID from GitLab
-    # Stages 3-6 promote between branches within k8s-deployments repository
-    local project_id="${K8S_DEPLOYMENTS_PROJECT_ID:-2}"
+    # Use k8s-deployments project ID from stage 1
+    local project_id
+    if [ -f "${E2E_STATE_DIR}/gitlab_project_id.txt" ]; then
+        project_id=$(cat "${E2E_STATE_DIR}/gitlab_project_id.txt")
+    else
+        project_id="${K8S_DEPLOYMENTS_PROJECT_ID:-2}"
+    fi
     log_pass "Using k8s-deployments project ID: $project_id"
-    echo "$project_id" > "${E2E_STATE_DIR}/gitlab_project_id.txt"
 
-    # Navigate to k8s-deployments repository
-    log_info "Fetching latest changes from k8s-deployments..."
-    local deployment_pipeline_root
-    deployment_pipeline_root="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-    local k8s_repo_path="${deployment_pipeline_root}/${K8S_DEPLOYMENTS_PATH}"
+    # Find Jenkins-created MR for stage promotion
+    log_info "Looking for Jenkins-created MR for stage..."
 
-    if [ ! -d "$k8s_repo_path/.git" ]; then
-        log_error "k8s-deployments repository not found: $k8s_repo_path"
+    # Get the most recent open MR targeting stage branch
+    local stage_mr_iid
+    stage_mr_iid=$(curl -s --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+        "${GITLAB_URL}/api/v4/projects/${project_id}/merge_requests?state=opened&target_branch=stage&per_page=1" | \
+        jq -r '.[0].iid' 2>/dev/null)
+
+    if [ -z "$stage_mr_iid" ] || [ "$stage_mr_iid" = "null" ]; then
+        log_error "No open MR found for stage promotion"
+        log_error "Jenkins should have created an MR targeting stage branch"
+        log_error "Check Jenkins build output and SKIP_STAGE_PROMOTION parameter"
         return 1
     fi
 
-    cd "$k8s_repo_path" || return 1
-    log_info "Working in: $(pwd)"
+    log_pass "Found Jenkins stage MR !${stage_mr_iid}"
+    echo "$stage_mr_iid" > "${E2E_STATE_DIR}/stage_mr_iid.txt"
 
-    fetch_remote origin || {
-        log_error "Failed to fetch from remote"
-        return 1
-    }
-
-    # Get latest commit SHA from dev branch
-    local dev_commit
-    dev_commit=$(git rev-parse "origin/${DEV_BRANCH}")
-    log_info "Latest dev commit: $dev_commit"
-
-    # Create merge request from dev to stage
-    log_info "Creating merge request: ${DEV_BRANCH} -> ${STAGE_BRANCH}"
-
-    local mr_title="E2E Test: Promote to stage ($(date '+%Y-%m-%d %H:%M'))"
-    local mr_description="
-## E2E Pipeline Test Promotion
-
-Promoting from dev to stage as part of automated E2E testing.
-
-**Source Branch**: \`${DEV_BRANCH}\`
-**Target Branch**: \`${STAGE_BRANCH}\`
-**Test Timestamp**: $(date '+%Y-%m-%d %H:%M:%S')
-**Commit SHA**: \`$dev_commit\`
-
-This is an automated test merge request. It will be automatically merged and can be safely cleaned up.
-"
-
-    local mr_iid
-    mr_iid=$(create_merge_request \
-        "$project_id" \
-        "${DEV_BRANCH}" \
-        "${STAGE_BRANCH}" \
-        "$mr_title" \
-        "$mr_description")
-
-    if [ $? -ne 0 ] || [ -z "$mr_iid" ]; then
-        log_error "Failed to create merge request"
-        return 1
-    fi
-
-    echo "$mr_iid" > "${E2E_STATE_DIR}/stage_mr_iid.txt"
-    log_pass "Merge request created: !${mr_iid}"
-
-    # Wait a moment for MR to be processed
-    sleep 5
-
-    # Check if MR requires approval
+    # Approve the MR if required
     if [ "${REQUIRE_APPROVALS}" = "true" ]; then
-        log_info "Approving merge request..."
-
-        approve_merge_request "$project_id" "$mr_iid" || {
+        log_info "Approving MR !${stage_mr_iid}..."
+        approve_merge_request "$project_id" "$stage_mr_iid" || {
             log_warn "Failed to approve MR, continuing anyway"
         }
-
         sleep 2
     fi
 
-    # Merge the merge request
-    log_info "Merging merge request !${mr_iid}..."
-
-    merge_merge_request "$project_id" "$mr_iid" || {
-        log_error "Failed to merge MR"
-
-        # Get MR status for debugging
+    # Merge the MR
+    log_info "Merging MR !${stage_mr_iid}..."
+    merge_merge_request "$project_id" "$stage_mr_iid" || {
+        log_error "Failed to merge stage MR"
         local mr_status
-        mr_status=$(get_merge_request_status "$project_id" "$mr_iid")
+        mr_status=$(get_merge_request_status "$project_id" "$stage_mr_iid")
         log_error "MR status: $mr_status"
-
         return 1
     }
 
     # Wait for merge to complete
     log_info "Waiting for merge to complete..."
-    wait_for_merge "$project_id" "$mr_iid" 120 || {
+    wait_for_merge "$project_id" "$stage_mr_iid" 120 || {
         log_error "Timeout waiting for MR to merge"
         return 1
     }
 
-    # Force ArgoCD to refresh and sync immediately to avoid waiting for git poll interval
+    log_pass "Stage MR merged successfully"
+
+    # Force ArgoCD to refresh and sync immediately
     log_info "Forcing ArgoCD refresh for stage environment..."
     if kubectl patch application "${ARGOCD_APP_PREFIX}-stage" -n argocd --type merge \
         -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}' 2>/dev/null; then
@@ -146,12 +104,22 @@ This is an automated test merge request. It will be automatically merged and can
     # Get the merged commit SHA
     local stage_commit
     stage_commit=$(get_branch_commit "$project_id" "${STAGE_BRANCH}")
-
     echo "$stage_commit" > "${E2E_STATE_DIR}/stage_commit_sha.txt"
     log_pass "Stage branch updated: $stage_commit"
 
-    # Pull latest stage branch locally
+    # Navigate to k8s-deployments and update local stage branch
+    local deployment_pipeline_root
+    deployment_pipeline_root="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+    local k8s_repo_path="${deployment_pipeline_root}/${K8S_DEPLOYMENTS_PATH}"
+
+    cd "$k8s_repo_path" || return 1
+
     log_info "Updating local stage branch..."
+    fetch_remote origin || {
+        log_error "Failed to fetch from remote"
+        return 1
+    }
+
     switch_branch "${STAGE_BRANCH}" || {
         log_error "Failed to switch to stage branch"
         return 1

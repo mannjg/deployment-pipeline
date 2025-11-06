@@ -44,12 +44,16 @@ spec:
               value: "8080"
             - name: QUARKUS_LOG_CONSOLE_ENABLE
               value: "true"
+            - name: REDIS_URL
+              value: redis://redis.cache.svc.cluster.local:6379
+            - name: REDIS_TIMEOUT_SECONDS
+              value: "5"
             - name: QUARKUS_LOG_LEVEL
               value: INFO
             - name: ENVIRONMENT
               value: prod
           envFrom: []
-          image: docker.local/example/example-app:1.2.0-SNAPSHOT-dfb74c8
+          image: docker.local/example/example-app:1.2.0-e2e-20251106091811-1d1efb8
           imagePullPolicy: Always
           livenessProbe:
             failureThreshold: 3

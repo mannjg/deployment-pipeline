@@ -4,11 +4,18 @@
 
 set -euo pipefail
 
+# Ensure kubectl is in PATH
+export PATH="$HOME/bin:$PATH"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Source libraries from k8s-deployments
 source "$SCRIPT_DIR/../../k8s-deployments/tests/lib/common.sh"
 source "$SCRIPT_DIR/../../k8s-deployments/tests/lib/cleanup.sh"
+
+# Source E2E test libraries
+source "$SCRIPT_DIR/lib/test-setup.sh"
+source "$SCRIPT_DIR/lib/gitlab-api.sh"
 
 # Default values
 CLEANUP_MODE="on-success"
@@ -266,18 +273,21 @@ run_stage() {
         return 0
     fi
 
-    # Source and run the stage
-    source "$script_path"
+    # Source and run the stage in a subshell to isolate directory changes
+    (
+        source "$script_path"
 
-    local stage_function="stage_0${stage_num}_$(basename "$script_path" .sh | sed 's/^[0-9]*-//' | tr '-' '_')"
+        local stage_function="stage_0${stage_num}_$(basename "$script_path" .sh | sed 's/^[0-9]*-//' | tr '-' '_')"
 
-    if declare -f "$stage_function" > /dev/null; then
-        $stage_function
-        return $?
-    else
-        log_error "Stage function $stage_function not found"
-        return 1
-    fi
+        if declare -f "$stage_function" > /dev/null; then
+            $stage_function
+            exit $?
+        else
+            log_error "Stage function $stage_function not found"
+            exit 1
+        fi
+    )
+    return $?
 }
 
 # Main execution
@@ -296,6 +306,15 @@ main() {
 
     # Validate configuration
     validate_config
+
+    # Run pre-flight checks and cleanup
+    log_info "Running pre-flight checks..."
+    if ! run_test_initialization; then
+        log_error "Pre-flight checks failed. Cannot proceed with tests."
+        log_error "Please review the errors above and ensure all services are ready."
+        exit 1
+    fi
+    echo
 
     # Initialize state directory
     init_state_dir

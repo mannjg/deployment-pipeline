@@ -1,4 +1,6 @@
 // Package apps defines the application-specific configuration for example-app
+// This file is OWNED by the application team and lives in the app repository
+// It is automatically synced to k8s-deployments during CI/CD
 package apps
 
 import (
@@ -19,6 +21,14 @@ exampleApp: core.#App & {
 		{
 			name: "QUARKUS_LOG_CONSOLE_ENABLE"
 			value: "true"
+		},
+		{
+			name: "REDIS_URL"
+			value: "redis://redis.cache.svc.cluster.local:6379"
+		},
+		{
+			name: "REDIS_TIMEOUT_SECONDS"
+			value: "5"
 		},
 	]
 

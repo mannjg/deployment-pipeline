@@ -40,14 +40,16 @@ check_jenkins_api() {
     fi
 }
 
-# Get Jenkins crumb for CSRF protection
-# Usage: get_jenkins_crumb
+# Get Jenkins crumb for CSRF protection (with cookies)
+# Usage: get_jenkins_crumb COOKIE_JAR_FILE
 get_jenkins_crumb() {
+    local cookie_jar=$1
     local jenkins_url
     jenkins_url=$(get_jenkins_api_url)
 
     local crumb
     crumb=$(curl -s \
+        -c "$cookie_jar" -b "$cookie_jar" \
         --user "${JENKINS_USER}:${JENKINS_TOKEN}" \
         "${jenkins_url}/crumbIssuer/api/json" | \
         jq -r '.crumb' 2>/dev/null)
@@ -68,17 +70,23 @@ trigger_jenkins_build() {
     local job_name=$1
     shift
 
-    log_info "Triggering Jenkins job: $job_name"
+    # All logs to stderr to avoid polluting return value
+    log_info "Triggering Jenkins job: $job_name" >&2
 
     local jenkins_url
     jenkins_url=$(get_jenkins_api_url)
 
+    # Create temporary cookie jar
+    local cookie_jar="/tmp/jenkins-cookies-$$.txt"
+
+    # Get crumb with cookies
     local crumb
-    crumb=$(get_jenkins_crumb)
+    crumb=$(get_jenkins_crumb "$cookie_jar")
 
     # Build the curl command
     local curl_cmd=(
         curl -s -w "\n%{http_code}"
+        -c "$cookie_jar" -b "$cookie_jar"
         --user "${JENKINS_USER}:${JENKINS_TOKEN}"
     )
 
@@ -87,22 +95,16 @@ trigger_jenkins_build() {
         curl_cmd+=(--header "Jenkins-Crumb: ${crumb}")
     fi
 
-    # Determine if we have parameters
+    # Add parameters as form data
+    curl_cmd+=(--request POST)
     if [ $# -gt 0 ]; then
-        # Build with parameters
-        local params=""
+        # Build with parameters using -d for each param
         for param in "$@"; do
-            if [ -n "$params" ]; then
-                params="${params}&"
-            fi
-            params="${params}${param}"
+            curl_cmd+=(--data "$param")
         done
-
-        curl_cmd+=(--request POST)
-        curl_cmd+=("${jenkins_url}/job/${job_name}/buildWithParameters?${params}")
+        curl_cmd+=("${jenkins_url}/job/${job_name}/buildWithParameters")
     else
         # Build without parameters
-        curl_cmd+=(--request POST)
         curl_cmd+=("${jenkins_url}/job/${job_name}/build")
     fi
 
@@ -112,22 +114,21 @@ trigger_jenkins_build() {
     local http_code
     http_code=$(echo "$response" | tail -n1)
 
-    if [ "$http_code" = "201" ] || [ "$http_code" = "200" ]; then
-        log_pass "Jenkins job triggered: $job_name"
+    # Cleanup cookie jar
+    rm -f "$cookie_jar"
 
-        # Get queue item from Location header (if available)
-        local queue_item
-        queue_item=$(echo "$response" | grep -i "Location:" | sed 's/.*queue\/item\/\([0-9]*\).*/\1/')
+    # HTTP 201 (Created), 303 (See Other) are success responses
+    if [ "$http_code" = "201" ] || [ "$http_code" = "200" ] || [ "$http_code" = "303" ]; then
+        log_pass "Jenkins job triggered: $job_name" >&2
 
-        if [ -n "$queue_item" ]; then
-            log_debug "Job queued with item ID: $queue_item"
-            echo "$queue_item"
-        fi
-
+        # For 303, Jenkins redirects to queue - need to extract queue ID from response headers
+        # curl doesn't include headers in our output, so try to get the queue ID from a follow-up query
+        # For now, return empty string and fallback to polling for latest build
+        echo ""  # Return empty so stage script falls back to get_latest_build_number
         return 0
     else
-        log_error "Failed to trigger Jenkins job (HTTP $http_code)"
-        echo "$response" | sed '$d'
+        log_error "Failed to trigger Jenkins job (HTTP $http_code)" >&2
+        echo "$response" | sed '$d' >&2
         return 1
     fi
 }

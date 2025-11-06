@@ -3,7 +3,6 @@ package envs
 
 import (
 	"deployments.local/k8s-deployments/services/apps"
-	"deployments.local/k8s-deployments/argocd"
 )
 
 // Production environment settings for example-app
@@ -23,7 +22,7 @@ prod: exampleApp: apps.exampleApp & {
 		// Deployment configuration
 		deployment: {
 			// Image will be updated by CI/CD pipeline
-			image: "docker.local/example/example-app:1.2.0-SNAPSHOT-dfb74c8"
+			image: "docker.local/example/example-app:1.2.0-e2e-20251106091811-1d1efb8"
 
 			// Production replicas for HA
 			replicas: 1
@@ -99,23 +98,5 @@ prod: exampleApp: apps.exampleApp & {
 				}
 			}
 		}
-	}
-}
-
-// ArgoCD Application configuration for prod environment
-prod: argoApp: argocd.#ArgoApplication & {
-	argoConfig: {
-		app:         "example-app"
-		environment: "prod"
-		namespace:   "prod"
-
-		// Git source configuration
-		repoURL:        "\(argocd.#DefaultGitLabRepoBase)/example/k8s-deployments.git"
-		targetRevision: "prod"
-		path:           "manifests/prod"
-
-		// Use default sync policy and ignore differences
-		syncPolicy:        argocd.#DefaultSyncPolicy
-		ignoreDifferences: argocd.#DefaultIgnoreDifferences
 	}
 }

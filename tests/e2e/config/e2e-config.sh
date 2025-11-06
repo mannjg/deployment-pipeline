@@ -14,7 +14,8 @@ export JENKINS_TOKEN="admin"
 export JENKINS_JOB_NAME="example-app-ci"
 
 # Optional: Jenkins build parameters
-export JENKINS_BUILD_PARAMS=""
+# Note: Jenkins creates MRs for all environments; E2E test merges them
+export JENKINS_BUILD_PARAMS="SKIP_INTEGRATION_TESTS=false SKIP_STAGE_PROMOTION=false SKIP_PROD_PROMOTION=false"
 
 # Build timeout in seconds (default: 600 = 10 minutes)
 export JENKINS_BUILD_TIMEOUT="600"
@@ -25,6 +26,10 @@ export JENKINS_BUILD_TIMEOUT="600"
 
 export GITLAB_URL="http://gitlab.local"
 export GITLAB_TOKEN="glpat-9m86y9YHyGf77Kr8bRjX"
+
+# GitLab project ID for k8s-deployments (example/k8s-deployments)
+# Used for creating MRs in stages 3-6
+export K8S_DEPLOYMENTS_PROJECT_ID="2"
 
 # Require approvals for merge requests
 export REQUIRE_APPROVALS="false"
