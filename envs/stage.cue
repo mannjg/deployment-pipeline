@@ -124,13 +124,5 @@ stage: postgres: apps.postgres & {
 				storageSize: "10Gi"
 			}
 		}
-
-		// Secret for postgres password
-		secret: {
-			enabled: true
-			data: {
-				"POSTGRES_PASSWORD": "cG9zdGdyZXMtc3RhZ2UtNDU2" // base64 encoded "postgres-stage-456"
-			}
-		}
 	}
 }

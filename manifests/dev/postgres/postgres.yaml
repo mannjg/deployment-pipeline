@@ -33,15 +33,15 @@ spec:
         - env:
             - name: POSTGRES_USER
               value: postgres
+            - name: POSTGRES_PASSWORD
+              value: postgres123
             - name: POSTGRES_DB
               value: exampledb
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
             - name: ENVIRONMENT
               value: dev
-          envFrom:
-            - secretRef:
-                name: postgres-secret
+          envFrom: []
           image: postgres:16-alpine
           imagePullPolicy: Always
           livenessProbe:

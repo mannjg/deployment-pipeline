@@ -178,13 +178,5 @@ prod: postgres: apps.postgres & {
 				storageSize: "50Gi"
 			}
 		}
-
-		// Secret for postgres password
-		secret: {
-			enabled: true
-			data: {
-				"POSTGRES_PASSWORD": "cG9zdGdyZXMtcHJvZC03ODk=" // base64 encoded "postgres-prod-789"
-			}
-		}
 	}
 }
