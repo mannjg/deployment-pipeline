@@ -18,21 +18,16 @@ postgres: core.#App & {
 			value: "postgres"
 		},
 		{
+			name:  "POSTGRES_PASSWORD"
+			value: "postgres123" // Hardcoded for example/test purposes
+		},
+		{
 			name:  "POSTGRES_DB"
 			value: "exampledb"
 		},
 		{
 			name:  "PGDATA"
 			value: "/var/lib/postgresql/data/pgdata"
-		},
-	]
-
-	// App-level envFrom configuration to reference secret
-	appEnvFrom: [
-		{
-			secretRef: {
-				name: "postgres-secret"
-			}
 		},
 	]
 

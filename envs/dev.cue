@@ -133,13 +133,5 @@ dev: postgres: apps.postgres & {
 				storageSize: "5Gi"
 			}
 		}
-
-		// Secret for postgres password
-		secret: {
-			enabled: true
-			data: {
-				"POSTGRES_PASSWORD": "cG9zdGdyZXMxMjM=" // base64 encoded "postgres123"
-			}
-		}
 	}
 }

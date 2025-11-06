@@ -42,15 +42,15 @@ spec:
         - env:
             - name: POSTGRES_USER
               value: postgres
+            - name: POSTGRES_PASSWORD
+              value: postgres123
             - name: POSTGRES_DB
               value: exampledb
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
             - name: ENVIRONMENT
               value: prod
-          envFrom:
-            - secretRef:
-                name: postgres-secret
+          envFrom: []
           image: docker.local/library/postgres:16-alpine
           imagePullPolicy: Always
           livenessProbe:
