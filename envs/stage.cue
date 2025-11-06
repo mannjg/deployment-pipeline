@@ -103,12 +103,28 @@ stage: postgres: apps.postgres & {
 				}
 			}
 
-			// TODO: Configure proper postgres health probes
-			// Current limitation: CUE template merging does not easily allow switching from HTTP to exec probes
-			// For now, using default HTTP probes (will fail but won't block deployment)
-			// Future improvement: Enhance core.#App template to support probe type selection
+			// Postgres-specific health probes using pg_isready
+		livenessProbe: {
+			exec: {
+				command: ["pg_isready", "-U", "postgres"]
+			}
+			initialDelaySeconds: 30
+			periodSeconds:       10
+			timeoutSeconds:      5
+			failureThreshold:    3
+		}
 
-			// Stage-specific environment variables
+		readinessProbe: {
+			exec: {
+				command: ["pg_isready", "-U", "postgres"]
+			}
+			initialDelaySeconds: 10
+			periodSeconds:       5
+			timeoutSeconds:      3
+			failureThreshold:    3
+		}
+
+		// Stage-specific environment variables
 			additionalEnv: [
 				{
 					name:  "ENVIRONMENT"
