@@ -94,8 +94,8 @@ dev: postgres: apps.postgres & {
 
 		// Deployment configuration
 		deployment: {
-			// Official postgres image for dev
-			image: "docker.local/library/postgres:16-alpine"
+			// Official postgres image from Docker Hub (until we push to local registry)
+			image: "postgres:16-alpine"
 
 			// Single replica for dev
 			replicas: 1

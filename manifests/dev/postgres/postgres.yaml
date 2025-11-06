@@ -42,7 +42,7 @@ spec:
           envFrom:
             - secretRef:
                 name: postgres-secret
-          image: docker.local/library/postgres:16-alpine
+          image: postgres:16-alpine
           imagePullPolicy: Always
           livenessProbe:
             failureThreshold: 3
