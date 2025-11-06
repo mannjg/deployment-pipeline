@@ -13,7 +13,7 @@ stage: exampleApp: apps.exampleApp & {
 
 		labels: {
 			environment: "stage"
-			managed_by: "argocd"
+			managed_by:  "argocd"
 		}
 
 		// Enable debug mode in stage (for troubleshooting)
@@ -30,11 +30,11 @@ stage: exampleApp: apps.exampleApp & {
 			// Higher resource limits for stage
 			resources: {
 				requests: {
-					cpu: "200m"
+					cpu:    "200m"
 					memory: "512Mi"
 				}
 				limits: {
-					cpu: "1000m"
+					cpu:    "1000m"
 					memory: "1Gi"
 				}
 			}
@@ -46,7 +46,7 @@ stage: exampleApp: apps.exampleApp & {
 					port: 8080
 				}
 				initialDelaySeconds: 15
-				periodSeconds: 10
+				periodSeconds:       10
 			}
 
 			readinessProbe: {
@@ -55,20 +55,80 @@ stage: exampleApp: apps.exampleApp & {
 					port: 8080
 				}
 				initialDelaySeconds: 15
-				periodSeconds: 10
+				periodSeconds:       10
 			}
 
 			// Stage-specific environment variables
 			additionalEnv: [
 				{
-					name: "QUARKUS_LOG_LEVEL"
+					name:  "QUARKUS_LOG_LEVEL"
 					value: "INFO"
 				},
 				{
-					name: "ENVIRONMENT"
+					name:  "ENVIRONMENT"
 					value: "stage"
 				},
 			]
+		}
+	}
+}
+
+// Staging environment settings for postgres
+stage: postgres: apps.postgres & {
+	appConfig: {
+		namespace: "stage"
+
+		labels: {
+			environment: "stage"
+			managed_by:  "argocd"
+		}
+
+		// Deployment configuration
+		deployment: {
+			// Official postgres image for stage
+			image: "docker.local/library/postgres:16-alpine"
+
+			// Single replica for stage (could be 2 for HA testing)
+			replicas: 1
+
+			// Higher resource limits for stage
+			resources: {
+				requests: {
+					cpu:    "200m"
+					memory: "512Mi"
+				}
+				limits: {
+					cpu:    "1000m"
+					memory: "1Gi"
+				}
+			}
+
+			// Use default probes for now
+			// TODO: Configure proper TCP/exec probes after improving probe template handling
+
+			// Stage-specific environment variables
+			additionalEnv: [
+				{
+					name:  "ENVIRONMENT"
+					value: "stage"
+				},
+			]
+		}
+
+		// Storage configuration for postgres data
+		storage: {
+			enablePVC: true
+			pvc: {
+				storageSize: "10Gi"
+			}
+		}
+
+		// Secret for postgres password
+		secret: {
+			enabled: true
+			data: {
+				"POSTGRES_PASSWORD": "cG9zdGdyZXMtc3RhZ2UtNDU2" // base64 encoded "postgres-stage-456"
+			}
 		}
 	}
 }
