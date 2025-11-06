@@ -53,7 +53,7 @@ spec:
             - name: ENVIRONMENT
               value: prod
           envFrom: []
-          image: docker.local/example/example-app:1.2.0-e2e-20251106091811-1d1efb8
+          image: docker.local/example/example-app:1.2.0-e2e-20251106102442-7c0c9f2
           imagePullPolicy: Always
           livenessProbe:
             failureThreshold: 3
