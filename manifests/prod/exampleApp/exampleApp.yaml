@@ -48,6 +48,14 @@ spec:
               value: redis://redis.cache.svc.cluster.local:6379
             - name: REDIS_TIMEOUT_SECONDS
               value: "5"
+            - name: QUARKUS_DATASOURCE_DB_KIND
+              value: postgresql
+            - name: QUARKUS_DATASOURCE_JDBC_URL
+              value: jdbc:postgresql://postgres:5432/exampledb
+            - name: QUARKUS_DATASOURCE_USERNAME
+              value: postgres
+            - name: QUARKUS_DATASOURCE_PASSWORD
+              value: postgres123
             - name: QUARKUS_LOG_LEVEL
               value: INFO
             - name: ENVIRONMENT
