@@ -81,3 +81,63 @@ dev: exampleApp: apps.exampleApp & {
 		}
 	}
 }
+
+// Development environment settings for postgres
+dev: postgres: apps.postgres & {
+	appConfig: {
+		namespace: "dev"
+
+		labels: {
+			environment: "dev"
+			managed_by:  "argocd"
+		}
+
+		// Deployment configuration
+		deployment: {
+			// Official postgres image for dev
+			image: "docker.local/library/postgres:16-alpine"
+
+			// Single replica for dev
+			replicas: 1
+
+			// Resource limits for dev
+			resources: {
+				requests: {
+					cpu:    "100m"
+					memory: "256Mi"
+				}
+				limits: {
+					cpu:    "500m"
+					memory: "512Mi"
+				}
+			}
+
+			// Use default probes for now
+			// TODO: Configure proper TCP/exec probes after improving probe template handling
+
+			// Dev-specific environment variables
+			additionalEnv: [
+				{
+					name:  "ENVIRONMENT"
+					value: "dev"
+				},
+			]
+		}
+
+		// Storage configuration for postgres data
+		storage: {
+			enablePVC: true
+			pvc: {
+				storageSize: "5Gi"
+			}
+		}
+
+		// Secret for postgres password
+		secret: {
+			enabled: true
+			data: {
+				"POSTGRES_PASSWORD": "cG9zdGdyZXMxMjM=" // base64 encoded "postgres123"
+			}
+		}
+	}
+}
