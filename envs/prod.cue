@@ -131,8 +131,10 @@ prod: postgres: apps.postgres & {
 				}
 			}
 
-			// Use default probes for now
-			// TODO: Configure proper TCP/exec probes after improving probe template handling
+			// TODO: Configure proper postgres health probes
+			// Current limitation: CUE template merging does not easily allow switching from HTTP to exec probes
+			// For now, using default HTTP probes (will fail but won't block deployment)
+			// Future improvement: Enhance core.#App template to support probe type selection
 
 			// Production-specific environment variables
 			additionalEnv: [

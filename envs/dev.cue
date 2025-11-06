@@ -13,7 +13,7 @@ dev: exampleApp: apps.exampleApp & {
 
 		labels: {
 			environment: "dev"
-			managed_by: "argocd"
+			managed_by:  "argocd"
 		}
 
 		// Enable debug mode in dev
@@ -30,11 +30,11 @@ dev: exampleApp: apps.exampleApp & {
 			// Resource limits for dev
 			resources: {
 				requests: {
-					cpu: "100m"
+					cpu:    "100m"
 					memory: "256Mi"
 				}
 				limits: {
-					cpu: "500m"
+					cpu:    "500m"
 					memory: "512Mi"
 				}
 			}
@@ -46,7 +46,7 @@ dev: exampleApp: apps.exampleApp & {
 					port: 8080
 				}
 				initialDelaySeconds: 10
-				periodSeconds: 10
+				periodSeconds:       10
 			}
 
 			readinessProbe: {
@@ -55,17 +55,17 @@ dev: exampleApp: apps.exampleApp & {
 					port: 8080
 				}
 				initialDelaySeconds: 10
-				periodSeconds: 10
+				periodSeconds:       10
 			}
 
 			// Dev-specific environment variables
 			additionalEnv: [
 				{
-					name: "QUARKUS_LOG_LEVEL"
+					name:  "QUARKUS_LOG_LEVEL"
 					value: "DEBUG"
 				},
 				{
-					name: "ENVIRONMENT"
+					name:  "ENVIRONMENT"
 					value: "dev"
 				},
 			]
@@ -74,8 +74,8 @@ dev: exampleApp: apps.exampleApp & {
 		// ConfigMap data for development environment
 		configMap: {
 			data: {
-				"redis-url": "redis://redis.dev.svc.cluster.local:6379"
-				"log-level": "debug"
+				"redis-url":     "redis://redis.dev.svc.cluster.local:6379"
+				"log-level":     "debug"
 				"feature-flags": "experimental-features=true"
 			}
 		}
@@ -112,8 +112,10 @@ dev: postgres: apps.postgres & {
 				}
 			}
 
-			// Use default probes for now
-			// TODO: Configure proper TCP/exec probes after improving probe template handling
+			// TODO: Configure proper postgres health probes
+			// Current limitation: CUE template merging does not easily allow switching from HTTP to exec probes
+			// For now, using default HTTP probes (will fail but won't block deployment)
+			// Future improvement: Enhance core.#App template to support probe type selection
 
 			// Dev-specific environment variables
 			additionalEnv: [
