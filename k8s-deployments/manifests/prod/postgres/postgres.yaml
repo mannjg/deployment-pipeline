@@ -2,18 +2,18 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: example-app
-    deployment: example-app
+    app: postgres
+    deployment: postgres
     environment: prod
     managed_by: argocd
-  name: example-app
+  name: postgres
   namespace: prod
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
-      app: example-app
-      deployment: example-app
+      app: postgres
+      deployment: postgres
       environment: prod
       managed_by: argocd
   strategy:
@@ -24,8 +24,8 @@ spec:
   template:
     metadata:
       labels:
-        app: example-app
-        deployment: example-app
+        app: postgres
+        deployment: postgres
         environment: prod
         managed_by: argocd
     spec:
@@ -35,46 +35,46 @@ spec:
             - podAffinityTerm:
                 labelSelector:
                   matchLabels:
-                    app: example-app
+                    app: postgres
                 topologyKey: kubernetes.io/hostname
               weight: 100
       containers:
         - env:
-            - name: QUARKUS_HTTP_PORT
-              value: "8080"
-            - name: QUARKUS_LOG_CONSOLE_ENABLE
-              value: "true"
-            - name: REDIS_URL
-              value: redis://redis.cache.svc.cluster.local:6379
-            - name: REDIS_TIMEOUT_SECONDS
-              value: "5"
-            - name: QUARKUS_LOG_LEVEL
-              value: INFO
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              value: postgres123
+            - name: POSTGRES_DB
+              value: exampledb
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
             - name: ENVIRONMENT
               value: prod
           envFrom: []
-          image: docker.local/example/example-app:1.2.0-e2e-20251106102442-7c0c9f2
+          image: docker.local/library/postgres:16-alpine
           imagePullPolicy: Always
           livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
             failureThreshold: 3
-            httpGet:
-              path: /health/live
-              port: 8080
-              scheme: HTTP
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
-          name: example-app
+          name: postgres
           ports:
             - containerPort: 8080
               name: http
               protocol: TCP
           readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
             failureThreshold: 3
-            httpGet:
-              path: /health/ready
-              port: 8080
-              scheme: HTTP
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
@@ -94,11 +94,11 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app: example-app
-    deployment: example-app
+    app: postgres
+    deployment: postgres
     environment: prod
     managed_by: argocd
-  name: example-app
+  name: postgres
   namespace: prod
 spec:
   ports:
@@ -106,8 +106,12 @@ spec:
       port: 80
       protocol: TCP
       targetPort: 8080
+    - name: postgresql
+      port: 5432
+      protocol: TCP
+      targetPort: 5432
   selector:
-    app: example-app
+    app: postgres
     component: backend
   sessionAffinity: None
   type: ClusterIP

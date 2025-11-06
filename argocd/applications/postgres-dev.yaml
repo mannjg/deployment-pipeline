@@ -1,26 +1,26 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: example-app-stage
+  name: postgres-dev
   namespace: argocd
   labels:
-    app: example-app
-    environment: stage
+    app: postgres
+    environment: dev
 spec:
   project: default
 
   # Source repository configuration
   source:
     repoURL: http://gitlab.gitlab.svc.cluster.local/example/k8s-deployments.git
-    targetRevision: stage
-    path: manifests/stage/exampleApp
+    targetRevision: dev
+    path: manifests/dev/postgres
 
   # Destination cluster and namespace
   destination:
     server: https://kubernetes.default.svc
-    namespace: stage
+    namespace: dev
 
-  # Sync policy - automated for stage
+  # Sync policy - automated for dev
   syncPolicy:
     automated:
       prune: true      # Delete resources not in git

@@ -13,7 +13,7 @@ dev: exampleApp: apps.exampleApp & {
 
 		labels: {
 			environment: "dev"
-			managed_by: "argocd"
+			managed_by:  "argocd"
 		}
 
 		// Enable debug mode in dev
@@ -22,7 +22,7 @@ dev: exampleApp: apps.exampleApp & {
 		// Deployment configuration
 		deployment: {
 			// Image will be updated by CI/CD pipeline
-			image: "docker.local/example/example-app:1.2.0-e2e-20251106073609-56fd97a"
+			image: "docker.local/example/example-app:1.2.0-e2e-20251106102442-7c0c9f2"
 
 			// Lower replicas in dev
 			replicas: 1
@@ -30,11 +30,11 @@ dev: exampleApp: apps.exampleApp & {
 			// Resource limits for dev
 			resources: {
 				requests: {
-					cpu: "100m"
+					cpu:    "100m"
 					memory: "256Mi"
 				}
 				limits: {
-					cpu: "500m"
+					cpu:    "500m"
 					memory: "512Mi"
 				}
 			}
@@ -46,7 +46,7 @@ dev: exampleApp: apps.exampleApp & {
 					port: 8080
 				}
 				initialDelaySeconds: 10
-				periodSeconds: 10
+				periodSeconds:       10
 			}
 
 			readinessProbe: {
@@ -55,17 +55,17 @@ dev: exampleApp: apps.exampleApp & {
 					port: 8080
 				}
 				initialDelaySeconds: 10
-				periodSeconds: 10
+				periodSeconds:       10
 			}
 
 			// Dev-specific environment variables
 			additionalEnv: [
 				{
-					name: "QUARKUS_LOG_LEVEL"
+					name:  "QUARKUS_LOG_LEVEL"
 					value: "DEBUG"
 				},
 				{
-					name: "ENVIRONMENT"
+					name:  "ENVIRONMENT"
 					value: "dev"
 				},
 			]
@@ -74,9 +74,79 @@ dev: exampleApp: apps.exampleApp & {
 		// ConfigMap data for development environment
 		configMap: {
 			data: {
-				"redis-url": "redis://redis.dev.svc.cluster.local:6379"
-				"log-level": "debug"
+				"redis-url":     "redis://redis.dev.svc.cluster.local:6379"
+				"log-level":     "debug"
 				"feature-flags": "experimental-features=true"
+			}
+		}
+	}
+}
+
+// Development environment settings for postgres
+dev: postgres: apps.postgres & {
+	appConfig: {
+		namespace: "dev"
+
+		labels: {
+			environment: "dev"
+			managed_by:  "argocd"
+		}
+
+		// Deployment configuration
+		deployment: {
+			// Official postgres image from Docker Hub (until we push to local registry)
+			image: "postgres:16-alpine"
+
+			// Single replica for dev
+			replicas: 1
+
+			// Resource limits for dev
+			resources: {
+				requests: {
+					cpu:    "100m"
+					memory: "256Mi"
+				}
+				limits: {
+					cpu:    "500m"
+					memory: "512Mi"
+				}
+			}
+
+			// Postgres-specific health probes using pg_isready
+			livenessProbe: {
+				exec: {
+					command: ["pg_isready", "-U", "postgres"]
+				}
+				initialDelaySeconds: 30
+				periodSeconds:       10
+				timeoutSeconds:      5
+				failureThreshold:    3
+			}
+
+			readinessProbe: {
+				exec: {
+					command: ["pg_isready", "-U", "postgres"]
+				}
+				initialDelaySeconds: 10
+				periodSeconds:       5
+				timeoutSeconds:      3
+				failureThreshold:    3
+			}
+
+			// Dev-specific environment variables
+			additionalEnv: [
+				{
+					name:  "ENVIRONMENT"
+					value: "dev"
+				},
+			]
+		}
+
+		// Storage configuration for postgres data
+		storage: {
+			enablePVC: true
+			pvc: {
+				storageSize: "5Gi"
 			}
 		}
 	}

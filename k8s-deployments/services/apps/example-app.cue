@@ -30,6 +30,23 @@ exampleApp: core.#App & {
 			name: "REDIS_TIMEOUT_SECONDS"
 			value: "5"
 		},
+		// Database connection configuration
+		{
+			name:  "QUARKUS_DATASOURCE_DB_KIND"
+			value: "postgresql"
+		},
+		{
+			name:  "QUARKUS_DATASOURCE_JDBC_URL"
+			value: "jdbc:postgresql://postgres:5432/exampledb"
+		},
+		{
+			name:  "QUARKUS_DATASOURCE_USERNAME"
+			value: "postgres"
+		},
+		{
+			name:  "QUARKUS_DATASOURCE_PASSWORD"
+			value: "postgres123"
+		},
 	]
 
 	// Application-level configuration

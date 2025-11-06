@@ -1,10 +1,10 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: example-app-stage
+  name: postgres-stage
   namespace: argocd
   labels:
-    app: example-app
+    app: postgres
     environment: stage
 spec:
   project: default
@@ -13,18 +13,18 @@ spec:
   source:
     repoURL: http://gitlab.gitlab.svc.cluster.local/example/k8s-deployments.git
     targetRevision: stage
-    path: manifests/stage/exampleApp
+    path: manifests/stage/postgres
 
   # Destination cluster and namespace
   destination:
     server: https://kubernetes.default.svc
     namespace: stage
 
-  # Sync policy - automated for stage
+  # Sync policy - semi-automated for stage (manual approval via MR)
   syncPolicy:
     automated:
-      prune: true      # Delete resources not in git
-      selfHeal: true   # Force sync when drift detected
+      prune: true
+      selfHeal: true
       allowEmpty: false
     syncOptions:
       - CreateNamespace=true
@@ -41,4 +41,4 @@ spec:
     - group: apps
       kind: Deployment
       jsonPointers:
-        - /spec/replicas  # Ignore HPA-managed replica count
+        - /spec/replicas

@@ -13,7 +13,7 @@ spec:
   source:
     repoURL: http://gitlab.gitlab.svc.cluster.local/example/k8s-deployments.git
     targetRevision: prod
-    path: manifests/prod
+    path: manifests/prod/exampleApp
 
   # Destination cluster and namespace
   destination:

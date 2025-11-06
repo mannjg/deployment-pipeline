@@ -13,7 +13,7 @@ prod: exampleApp: apps.exampleApp & {
 
 		labels: {
 			environment: "prod"
-			managed_by: "argocd"
+			managed_by:  "argocd"
 		}
 
 		// Disable debug mode in prod
@@ -22,19 +22,19 @@ prod: exampleApp: apps.exampleApp & {
 		// Deployment configuration
 		deployment: {
 			// Image will be updated by CI/CD pipeline
-			image: "docker.local/example/example-app:1.2.0-e2e-20251106102442-7c0c9f2"
+			image: "docker.local/example/example-app:1.0.0-SNAPSHOT"
 
 			// Production replicas for HA
-			replicas: 1
+			replicas: 3
 
 			// Production resource limits
 			resources: {
 				requests: {
-					cpu: "500m"
+					cpu:    "500m"
 					memory: "1Gi"
 				}
 				limits: {
-					cpu: "2000m"
+					cpu:    "2000m"
 					memory: "2Gi"
 				}
 			}
@@ -46,8 +46,8 @@ prod: exampleApp: apps.exampleApp & {
 					port: 8080
 				}
 				initialDelaySeconds: 20
-				periodSeconds: 15
-				failureThreshold: 3
+				periodSeconds:       15
+				failureThreshold:    3
 			}
 
 			readinessProbe: {
@@ -56,18 +56,18 @@ prod: exampleApp: apps.exampleApp & {
 					port: 8080
 				}
 				initialDelaySeconds: 20
-				periodSeconds: 10
-				failureThreshold: 3
+				periodSeconds:       10
+				failureThreshold:    3
 			}
 
 			// Production-specific environment variables
 			additionalEnv: [
 				{
-					name: "QUARKUS_LOG_LEVEL"
+					name:  "QUARKUS_LOG_LEVEL"
 					value: "INFO"
 				},
 				{
-					name: "ENVIRONMENT"
+					name:  "ENVIRONMENT"
 					value: "prod"
 				},
 			]
@@ -76,7 +76,7 @@ prod: exampleApp: apps.exampleApp & {
 			strategy: {
 				type: "RollingUpdate"
 				rollingUpdate: {
-					maxSurge: 1
+					maxSurge:       1
 					maxUnavailable: 0 // No downtime during updates
 				}
 			}
@@ -96,6 +96,102 @@ prod: exampleApp: apps.exampleApp & {
 						}
 					}]
 				}
+			}
+		}
+	}
+}
+
+// Production environment settings for postgres
+prod: postgres: apps.postgres & {
+	appConfig: {
+		namespace: "prod"
+
+		labels: {
+			environment: "prod"
+			managed_by:  "argocd"
+		}
+
+		// Deployment configuration
+		deployment: {
+			// Official postgres image for prod
+			image: "docker.local/library/postgres:16-alpine"
+
+			// HA setup with 2 replicas
+			replicas: 2
+
+			// Production resource limits
+			resources: {
+				requests: {
+					cpu:    "500m"
+					memory: "1Gi"
+				}
+				limits: {
+					cpu:    "2000m"
+					memory: "2Gi"
+				}
+			}
+
+			// Postgres-specific health probes using pg_isready
+		livenessProbe: {
+			exec: {
+				command: ["pg_isready", "-U", "postgres"]
+			}
+			initialDelaySeconds: 30
+			periodSeconds:       10
+			timeoutSeconds:      5
+			failureThreshold:    3
+		}
+
+		readinessProbe: {
+			exec: {
+				command: ["pg_isready", "-U", "postgres"]
+			}
+			initialDelaySeconds: 10
+			periodSeconds:       5
+			timeoutSeconds:      3
+			failureThreshold:    3
+		}
+
+		// Production-specific environment variables
+			additionalEnv: [
+				{
+					name:  "ENVIRONMENT"
+					value: "prod"
+				},
+			]
+
+			// Production deployment strategy - zero downtime
+			strategy: {
+				type: "RollingUpdate"
+				rollingUpdate: {
+					maxSurge:       1
+					maxUnavailable: 0 // No downtime during updates
+				}
+			}
+
+			// Production-grade affinity rules - spread replicas across nodes
+			affinity: {
+				podAntiAffinity: {
+					preferredDuringSchedulingIgnoredDuringExecution: [{
+						weight: 100
+						podAffinityTerm: {
+							labelSelector: {
+								matchLabels: {
+									app: "postgres"
+								}
+							}
+							topologyKey: "kubernetes.io/hostname"
+						}
+					}]
+				}
+			}
+		}
+
+		// Storage configuration for postgres data
+		storage: {
+			enablePVC: true
+			pvc: {
+				storageSize: "50Gi"
 			}
 		}
 	}

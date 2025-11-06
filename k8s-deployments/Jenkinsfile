@@ -1,0 +1,576 @@
+// Root Jenkinsfile for k8s-deployments Repository
+// Orchestrates MR validation, deployment, and promotion workflows
+// Triggered by: GitLab webhook on MR events and environment branch merges
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Refreshes ArgoCD applications for a given environment
+ * @param environment Target environment (dev/stage/prod)
+ */
+def refreshArgoCDApps(String environment) {
+    container('pipeline') {
+        script {
+            echo "=== Refreshing ArgoCD Applications for ${environment} ==="
+
+            // Discover all apps in the environment
+            def appsJson = sh(
+                script: "cue export ./envs/${environment}.cue -e ${environment} --out json",
+                returnStdout: true
+            ).trim()
+
+            def apps = sh(
+                script: "echo '${appsJson}' | jq -r 'keys[]'",
+                returnStdout: true
+            ).trim().split('\n')
+
+            echo "Found apps in ${environment}: ${apps.join(', ')}"
+
+            // Refresh each app
+            for (app in apps) {
+                def appName = app.trim()
+                def argoCDAppName = "${appName}-${environment}"
+
+                echo "Refreshing ArgoCD app: ${argoCDAppName}"
+
+                sh """
+                    # Refresh the app (force reload from Git)
+                    argocd app refresh ${argoCDAppName} --hard || {
+                        echo "⚠ WARNING: Failed to refresh ${argoCDAppName}"
+                        exit 1
+                    }
+
+                    echo "✓ Refreshed ${argoCDAppName}"
+                """
+            }
+        }
+    }
+}
+
+/**
+ * Waits for ArgoCD applications to sync and become healthy
+ * @param environment Target environment (dev/stage/prod)
+ * @param timeoutSeconds Maximum time to wait (default: 300)
+ */
+def waitForArgoCDSync(String environment, int timeoutSeconds = 300) {
+    container('pipeline') {
+        script {
+            echo "=== Waiting for ArgoCD Sync Completion ==="
+
+            // Discover all apps in the environment
+            def appsJson = sh(
+                script: "cue export ./envs/${environment}.cue -e ${environment} --out json",
+                returnStdout: true
+            ).trim()
+
+            def apps = sh(
+                script: "echo '${appsJson}' | jq -r 'keys[]'",
+                returnStdout: true
+            ).trim().split('\n')
+
+            // Wait for each app to sync
+            for (app in apps) {
+                def appName = app.trim()
+                def argoCDAppName = "${appName}-${environment}"
+
+                echo "Waiting for ${argoCDAppName} to sync..."
+
+                sh """
+                    # Wait for sync with timeout
+                    argocd app wait ${argoCDAppName} \
+                        --timeout ${timeoutSeconds} \
+                        --health \
+                        --sync || {
+                        echo "✗ ERROR: ${argoCDAppName} failed to sync or become healthy"
+
+                        # Show app status for debugging
+                        argocd app get ${argoCDAppName}
+
+                        exit 1
+                    }
+
+                    echo "✓ ${argoCDAppName} synced and healthy"
+                """
+            }
+
+            echo "✓ All apps synced successfully in ${environment}"
+        }
+    }
+}
+
+/**
+ * Creates a promotion MR to the next environment
+ * @param sourceEnv Source environment (dev or stage)
+ */
+def createPromotionMR(String sourceEnv) {
+    container('pipeline') {
+        script {
+            // Determine target environment
+            def targetEnv = ''
+            if (sourceEnv == 'dev') {
+                targetEnv = 'stage'
+            } else if (sourceEnv == 'stage') {
+                targetEnv = 'prod'
+            } else {
+                echo "⚠ No promotion needed from ${sourceEnv}"
+                return
+            }
+
+            echo "=== Creating Promotion MR: ${sourceEnv} → ${targetEnv} ==="
+
+            withCredentials([
+                usernamePassword(credentialsId: 'gitlab-credentials',
+                                usernameVariable: 'GIT_USERNAME',
+                                passwordVariable: 'GIT_PASSWORD'),
+                string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')
+            ]) {
+                sh '''
+                    # Setup git credentials
+                    git config --global user.name "Jenkins CI"
+                    git config --global user.email "jenkins@local"
+                    git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
+                '''
+
+                sh """
+                    # Fetch latest branches
+                    git fetch origin ${sourceEnv}
+                    git fetch origin ${targetEnv}
+
+                    # Create promotion branch
+                    TIMESTAMP=\$(date +%Y%m%d-%H%M%S)
+                    PROMOTION_BRANCH="promote-${sourceEnv}-to-${targetEnv}-\${TIMESTAMP}"
+
+                    git checkout ${targetEnv}
+                    git checkout -b "\${PROMOTION_BRANCH}"
+
+                    # Merge source environment
+                    git merge origin/${sourceEnv} --no-ff --no-commit || {
+                        echo "✗ ERROR: Merge conflict detected"
+                        echo "Manual resolution required for ${sourceEnv} → ${targetEnv}"
+                        exit 1
+                    }
+
+                    # Commit merge
+                    git commit -m "Promote ${sourceEnv} to ${targetEnv}
+
+Automated promotion after successful ${sourceEnv} deployment.
+
+Source: ${sourceEnv} (latest)
+Target: ${targetEnv}
+Build: \${BUILD_URL}
+
+All ${sourceEnv} apps have been validated, synced, and are healthy."
+
+                    # Push promotion branch
+                    git push -u origin "\${PROMOTION_BRANCH}"
+
+                    # Create MR using GitLab API
+                    export GITLAB_URL="${env.GITLAB_URL}"
+
+                    ./scripts/create-gitlab-mr.sh \
+                        "\${PROMOTION_BRANCH}" \
+                        "${targetEnv}" \
+                        "Promote ${sourceEnv} to ${targetEnv}" \
+                        "Automated promotion MR created after successful ${sourceEnv} deployment.
+
+**Source Environment:** ${sourceEnv}
+**Target Environment:** ${targetEnv}
+
+All applications in ${sourceEnv} have been deployed and verified as healthy.
+
+**Jenkins Build:** \${BUILD_URL}
+
+---
+🤖 Auto-generated by k8s-deployments CI/CD pipeline"
+
+                    echo "✓ Created promotion MR: \${PROMOTION_BRANCH} → ${targetEnv}"
+                """
+
+                // Cleanup git credentials
+                sh 'git config --global --unset credential.helper || true'
+            }
+        }
+    }
+}
+
+// ============================================================================
+// MAIN PIPELINE
+// ============================================================================
+
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: pipeline
+    image: localhost:30500/jenkins-agent-custom:latest
+    command:
+    - cat
+    tty: true
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+"""
+        }
+    }
+
+    options {
+        timeout(time: 45, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '30', daysToKeepStr: '60'))
+        disableConcurrentBuilds()
+    }
+
+    parameters {
+        string(
+            name: 'MR_IID',
+            defaultValue: '',
+            description: 'GitLab Merge Request IID (Internal ID)'
+        )
+        string(
+            name: 'MR_EVENT',
+            defaultValue: '',
+            description: 'MR Event type: open, update, merge, or close'
+        )
+        string(
+            name: 'SOURCE_BRANCH',
+            defaultValue: '',
+            description: 'Source branch of the MR'
+        )
+        string(
+            name: 'TARGET_BRANCH',
+            defaultValue: '',
+            description: 'Target branch of the MR (dev/stage/prod)'
+        )
+        booleanParam(
+            name: 'CREATE_PROMOTION_MR',
+            defaultValue: true,
+            description: 'Automatically create promotion MR after successful deployment'
+        )
+    }
+
+    environment {
+        // GitLab configuration
+        GITLAB_URL = 'http://gitlab.gitlab.svc.cluster.local'
+        DEPLOYMENTS_REPO = "${GITLAB_URL}/example/k8s-deployments.git"
+
+        // ArgoCD configuration
+        ARGOCD_SERVER = 'argocd-server.argocd.svc.cluster.local:80'
+        ARGOCD_OPTS = '--plaintext --grpc-web'
+    }
+
+    stages {
+        stage('Detect Workflow') {
+            steps {
+                container('pipeline') {
+                    script {
+                        echo """
+=======================================================
+k8s-deployments CI/CD Pipeline
+=======================================================
+MR IID: ${params.MR_IID}
+Event: ${params.MR_EVENT}
+Source Branch: ${params.SOURCE_BRANCH}
+Target Branch: ${params.TARGET_BRANCH}
+=======================================================
+"""
+
+                        if (params.MR_EVENT in ['open', 'update', 'reopen']) {
+                            env.WORKFLOW = 'VALIDATE'
+                            echo "▸ Workflow: VALIDATION (MR ${params.MR_EVENT})"
+                        } else if (params.MR_EVENT == 'merge') {
+                            env.WORKFLOW = 'DEPLOY'
+                            echo "▸ Workflow: DEPLOYMENT (MR merged)"
+                        } else if (params.MR_EVENT == 'close') {
+                            env.WORKFLOW = 'CLEANUP'
+                            echo "▸ Workflow: CLEANUP (MR closed)"
+                        } else {
+                            error("Unknown or unsupported MR event: ${params.MR_EVENT}")
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Validation Workflow') {
+            when {
+                expression { env.WORKFLOW == 'VALIDATE' }
+            }
+            steps {
+                container('pipeline') {
+                    script {
+                        echo """
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VALIDATION WORKFLOW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+                        // Checkout MR source branch
+                        checkout([
+                            $class: 'GitSCM',
+                            branches: [[name: "*/${params.SOURCE_BRANCH}"]],
+                            userRemoteConfigs: [[
+                                url: env.DEPLOYMENTS_REPO,
+                                credentialsId: 'gitlab-credentials'
+                            ]]
+                        ])
+
+                        // Run validation pipeline
+                        echo "Running validation checks..."
+                        build job: 'k8s-deployments-validation',
+                              parameters: [
+                                  string(name: 'BRANCH_NAME', value: params.SOURCE_BRANCH),
+                                  booleanParam(name: 'VALIDATE_ALL_ENVS', value: true)
+                              ],
+                              wait: true,
+                              propagate: true
+
+                        echo "✓ Validation completed successfully"
+
+                        // Post comment to MR
+                        withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+                            sh """
+                                curl -X POST "${env.GITLAB_URL}/api/v4/projects/2/merge_requests/${params.MR_IID}/notes" \
+                                  -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                                  -d "body=✓ **Validation Passed**
+
+All CUE configurations, manifest generation, and YAML validation checks completed successfully.
+
+**Jenkins Build:** ${env.BUILD_URL}
+
+Safe to merge when ready. 🚀" \
+                                  || echo "⚠ Could not post MR comment (non-blocking)"
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deployment Workflow') {
+            when {
+                expression { env.WORKFLOW == 'DEPLOY' }
+            }
+            stages {
+                stage('Checkout Target Branch') {
+                    steps {
+                        container('pipeline') {
+                            script {
+                                echo """
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEPLOYMENT WORKFLOW
+Target Environment: ${params.TARGET_BRANCH}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+                                // Validate target branch is a known environment
+                                if (!(params.TARGET_BRANCH in ['dev', 'stage', 'prod'])) {
+                                    echo "⚠ Target branch '${params.TARGET_BRANCH}' is not an environment branch"
+                                    echo "Skipping deployment workflow"
+                                    env.SKIP_DEPLOYMENT = 'true'
+                                    return
+                                }
+
+                                env.SKIP_DEPLOYMENT = 'false'
+
+                                // Checkout target branch (post-merge)
+                                checkout([
+                                    $class: 'GitSCM',
+                                    branches: [[name: "*/${params.TARGET_BRANCH}"]],
+                                    userRemoteConfigs: [[
+                                        url: env.DEPLOYMENTS_REPO,
+                                        credentialsId: 'gitlab-credentials'
+                                    ]]
+                                ])
+
+                                echo "✓ Checked out ${params.TARGET_BRANCH} (post-merge)"
+                            }
+                        }
+                    }
+                }
+
+                stage('Login to ArgoCD') {
+                    when {
+                        expression { env.SKIP_DEPLOYMENT != 'true' }
+                    }
+                    steps {
+                        container('pipeline') {
+                            script {
+                                echo "=== Logging into ArgoCD ==="
+
+                                withCredentials([
+                                    usernamePassword(credentialsId: 'argocd-credentials',
+                                                    usernameVariable: 'ARGOCD_USERNAME',
+                                                    passwordVariable: 'ARGOCD_PASSWORD')
+                                ]) {
+                                    sh """
+                                        argocd login ${env.ARGOCD_SERVER} \
+                                            --username \${ARGOCD_USERNAME} \
+                                            --password \${ARGOCD_PASSWORD} \
+                                            ${env.ARGOCD_OPTS}
+
+                                        echo "✓ Logged into ArgoCD"
+                                    """
+                                }
+                            }
+                        }
+                    }
+                }
+
+                stage('Refresh ArgoCD Apps') {
+                    when {
+                        expression { env.SKIP_DEPLOYMENT != 'true' }
+                    }
+                    steps {
+                        script {
+                            refreshArgoCDApps(params.TARGET_BRANCH)
+                        }
+                    }
+                }
+
+                stage('Wait for Sync') {
+                    when {
+                        expression { env.SKIP_DEPLOYMENT != 'true' }
+                    }
+                    steps {
+                        script {
+                            waitForArgoCDSync(params.TARGET_BRANCH, 300)
+                        }
+                    }
+                }
+
+                stage('Deployment Summary') {
+                    when {
+                        expression { env.SKIP_DEPLOYMENT != 'true' }
+                    }
+                    steps {
+                        container('pipeline') {
+                            script {
+                                echo """
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ DEPLOYMENT SUCCESSFUL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Environment: ${params.TARGET_BRANCH}
+Source MR: ${params.MR_IID}
+
+All applications have been:
+  ✓ Refreshed in ArgoCD
+  ✓ Synced to latest Git state
+  ✓ Verified as healthy
+
+Build: ${env.BUILD_URL}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+                                // Post comment to MR
+                                withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+                                    sh """
+                                        curl -X POST "${env.GITLAB_URL}/api/v4/projects/2/merge_requests/${params.MR_IID}/notes" \
+                                          -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                                          -d "body=✓ **Deployment Successful**
+
+Environment \`${params.TARGET_BRANCH}\` has been successfully deployed.
+
+All ArgoCD applications are synced and healthy.
+
+**Jenkins Build:** ${env.BUILD_URL}" \
+                                          || echo "⚠ Could not post MR comment (non-blocking)"
+                                    """
+                                }
+                            }
+                        }
+                    }
+                }
+
+                stage('Create Promotion MR') {
+                    when {
+                        allOf {
+                            expression { env.SKIP_DEPLOYMENT != 'true' }
+                            expression { params.CREATE_PROMOTION_MR == true }
+                            expression { params.TARGET_BRANCH in ['dev', 'stage'] }
+                        }
+                    }
+                    steps {
+                        script {
+                            createPromotionMR(params.TARGET_BRANCH)
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Cleanup Workflow') {
+            when {
+                expression { env.WORKFLOW == 'CLEANUP' }
+            }
+            steps {
+                container('pipeline') {
+                    script {
+                        echo "MR ${params.MR_IID} was closed - no action needed"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            script {
+                echo """
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ PIPELINE COMPLETED SUCCESSFULLY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Workflow: ${env.WORKFLOW}
+Build: ${env.BUILD_URL}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+            }
+        }
+
+        failure {
+            script {
+                echo """
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✗ PIPELINE FAILED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Workflow: ${env.WORKFLOW}
+Build: ${env.BUILD_URL}
+
+Check logs above for error details.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+                // Post failure comment to MR
+                if (params.MR_IID) {
+                    container('pipeline') {
+                        withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+                            sh """
+                                curl -X POST "${env.GITLAB_URL}/api/v4/projects/2/merge_requests/${params.MR_IID}/notes" \
+                                  -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                                  -d "body=✗ **Pipeline Failed**
+
+Workflow: \`${env.WORKFLOW}\`
+
+Check Jenkins logs for details: ${env.BUILD_URL}" \
+                                  || echo "⚠ Could not post MR comment"
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        always {
+            // Cleanup
+            sh 'echo "Pipeline cleanup completed"'
+        }
+    }
+}
