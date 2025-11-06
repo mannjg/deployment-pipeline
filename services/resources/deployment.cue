@@ -283,11 +283,25 @@ _projectedSecretsVolumeBuilder: {
 							resources: appConfig.deployment.resources
 						}
 
-						// Liveness probe with smart defaults - merges user settings with defaults
+						// Liveness probe with smart defaults
+					// If exec or tcpSocket is specified, use custom probe entirely
+					// Otherwise merge custom settings with HTTP defaults
+					if (appConfig.deployment.livenessProbe.exec | _|_) != _|_ || (appConfig.deployment.livenessProbe.tcpSocket | _|_) != _|_ {
+						livenessProbe: appConfig.deployment.livenessProbe
+					}
+					if (appConfig.deployment.livenessProbe.exec | _|_) == _|_ && (appConfig.deployment.livenessProbe.tcpSocket | _|_) == _|_ {
 						livenessProbe: _baseProbes.liveness & (appConfig.deployment.livenessProbe | {})
+					}
 
-						// Readiness probe with smart defaults - merges user settings with defaults
+						// Readiness probe with smart defaults
+					// If exec or tcpSocket is specified, use custom probe entirely
+					// Otherwise merge custom settings with HTTP defaults
+					if (appConfig.deployment.readinessProbe.exec | _|_) != _|_ || (appConfig.deployment.readinessProbe.tcpSocket | _|_) != _|_ {
+						readinessProbe: appConfig.deployment.readinessProbe
+					}
+					if (appConfig.deployment.readinessProbe.exec | _|_) == _|_ && (appConfig.deployment.readinessProbe.tcpSocket | _|_) == _|_ {
 						readinessProbe: _baseProbes.readiness & (appConfig.deployment.readinessProbe | {})
+					}
 
 						securityContext: base.#DefaultContainerSecurityContext
 					}]

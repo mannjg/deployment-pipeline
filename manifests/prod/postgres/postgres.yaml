@@ -54,11 +54,12 @@ spec:
           image: docker.local/library/postgres:16-alpine
           imagePullPolicy: Always
           livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
             failureThreshold: 3
-            httpGet:
-              path: /health/live
-              port: 8080
-              scheme: HTTP
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
@@ -68,11 +69,12 @@ spec:
               name: http
               protocol: TCP
           readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
             failureThreshold: 3
-            httpGet:
-              path: /health/ready
-              port: 8080
-              scheme: HTTP
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
