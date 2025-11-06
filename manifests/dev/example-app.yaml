@@ -65,7 +65,7 @@ spec:
     spec:
       containers:
         - name: example-app
-          image: docker.local/example/example-app:1.2.0-e2e-20251105200539-99ad505
+          image: docker.local/example/example-app:1.2.0-e2e-20251106073609-56fd97a
           env:
             - name: DEBUG
               value: "yes"
