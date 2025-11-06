@@ -89,6 +89,10 @@ log_info "Found apps: $(echo $app_names | tr '\n' ' ')"
 for app_name in $app_names; do
     log_info "Processing app: ${app_name}"
 
+    # Create app-specific subdirectory
+    APP_MANIFEST_DIR="${MANIFEST_DIR}/${app_name}"
+    mkdir -p "${APP_MANIFEST_DIR}"
+
     # Query the resources_list for this app
     resources_output=$(cue export ./envs/${ENVIRONMENT}.cue -e "${ENVIRONMENT}.${app_name}.resources_list" --out json 2>&1)
     resources_status=$?
@@ -138,11 +142,11 @@ for app_name in $app_names; do
             if [ $export_status -eq 0 ]; then
                 # Sort keys for consistent output using yq if available
                 if command -v yq &> /dev/null; then
-                    echo "$export_output" | yq 'sort_keys(..)' > "${MANIFEST_DIR}/${app_name}.yaml"
+                    echo "$export_output" | yq 'sort_keys(..)' > "${APP_MANIFEST_DIR}/${app_name}.yaml"
                 else
-                    echo "$export_output" > "${MANIFEST_DIR}/${app_name}.yaml"
+                    echo "$export_output" > "${APP_MANIFEST_DIR}/${app_name}.yaml"
                 fi
-                log_info "Successfully generated ${MANIFEST_DIR}/${app_name}.yaml"
+                log_info "Successfully generated ${APP_MANIFEST_DIR}/${app_name}.yaml"
                 log_info "Resources: ${resources[*]}"
             else
                 log_error "Error exporting resources for ${app_name} in ${ENVIRONMENT}:"
