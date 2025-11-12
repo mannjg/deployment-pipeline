@@ -69,13 +69,22 @@ if [ -z "$apps_json" ] || [ "$apps_json" = "null" ] || [ "$apps_json" = "{}" ]; 
 fi
 
 # Parse JSON to get app names (keys at the top level)
-# Use jq if available, otherwise use grep/sed
+# Try jq first, then python, then a simple grep fallback
 if command -v jq &> /dev/null; then
-    app_names=$(echo "$apps_json" | jq -r 'keys[]' 2>/dev/null)
+    app_names=$(echo "$apps_json" | jq -r 'keys[]' 2>&1)
+    jq_status=$?
+    
+    # If jq failed, try python
+    if [ $jq_status -ne 0 ] || [ -z "$app_names" ]; then
+        log_warn "jq failed, trying python fallback"
+        app_names=$(echo "$apps_json" | python3 -c "import sys, json; print('\n'.join(json.load(sys.stdin).keys()))" 2>/dev/null | sort)
+    fi
+elif command -v python3 &> /dev/null; then
+    # Use python to parse JSON and extract top-level keys
+    app_names=$(echo "$apps_json" | python3 -c "import sys, json; print('\n'.join(json.load(sys.stdin).keys()))" 2>/dev/null | sort)
 else
-    # Fallback: parse JSON keys manually
-    # Extract keys from JSON: "key": { ... }
-    app_names=$(echo "$apps_json" | grep -o '"[^"]*"[[:space:]]*:' | sed 's/"//g' | sed 's/[[:space:]]*://')
+    log_error "Neither jq nor python3 available for JSON parsing"
+    exit 1
 fi
 
 if [ -z "$app_names" ]; then
