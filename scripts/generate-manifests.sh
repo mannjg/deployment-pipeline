@@ -62,8 +62,7 @@ fi
 
 # Extract app names from JSON keys
 # The JSON structure is: { "appName": { ... }, ... }
-apps_json=$(echo "$apps_output" | tr -d '\n')
-if [ -z "$apps_json" ] || [ "$apps_json" = "null" ] || [ "$apps_json" = "{}" ]; then
+if [ -z "$apps_output" ] || [ "$apps_output" = "null" ] || [ "$apps_output" = "{}" ]; then
     log_warn "No apps defined in ${ENVIRONMENT} environment"
     exit 0
 fi
@@ -71,7 +70,7 @@ fi
 # Parse JSON to get app names (keys at the top level)
 # CUE exports JSON with 4-space indentation, root-level keys have exactly 4 spaces
 # This simple grep/sed approach works with basic shell tools available everywhere
-app_names=$(echo "$apps_json" | grep '^    "[^"]*": *{' | sed 's/.*"\([^"]*\)".*/\1/' | sort)
+app_names=$(echo "$apps_output" | grep '^    "[^"]*": *{' | sed 's/.*"\([^"]*\)".*/\1/' | sort)
 
 if [ -z "$app_names" ]; then
     log_warn "No apps found in ${ENVIRONMENT} environment"
