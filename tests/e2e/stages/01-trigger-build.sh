@@ -280,6 +280,47 @@ stage_01_trigger_build() {
             log_pass "Found Jenkins MR !${jenkins_mr_iid}"
             echo "$jenkins_mr_iid" > "${E2E_STATE_DIR}/jenkins_mr_iid.txt"
 
+            # Verify image update isolation (test the fix)
+            log_info "Verifying MR only updates example-app image (not postgres)..."
+
+            # Get MR changes from GitLab API
+            local mr_changes
+            mr_changes=$(curl -s \
+                --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                "${GITLAB_URL}/api/v4/projects/${k8s_project_id}/merge_requests/${jenkins_mr_iid}/changes")
+
+            # Extract diff for envs/dev.cue
+            local dev_cue_diff
+            dev_cue_diff=$(echo "$mr_changes" | jq -r '.changes[] | select(.new_path == "envs/dev.cue") | .diff' 2>/dev/null)
+
+            if [ -n "$dev_cue_diff" ]; then
+                # Check if example-app image was updated
+                if echo "$dev_cue_diff" | grep -q "docker.local/example/example-app"; then
+                    log_pass "✓ MR updates example-app image (correct)"
+                else
+                    log_warn "MR does not update example-app image (unexpected)"
+                fi
+
+                # Check if postgres image was NOT changed (this is the critical test)
+                if echo "$dev_cue_diff" | grep -q "postgres:.*-alpine"; then
+                    log_fail "✗ MR modifies postgres image (BUG - fix failed!)"
+                    log_error "The image update isolation fix did not work!"
+                    log_error "MR diff shows postgres image change:"
+                    echo "$dev_cue_diff" | grep "postgres"
+                    return 1
+                else
+                    log_pass "✓ MR does NOT modify postgres image (fix working!)"
+                fi
+
+                # Count total image changes
+                local image_changes
+                image_changes=$(echo "$dev_cue_diff" | grep -c "^[+-].*image:" || echo "0")
+                log_info "Total image lines changed in diff: $image_changes (expected: 2 for 1 image update)"
+
+            else
+                log_warn "Could not extract dev.cue diff from MR"
+            fi
+
             # Approve the MR
             log_info "Approving MR !${jenkins_mr_iid}..."
             approve_merge_request "$k8s_project_id" "$jenkins_mr_iid" || {

@@ -6,13 +6,14 @@
 // ============================================================================
 
 /**
- * Updates environment configuration and creates GitLab merge request
- * @param environment Target environment (dev/stage/prod)
+ * Deploys to an environment by updating image and creating GitLab merge request
+ * Used for dev environment (initial deployment from build)
+ * @param environment Target environment (dev)
  * @param branchPrefix Prefix for feature branch name
  * @param mrTitle Title for the merge request
  * @param mrDescription Detailed description for the merge request
  */
-def updateEnvironmentAndCreateMR(String environment, String branchPrefix, String mrTitle, String mrDescription) {
+def deployToEnvironment(String environment, String branchPrefix, String mrTitle, String mrDescription) {
     container('maven') {
         script {
             echo "[${environment.toUpperCase()}] Creating environment update and MR..."
@@ -97,11 +98,11 @@ def updateEnvironmentAndCreateMR(String environment, String branchPrefix, String
                     sh """
                         cd k8s-deployments
 
-                        # Update image reference in environment CUE file
-                        sed -i 's|image: ".*"|image: "${IMAGE_FOR_DEPLOY}"|' envs/${environment}.cue
+                        # Update image reference in environment CUE file (app-specific)
+                        # This script ensures only the specified app's image is updated
+                        ./scripts/update-app-image.sh ${environment} ${APP_NAME} "${IMAGE_FOR_DEPLOY}"
 
-                        echo "[${environment.toUpperCase()}] Updated image in envs/${environment}.cue:"
-                        grep 'image:' envs/${environment}.cue
+                        echo "[${environment.toUpperCase()}] Updated ${APP_NAME} image in envs/${environment}.cue"
 
                         # Generate Kubernetes manifests from CUE configuration
                         ./scripts/generate-manifests.sh ${environment}
@@ -159,6 +160,85 @@ Generated manifests from CUE configuration."
                     """
 
                     echo "[${environment.toUpperCase()}] ✓ MR created successfully: ${branchPrefix}-${env.IMAGE_TAG} → ${environment}"
+
+                } finally {
+                    // Always cleanup git credentials, even on failure
+                    sh 'git config --global --unset credential.helper || true'
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Promotes between environments by creating a merge request
+ * Used for stage/prod promotions (merges changes from previous environment)
+ * @param sourceEnv Source environment branch to promote from (dev or stage)
+ * @param targetEnv Target environment branch to promote to (stage or prod)
+ * @param branchPrefix Prefix for feature branch name
+ * @param mrTitle Title for the merge request
+ * @param mrDescription Detailed description for the merge request
+ */
+def promoteEnvironment(String sourceEnv, String targetEnv, String branchPrefix, String mrTitle, String mrDescription) {
+    container('maven') {
+        script {
+            echo "[${targetEnv.toUpperCase()}] Creating promotion MR from ${sourceEnv}..."
+
+            withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
+                                              usernameVariable: 'GIT_USERNAME',
+                                              passwordVariable: 'GIT_PASSWORD')]) {
+                try {
+                    // Setup git credentials (ephemeral, memory-only)
+                    sh '''
+                        git config --global user.name "Jenkins CI"
+                        git config --global user.email "jenkins@local"
+                        git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
+                    '''
+
+                    // Clone deployment repository and create promotion branch
+                    sh """
+                        rm -rf k8s-deployments
+                        git clone ${DEPLOYMENT_REPO} k8s-deployments
+                        cd k8s-deployments
+
+                        # Fetch both source and target branches
+                        git fetch origin ${sourceEnv}
+                        git fetch origin ${targetEnv}
+
+                        # Checkout target environment branch
+                        git checkout ${targetEnv}
+                        git pull origin ${targetEnv}
+
+                        # Create feature branch for this promotion
+                        FEATURE_BRANCH="${branchPrefix}-\${IMAGE_TAG}"
+                        git checkout -b "\${FEATURE_BRANCH}"
+
+                        # Merge changes from source environment
+                        echo "Merging ${sourceEnv} into \${FEATURE_BRANCH}..."
+                        git merge origin/${sourceEnv} --no-edit -m "Promote from ${sourceEnv} to ${targetEnv}: \${IMAGE_TAG}"
+                    """
+
+                    // Push feature branch and create merge request
+                    sh """
+                        cd k8s-deployments
+                        FEATURE_BRANCH="${branchPrefix}-\${IMAGE_TAG}"
+
+                        # Delete remote branch if it exists, then push fresh
+                        git push origin --delete "\${FEATURE_BRANCH}" 2>/dev/null || echo "Branch does not exist remotely"
+                        git push -u origin "\${FEATURE_BRANCH}"
+
+                        # Create MR using GitLab API
+                        export GITLAB_TOKEN="${GITLAB_API_TOKEN}"
+                        export GITLAB_URL="${GITLAB_URL}"
+
+                        ./scripts/create-gitlab-mr.sh \
+                            "\${FEATURE_BRANCH}" \
+                            ${targetEnv} \
+                            "${mrTitle}" \
+                            "${mrDescription}"
+                    """
+
+                    echo "[${targetEnv.toUpperCase()}] ✓ Promotion MR created successfully: ${sourceEnv} → ${branchPrefix}-${env.IMAGE_TAG} → ${targetEnv}"
 
                 } finally {
                     // Always cleanup git credentials, even on failure
@@ -403,7 +483,7 @@ spec:
         stage('Update Dev Environment') {
             steps {
                 script {
-                    updateEnvironmentAndCreateMR(
+                    deployToEnvironment(
                         'dev',
                         'update-dev',
                         "Deploy ${env.APP_NAME} to dev: ${env.IMAGE_TAG}",
@@ -442,7 +522,8 @@ Once merged, ArgoCD will automatically deploy to the dev namespace.
             }
             steps {
                 script {
-                    updateEnvironmentAndCreateMR(
+                    promoteEnvironment(
+                        'dev',
                         'stage',
                         'promote-stage',
                         "Promote ${env.APP_NAME} to stage: ${env.IMAGE_TAG}",
@@ -483,7 +564,8 @@ Once this MR is merged, ArgoCD will automatically deploy to the stage namespace.
             }
             steps {
                 script {
-                    updateEnvironmentAndCreateMR(
+                    promoteEnvironment(
+                        'stage',
                         'prod',
                         'promote-prod',
                         "Promote ${env.APP_NAME} to prod: ${env.IMAGE_TAG}",
