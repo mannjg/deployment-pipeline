@@ -47,3 +47,6 @@ argocd/.git/
 # E2E test state directories (keep only .gitkeep)
 tests/e2e/state/*
 !tests/e2e/state/.gitkeep
+
+# Git worktrees
+.worktrees/
