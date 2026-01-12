@@ -1,13 +1,32 @@
 ---
 # Lightweight Jenkins Deployment
 # Simplified for resource-constrained environments
+#
+# Variables (use envsubst before applying):
+#   ${JENKINS_HOST} - Jenkins hostname (e.g., jenkins.jmann.local)
+#   ${STORAGE_CLASS} - StorageClass for PVCs
 
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: jenkins-tls
+  namespace: jenkins
+spec:
+  secretName: jenkins-tls
+  issuerRef:
+    name: ca-issuer
+    kind: ClusterIssuer
+  commonName: ${JENKINS_HOST}
+  dnsNames:
+    - ${JENKINS_HOST}
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: jenkins-home
   namespace: jenkins
 spec:
+  storageClassName: ${STORAGE_CLASS}
   accessModes:
     - ReadWriteOnce
   resources:
@@ -48,7 +67,7 @@ spec:
         fsGroup: 1000
       containers:
       - name: jenkins
-        image: jenkins/jenkins:2.479-jdk17
+        image: jenkins/jenkins:lts-jdk21
         ports:
         - name: http
           containerPort: 8080
@@ -120,10 +139,15 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
   ingressClassName: public
+  tls:
+  - hosts:
+    - ${JENKINS_HOST}
+    secretName: jenkins-tls
   rules:
-  - host: jenkins.local
+  - host: ${JENKINS_HOST}
     http:
       paths:
       - path: /

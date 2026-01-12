@@ -1,13 +1,32 @@
 ---
 # Lightweight Nexus Repository Deployment
 # Simplified for resource-constrained environments
+#
+# Variables (use envsubst before applying):
+#   ${NEXUS_HOST} - Nexus hostname (e.g., nexus.jmann.local)
+#   ${STORAGE_CLASS} - StorageClass for PVCs
 
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: nexus-tls
+  namespace: nexus
+spec:
+  secretName: nexus-tls
+  issuerRef:
+    name: ca-issuer
+    kind: ClusterIssuer
+  commonName: ${NEXUS_HOST}
+  dnsNames:
+    - ${NEXUS_HOST}
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: nexus-data
   namespace: nexus
 spec:
+  storageClassName: ${STORAGE_CLASS}
   accessModes:
     - ReadWriteOnce
   resources:
@@ -37,7 +56,7 @@ spec:
         fsGroup: 200
       containers:
       - name: nexus
-        image: sonatype/nexus3:3.74.0
+        image: sonatype/nexus3:3.87.1
         ports:
         - name: http
           containerPort: 8081
@@ -107,10 +126,15 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
   ingressClassName: public
+  tls:
+  - hosts:
+    - ${NEXUS_HOST}
+    secretName: nexus-tls
   rules:
-  - host: nexus.local
+  - host: ${NEXUS_HOST}
     http:
       paths:
       - path: /
