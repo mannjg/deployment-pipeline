@@ -102,13 +102,13 @@ def deployToEnvironment(String environment, String branchPrefix, String mrTitle,
                         # This script ensures only the specified app's image is updated
                         ./scripts/update-app-image.sh ${environment} ${APP_NAME} "${IMAGE_FOR_DEPLOY}"
 
-                        echo "[${environment.toUpperCase()}] Updated ${APP_NAME} image in envs/${environment}.cue"
+                        echo "[${environment.toUpperCase()}] Updated ${APP_NAME} image in env.cue"
 
                         # Generate Kubernetes manifests from CUE configuration
                         ./scripts/generate-manifests.sh ${environment}
 
                         # Stage all changes (synced config + CUE file + generated manifests)
-                        git add services/apps/ envs/${environment}.cue manifests/${environment}/ 2>/dev/null || git add envs/${environment}.cue manifests/${environment}/
+                        git add services/apps/ env.cue manifests/ 2>/dev/null || git add env.cue manifests/
 
                         # Commit with metadata
                         COMMIT_MSG="${mrTitle}
@@ -282,7 +282,7 @@ kind: Pod
 spec:
   containers:
   - name: maven
-    image: localhost:30500/jenkins-agent-custom:latest
+    image: maven:3.9-eclipse-temurin-21
     command:
     - cat
     tty: true
@@ -293,13 +293,18 @@ spec:
       limits:
         memory: "2Gi"
         cpu: "2000m"
-    volumeMounts:
-    - name: docker-sock
-      mountPath: /var/run/docker.sock
-  volumes:
-  - name: docker-sock
-    hostPath:
-      path: /var/run/docker.sock
+  - name: cue
+    image: cuelang/cue:latest
+    command:
+    - cat
+    tty: true
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
 """
         }
     }
@@ -333,19 +338,21 @@ spec:
         APP_NAME = 'example-app'
         APP_GROUP = 'example'
 
-        // Registry configuration (internal cluster DNS)
-        DOCKER_REGISTRY = 'nexus.nexus.svc.cluster.local:5000'
-        NEXUS_URL = 'http://nexus.nexus.svc.cluster.local:8081'
+        // Registry configuration
+        DOCKER_REGISTRY = 'nexus.jmann.local:8082'
+        NEXUS_URL = 'https://nexus.jmann.local'
 
-        // Git repositories (internal cluster DNS)
-        GITLAB_URL = 'http://gitlab.gitlab.svc.cluster.local'
-        DEPLOYMENT_REPO = "${GITLAB_URL}/example/k8s-deployments.git"
+        // Git repositories
+        GITLAB_URL = 'https://gitlab.jmann.local'
+        DEPLOYMENT_REPO = "${GITLAB_URL}/root/k8s-deployments.git"
 
         // Credentials
         NEXUS_CREDENTIALS = credentials('nexus-credentials')
-        DOCKER_CREDENTIALS = credentials('docker-registry-credentials')
         GITLAB_CREDENTIALS = credentials('gitlab-credentials')
         GITLAB_API_TOKEN = credentials('gitlab-api-token-secret')
+
+        // Git SSL verification (self-signed certs)
+        GIT_SSL_NO_VERIFY = 'true'
 
         // Computed image reference
         IMAGE_NAME = "${DOCKER_REGISTRY}/${APP_GROUP}/${APP_NAME}"

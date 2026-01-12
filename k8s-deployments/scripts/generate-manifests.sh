@@ -2,12 +2,22 @@
 set -euo pipefail
 
 # Generate Kubernetes manifests from CUE configuration
-# Usage: ./generate-manifests.sh <environment>
+# Usage: ./generate-manifests.sh [environment]
+#
+# In the branch-per-environment structure:
+# - Each branch (dev/stage/prod) has env.cue at root
+# - Environment can be auto-detected from env.cue or specified
+# - Manifests are generated to manifests/ directory
 
-ENVIRONMENT=${1:-dev}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-MANIFEST_DIR="${PROJECT_ROOT}/manifests/${ENVIRONMENT}"
+MANIFEST_DIR="${PROJECT_ROOT}/manifests"
+
+# Auto-detect environment from env.cue if not specified
+if [ -f "${PROJECT_ROOT}/env.cue" ]; then
+    DETECTED_ENV=$(grep -m1 'env:' "${PROJECT_ROOT}/env.cue" 2>/dev/null | grep -oP '"\K[^"]+' || echo "")
+fi
+ENVIRONMENT=${1:-${DETECTED_ENV:-dev}}
 
 # Colors
 RED='\033[0;31m'
@@ -50,7 +60,7 @@ log_info "Discovering apps in ${ENVIRONMENT} environment..."
 
 # Query all top-level keys in the environment to discover apps
 # This dynamically finds all apps defined in the environment
-apps_output=$(cue export ./envs/${ENVIRONMENT}.cue -e "${ENVIRONMENT}" --out json 2>&1)
+apps_output=$(cue export ./env.cue -e "${ENVIRONMENT}" --out json 2>&1)
 apps_status=$?
 
 # Check if cue export failed
@@ -88,7 +98,7 @@ for app_name in $app_names; do
     mkdir -p "${APP_MANIFEST_DIR}"
 
     # Query the resources_list for this app
-    resources_output=$(cue export ./envs/${ENVIRONMENT}.cue -e "${ENVIRONMENT}.${app_name}.resources_list" --out json 2>&1)
+    resources_output=$(cue export ./env.cue -e "${ENVIRONMENT}.${app_name}.resources_list" --out json 2>&1)
     resources_status=$?
 
     # Check if cue export failed
@@ -128,9 +138,9 @@ for app_name in $app_names; do
         # CUE automatically formats multiple exports with --- separators
         if [ -n "$export_flags" ]; then
             log_info "Exporting resources for ${app_name}: ${resources[*]}"
-            log_info "Command: cue export ./envs/${ENVIRONMENT}.cue $export_flags --out yaml"
+            log_info "Command: cue export ./env.cue $export_flags --out yaml"
 
-            export_output=$(cue export "./envs/${ENVIRONMENT}.cue" $export_flags --out yaml 2>&1)
+            export_output=$(cue export "./env.cue" $export_flags --out yaml 2>&1)
             export_status=$?
 
             if [ $export_status -eq 0 ]; then
@@ -150,7 +160,7 @@ for app_name in $app_names; do
         fi
     else
         log_warn "No resources defined for ${app_name} in ${ENVIRONMENT}"
-        log_warn "Check that ${ENVIRONMENT}.${app_name}.resources_list exists in ./envs/${ENVIRONMENT}.cue"
+        log_warn "Check that ${ENVIRONMENT}.${app_name}.resources_list exists in ./env.cue"
     fi
 done
 

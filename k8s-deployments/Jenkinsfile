@@ -11,26 +11,34 @@
  * @param environment Target environment (dev/stage/prod)
  */
 def refreshArgoCDApps(String environment) {
-    container('pipeline') {
+    container('cue') {
         script {
             echo "=== Refreshing ArgoCD Applications for ${environment} ==="
 
-            // Discover all apps in the environment
+            // Discover all apps in the environment using env.cue at root
             def appsJson = sh(
-                script: "cue export ./envs/${environment}.cue -e ${environment} --out json",
+                script: "cue export ./env.cue -e ${environment} --out json 2>/dev/null || echo '{}'",
                 returnStdout: true
             ).trim()
 
             def apps = sh(
-                script: "echo '${appsJson}' | jq -r 'keys[]'",
+                script: "echo '${appsJson}' | jq -r 'keys[]' 2>/dev/null || echo ''",
                 returnStdout: true
-            ).trim().split('\n')
+            ).trim()
 
-            echo "Found apps in ${environment}: ${apps.join(', ')}"
+            if (apps.isEmpty()) {
+                echo "No apps found in env.cue for ${environment}, skipping ArgoCD refresh"
+                return
+            }
+
+            def appList = apps.split('\n')
+            echo "Found apps in ${environment}: ${appList.join(', ')}"
 
             // Refresh each app
-            for (app in apps) {
+            for (app in appList) {
                 def appName = app.trim()
+                if (appName.isEmpty()) continue
+
                 def argoCDAppName = "${appName}-${environment}"
 
                 echo "Refreshing ArgoCD app: ${argoCDAppName}"
@@ -55,24 +63,33 @@ def refreshArgoCDApps(String environment) {
  * @param timeoutSeconds Maximum time to wait (default: 300)
  */
 def waitForArgoCDSync(String environment, int timeoutSeconds = 300) {
-    container('pipeline') {
+    container('cue') {
         script {
             echo "=== Waiting for ArgoCD Sync Completion ==="
 
-            // Discover all apps in the environment
+            // Discover all apps in the environment using env.cue at root
             def appsJson = sh(
-                script: "cue export ./envs/${environment}.cue -e ${environment} --out json",
+                script: "cue export ./env.cue -e ${environment} --out json 2>/dev/null || echo '{}'",
                 returnStdout: true
             ).trim()
 
             def apps = sh(
-                script: "echo '${appsJson}' | jq -r 'keys[]'",
+                script: "echo '${appsJson}' | jq -r 'keys[]' 2>/dev/null || echo ''",
                 returnStdout: true
-            ).trim().split('\n')
+            ).trim()
+
+            if (apps.isEmpty()) {
+                echo "No apps found, skipping ArgoCD sync wait"
+                return
+            }
+
+            def appList = apps.split('\n')
 
             // Wait for each app to sync
-            for (app in apps) {
+            for (app in appList) {
                 def appName = app.trim()
+                if (appName.isEmpty()) continue
+
                 def argoCDAppName = "${appName}-${environment}"
 
                 echo "Waiting for ${argoCDAppName} to sync..."
@@ -105,7 +122,7 @@ def waitForArgoCDSync(String environment, int timeoutSeconds = 300) {
  * @param sourceEnv Source environment (dev or stage)
  */
 def createPromotionMR(String sourceEnv) {
-    container('pipeline') {
+    container('cue') {
         script {
             // Determine target environment
             def targetEnv = ''
@@ -207,18 +224,26 @@ apiVersion: v1
 kind: Pod
 spec:
   containers:
-  - name: pipeline
-    image: localhost:30500/jenkins-agent-custom:latest
+  - name: cue
+    image: cuelang/cue:latest
     command:
     - cat
     tty: true
     resources:
       requests:
-        memory: "512Mi"
-        cpu: "250m"
+        memory: "256Mi"
+        cpu: "100m"
       limits:
-        memory: "1Gi"
-        cpu: "1000m"
+        memory: "512Mi"
+        cpu: "500m"
+  - name: jnlp
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
 """
         }
     }
@@ -259,18 +284,21 @@ spec:
 
     environment {
         // GitLab configuration
-        GITLAB_URL = 'http://gitlab.gitlab.svc.cluster.local'
-        DEPLOYMENTS_REPO = "${GITLAB_URL}/example/k8s-deployments.git"
+        GITLAB_URL = 'https://gitlab.jmann.local'
+        DEPLOYMENTS_REPO = "${GITLAB_URL}/root/k8s-deployments.git"
 
         // ArgoCD configuration
         ARGOCD_SERVER = 'argocd-server.argocd.svc.cluster.local:80'
         ARGOCD_OPTS = '--plaintext --grpc-web'
+
+        // Git SSL verification (self-signed certs)
+        GIT_SSL_NO_VERIFY = 'true'
     }
 
     stages {
         stage('Detect Workflow') {
             steps {
-                container('pipeline') {
+                container('cue') {
                     script {
                         echo """
 =======================================================
@@ -305,7 +333,7 @@ Target Branch: ${params.TARGET_BRANCH}
                 expression { env.WORKFLOW == 'VALIDATE' }
             }
             steps {
-                container('pipeline') {
+                container('cue') {
                     script {
                         echo """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -362,7 +390,7 @@ Safe to merge when ready. 🚀" \
             stages {
                 stage('Checkout Target Branch') {
                     steps {
-                        container('pipeline') {
+                        container('cue') {
                             script {
                                 echo """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -397,12 +425,85 @@ Target Environment: ${params.TARGET_BRANCH}
                     }
                 }
 
+                stage('Validate CUE') {
+                    when {
+                        expression { env.SKIP_DEPLOYMENT != 'true' }
+                    }
+                    steps {
+                        container('cue') {
+                            script {
+                                echo "=== Validating CUE Configuration ==="
+                                sh """
+                                    cue vet ./... || {
+                                        echo "✗ CUE validation failed"
+                                        exit 1
+                                    }
+                                    echo "✓ CUE configuration valid"
+                                """
+                            }
+                        }
+                    }
+                }
+
+                stage('Generate Manifests') {
+                    when {
+                        expression { env.SKIP_DEPLOYMENT != 'true' }
+                    }
+                    steps {
+                        container('cue') {
+                            script {
+                                echo "=== Generating Manifests ==="
+                                sh """
+                                    chmod +x ./scripts/generate-manifests.sh
+                                    ./scripts/generate-manifests.sh ${params.TARGET_BRANCH}
+                                    echo "✓ Manifests generated"
+                                """
+                            }
+                        }
+                    }
+                }
+
+                stage('Commit Manifests') {
+                    when {
+                        expression { env.SKIP_DEPLOYMENT != 'true' }
+                    }
+                    steps {
+                        container('cue') {
+                            script {
+                                echo "=== Committing Generated Manifests ==="
+                                withCredentials([
+                                    usernamePassword(credentialsId: 'gitlab-credentials',
+                                                    usernameVariable: 'GIT_USERNAME',
+                                                    passwordVariable: 'GIT_PASSWORD')
+                                ]) {
+                                    sh '''
+                                        git config user.name "Jenkins CI"
+                                        git config user.email "jenkins@jmann.local"
+
+                                        # Check if there are changes to commit
+                                        if git diff --quiet manifests/; then
+                                            echo "No manifest changes to commit"
+                                        else
+                                            git add manifests/
+                                            git commit -m "chore: regenerate manifests [ci skip]"
+
+                                            # Push using credentials
+                                            git push https://${GIT_USERNAME}:${GIT_PASSWORD}@gitlab.jmann.local/root/k8s-deployments.git HEAD:${TARGET_BRANCH}
+                                            echo "✓ Manifests committed and pushed"
+                                        fi
+                                    '''
+                                }
+                            }
+                        }
+                    }
+                }
+
                 stage('Login to ArgoCD') {
                     when {
                         expression { env.SKIP_DEPLOYMENT != 'true' }
                     }
                     steps {
-                        container('pipeline') {
+                        container('cue') {
                             script {
                                 echo "=== Logging into ArgoCD ==="
 
@@ -452,7 +553,7 @@ Target Environment: ${params.TARGET_BRANCH}
                         expression { env.SKIP_DEPLOYMENT != 'true' }
                     }
                     steps {
-                        container('pipeline') {
+                        container('cue') {
                             script {
                                 echo """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -512,7 +613,7 @@ All ArgoCD applications are synced and healthy.
                 expression { env.WORKFLOW == 'CLEANUP' }
             }
             steps {
-                container('pipeline') {
+                container('cue') {
                     script {
                         echo "MR ${params.MR_IID} was closed - no action needed"
                     }
@@ -550,7 +651,7 @@ Check logs above for error details.
 
                 // Post failure comment to MR
                 if (params.MR_IID) {
-                    container('pipeline') {
+                    container('cue') {
                         withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                             sh """
                                 curl -X POST "${env.GITLAB_URL}/api/v4/projects/2/merge_requests/${params.MR_IID}/notes" \
