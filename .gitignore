@@ -50,3 +50,6 @@ tests/e2e/state/*
 
 # Git worktrees
 .worktrees/
+
+# Local environment configuration (contains secrets)
+env.local
