@@ -38,9 +38,14 @@ DESCRIPTION=$4
 GITLAB_URL=${GITLAB_URL:-"http://gitlab.gitlab.svc.cluster.local"}
 GITLAB_TOKEN=${GITLAB_TOKEN:-""}
 
-# Project ID or path (example/k8s-deployments)
+# Project ID or path - use GITLAB_GROUP from environment
 # For API calls, we need the project ID or URL-encoded path
-PROJECT_PATH="example/k8s-deployments"
+GITLAB_GROUP=${GITLAB_GROUP:-""}
+if [ -z "$GITLAB_GROUP" ]; then
+    log_error "GITLAB_GROUP environment variable not set"
+    exit 1
+fi
+PROJECT_PATH="${GITLAB_GROUP}/k8s-deployments"
 PROJECT_PATH_ENCODED=$(echo "$PROJECT_PATH" | sed 's/\//%2F/g')
 
 # Validate GitLab token

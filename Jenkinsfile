@@ -199,6 +199,9 @@ All applications in ${sourceEnv} have been deployed and verified as healthy.
 // MAIN PIPELINE
 // ============================================================================
 
+// Agent image from environment (ConfigMap) or fallback default
+def agentImage = System.getenv('JENKINS_AGENT_IMAGE') ?: 'jenkins/inbound-agent:latest-jdk21'
+
 pipeline {
     agent {
         kubernetes {
@@ -208,7 +211,7 @@ kind: Pod
 spec:
   containers:
   - name: pipeline
-    image: localhost:30500/jenkins-agent-custom:latest
+    image: ${agentImage}
     command:
     - cat
     tty: true
@@ -258,9 +261,9 @@ spec:
     }
 
     environment {
-        // GitLab configuration
-        GITLAB_URL = 'http://gitlab.gitlab.svc.cluster.local'
-        DEPLOYMENTS_REPO = "${GITLAB_URL}/example/k8s-deployments.git"
+        // GitLab configuration (from pipeline-config ConfigMap)
+        GITLAB_URL = System.getenv('GITLAB_INTERNAL_URL')
+        DEPLOYMENTS_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
 
         // ArgoCD configuration
         ARGOCD_SERVER = 'argocd-server.argocd.svc.cluster.local:80'
@@ -282,6 +285,14 @@ Source Branch: ${params.SOURCE_BRANCH}
 Target Branch: ${params.TARGET_BRANCH}
 =======================================================
 """
+
+                        // Validate required environment variables
+                        if (!env.GITLAB_URL) {
+                            error "GITLAB_INTERNAL_URL not set. Configure pipeline-config ConfigMap."
+                        }
+                        if (!env.DEPLOYMENTS_REPO) {
+                            error "DEPLOYMENTS_REPO_URL not set. Configure pipeline-config ConfigMap."
+                        }
 
                         if (params.MR_EVENT in ['open', 'update', 'reopen']) {
                             env.WORKFLOW = 'VALIDATE'
