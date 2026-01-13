@@ -343,9 +343,9 @@ spec:
         DOCKER_REGISTRY = 'nexus.nexus.svc.cluster.local:5000'
         NEXUS_URL = 'http://nexus.nexus.svc.cluster.local:8081'
 
-        // Git repositories (internal cluster DNS)
-        GITLAB_URL = 'http://gitlab.gitlab.svc.cluster.local'
-        DEPLOYMENT_REPO = "${GITLAB_URL}/example/k8s-deployments.git"
+        // Git repositories (from pipeline-config ConfigMap)
+        GITLAB_URL = System.getenv('GITLAB_INTERNAL_URL')
+        DEPLOYMENT_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
 
         // Credentials
         NEXUS_CREDENTIALS = credentials('nexus-credentials')
@@ -364,6 +364,14 @@ spec:
                 container('maven') {
                     script {
                         echo "=== Checkout & Setup ==="
+
+                        // Validate required environment variables
+                        if (!env.GITLAB_URL) {
+                            error "GITLAB_INTERNAL_URL not set. Configure pipeline-config ConfigMap."
+                        }
+                        if (!env.DEPLOYMENT_REPO) {
+                            error "DEPLOYMENTS_REPO_URL not set. Configure pipeline-config ConfigMap."
+                        }
 
                         // Extract version from pom.xml
                         env.APP_VERSION = sh(
