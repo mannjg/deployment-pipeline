@@ -152,6 +152,7 @@ Generated manifests from CUE configuration."
                         # Create MR using GitLab API
                         export GITLAB_TOKEN="${GITLAB_API_TOKEN}"
                         export GITLAB_URL="${GITLAB_URL}"
+                        export GITLAB_GROUP="${GITLAB_GROUP}"
 
                         ./scripts/create-gitlab-mr.sh \
                             "\${FEATURE_BRANCH}" \
@@ -231,6 +232,7 @@ def promoteEnvironment(String sourceEnv, String targetEnv, String branchPrefix, 
                         # Create MR using GitLab API
                         export GITLAB_TOKEN="${GITLAB_API_TOKEN}"
                         export GITLAB_URL="${GITLAB_URL}"
+                        export GITLAB_GROUP="${GITLAB_GROUP}"
 
                         ./scripts/create-gitlab-mr.sh \
                             "\${FEATURE_BRANCH}" \
@@ -346,6 +348,7 @@ spec:
 
         // Git repositories (from pipeline-config ConfigMap)
         GITLAB_URL = System.getenv('GITLAB_INTERNAL_URL')
+        GITLAB_GROUP = System.getenv('GITLAB_GROUP')
         DEPLOYMENT_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
 
         // Credentials
