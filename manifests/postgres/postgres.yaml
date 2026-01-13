@@ -29,15 +29,6 @@ spec:
         environment: prod
         managed_by: argocd
     spec:
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - podAffinityTerm:
-                labelSelector:
-                  matchLabels:
-                    app: postgres
-                topologyKey: kubernetes.io/hostname
-              weight: 100
       containers:
         - env:
             - name: POSTGRES_USER
