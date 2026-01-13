@@ -11,7 +11,7 @@ spec:
 
   # Source repository configuration
   source:
-    repoURL: http://gitlab.gitlab.svc.cluster.local/example/k8s-deployments.git
+    repoURL: http://gitlab.gitlab.svc.cluster.local/p2c/k8s-deployments.git
     targetRevision: dev
     path: manifests/dev/postgres
 
