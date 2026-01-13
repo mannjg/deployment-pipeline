@@ -57,7 +57,6 @@ data:
 
     # Disable unused services for lightweight setup
     prometheus_monitoring['enable'] = false
-    grafana['enable'] = false
     alertmanager['enable'] = false
 
     # Container registry (disabled - using Nexus)
@@ -96,7 +95,7 @@ spec:
       hostname: gitlab
       containers:
       - name: gitlab
-        image: gitlab/gitlab-ce:16.9.0-ce.0
+        image: gitlab/gitlab-ce:18.4.2-ce.0
         ports:
         - name: http
           containerPort: 80

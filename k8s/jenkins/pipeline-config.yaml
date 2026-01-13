@@ -1,0 +1,56 @@
+# Pipeline Configuration ConfigMap
+# ================================
+# This ConfigMap provides environment-specific configuration for CI/CD pipelines.
+# It is mounted as environment variables in the Jenkins controller pod.
+#
+# INSTRUCTIONS:
+#   1. Copy this file and update values for your environment
+#   2. Apply with: kubectl apply -f pipeline-config.yaml
+#   3. Restart Jenkins pod to pick up changes
+#
+# All *_INTERNAL_URL values should use Kubernetes service DNS names
+# All *_EXTERNAL_URL values should use your ingress/external hostnames
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pipeline-config
+  namespace: jenkins
+  labels:
+    app: jenkins
+    component: pipeline-config
+data:
+  # ==========================================================================
+  # GitLab Configuration
+  # ==========================================================================
+  GITLAB_EXTERNAL_URL: "https://gitlab.example.com"          # External URL for links/webhooks
+  GITLAB_INTERNAL_URL: "http://gitlab.gitlab.svc.cluster.local"  # Internal K8s service URL
+  GITLAB_GROUP: "root"                                        # GitLab group/namespace for repos
+
+  # ==========================================================================
+  # Jenkins Configuration
+  # ==========================================================================
+  JENKINS_EXTERNAL_URL: "https://jenkins.example.com"
+  JENKINS_INTERNAL_URL: "http://jenkins.jenkins.svc.cluster.local:8080"
+  JENKINS_AGENT_IMAGE: "your-registry.example.com/jenkins-agent-custom:latest"
+
+  # ==========================================================================
+  # Nexus / Docker Registry Configuration
+  # ==========================================================================
+  NEXUS_EXTERNAL_URL: "https://nexus.example.com"
+  NEXUS_INTERNAL_URL: "http://nexus.nexus.svc.cluster.local:8081"
+  DOCKER_REGISTRY: "your-registry.example.com"               # External registry for image tags
+  DOCKER_REGISTRY_INTERNAL: "nexus.nexus.svc.cluster.local:5000"  # Internal for pushing
+
+  # ==========================================================================
+  # ArgoCD Configuration
+  # ==========================================================================
+  ARGOCD_EXTERNAL_URL: "https://argocd.example.com"
+  ARGOCD_INTERNAL_URL: "http://argocd-server.argocd.svc.cluster.local"
+  ARGOCD_SERVER: "argocd-server.argocd.svc.cluster.local:80"
+  ARGOCD_OPTS: "--plaintext --grpc-web"
+
+  # ==========================================================================
+  # Git Configuration
+  # ==========================================================================
+  GIT_SSL_NO_VERIFY: "true"                                  # Set to "false" for valid certs

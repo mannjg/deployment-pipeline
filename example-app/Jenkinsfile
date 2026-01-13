@@ -273,8 +273,11 @@ MAVEN_SETTINGS
 // PIPELINE DEFINITION
 // ============================================================================
 
-// Agent image from environment (ConfigMap) or fallback default
-def agentImage = System.getenv('JENKINS_AGENT_IMAGE') ?: 'jenkins/inbound-agent:latest-jdk21'
+// Agent image from environment (ConfigMap) - REQUIRED, no default
+def agentImage = System.getenv('JENKINS_AGENT_IMAGE')
+if (!agentImage) {
+    error "JENKINS_AGENT_IMAGE environment variable is required but not set. Configure it in the pipeline-config ConfigMap."
+}
 
 pipeline {
     agent {
