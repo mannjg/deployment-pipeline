@@ -2,13 +2,33 @@
 # GitLab Lightweight Deployment
 # Using official GitLab CE Docker image
 # Suitable for local development and testing
+#
+# Variables (use envsubst before applying):
+#   ${GITLAB_HOST} - GitLab hostname (e.g., gitlab.jmann.local)
+#   ${STORAGE_CLASS} - StorageClass for PVCs
+#   ${GITLAB_ROOT_PASSWORD} - Initial root password
 
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gitlab-tls
+  namespace: gitlab
+spec:
+  secretName: gitlab-tls
+  issuerRef:
+    name: ca-issuer
+    kind: ClusterIssuer
+  commonName: ${GITLAB_HOST}
+  dnsNames:
+    - ${GITLAB_HOST}
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: gitlab-config
   namespace: gitlab
 spec:
+  storageClassName: ${STORAGE_CLASS}
   accessModes:
     - ReadWriteOnce
   resources:
@@ -21,6 +41,7 @@ metadata:
   name: gitlab-logs
   namespace: gitlab
 spec:
+  storageClassName: ${STORAGE_CLASS}
   accessModes:
     - ReadWriteOnce
   resources:
@@ -33,6 +54,7 @@ metadata:
   name: gitlab-data
   namespace: gitlab
 spec:
+  storageClassName: ${STORAGE_CLASS}
   accessModes:
     - ReadWriteOnce
   resources:
@@ -46,11 +68,16 @@ metadata:
   namespace: gitlab
 data:
   GITLAB_OMNIBUS_CONFIG: |
-    external_url 'http://gitlab.local'
+    external_url 'https://${GITLAB_HOST}'
     gitlab_rails['gitlab_shell_ssh_port'] = 2222
 
-    # Disable HTTPS
+    # Trust the ingress proxy for HTTPS
+    nginx['listen_port'] = 80
     nginx['listen_https'] = false
+    nginx['proxy_set_headers'] = {
+      "X-Forwarded-Proto" => "https",
+      "X-Forwarded-Ssl" => "on"
+    }
 
     # PostgreSQL settings
     postgresql['shared_buffers'] = "256MB"
@@ -110,7 +137,7 @@ spec:
               name: gitlab-config
               key: GITLAB_OMNIBUS_CONFIG
         - name: GITLAB_ROOT_PASSWORD
-          value: "changeme123"  # Will be changed on first login
+          value: "${GITLAB_ROOT_PASSWORD}"
         - name: GITLAB_SHARED_RUNNERS_REGISTRATION_TOKEN
           value: "gitlab-runner-token"
         volumeMounts:
@@ -182,10 +209,15 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
   ingressClassName: public
+  tls:
+  - hosts:
+    - ${GITLAB_HOST}
+    secretName: gitlab-tls
   rules:
-  - host: gitlab.local
+  - host: ${GITLAB_HOST}
     http:
       paths:
       - path: /

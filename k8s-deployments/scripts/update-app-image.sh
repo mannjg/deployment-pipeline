@@ -74,11 +74,13 @@ log_debug "Converted app name: ${APP_NAME} -> ${APP_CUE_NAME}"
 # Change to project root
 cd "$PROJECT_ROOT"
 
-ENV_FILE="envs/${ENVIRONMENT}.cue"
+# In branch-per-environment structure, env.cue is at root
+ENV_FILE="env.cue"
 
 # Validate environment file exists
 if [ ! -f "$ENV_FILE" ]; then
     log_error "Environment file not found: ${ENV_FILE}"
+    log_error "Make sure you are on the correct branch (dev/stage/prod)"
     exit 1
 fi
 
