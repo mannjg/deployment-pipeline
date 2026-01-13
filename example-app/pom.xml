@@ -10,7 +10,7 @@
 
   <properties>
     <compiler-plugin.version>3.13.0</compiler-plugin.version>
-    <maven.compiler.release>17</maven.compiler.release>
+    <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
@@ -21,14 +21,18 @@
     <skipITs>true</skipITs>
     <surefire-plugin.version>3.5.2</surefire-plugin.version>
 
-    <!-- Container image properties -->
-    <quarkus.container-image.registry>nexus.nexus.svc.cluster.local:5000</quarkus.container-image.registry>
+    <!-- Container image properties
+         NOTE: These are defaults. Override via -D flags or CI/CD environment:
+           -Dquarkus.container-image.registry=your-registry:5000
+           -Dquarkus.container-image.insecure=true|false
+    -->
+    <quarkus.container-image.registry>localhost:5000</quarkus.container-image.registry>
     <quarkus.container-image.group>example</quarkus.container-image.group>
     <quarkus.container-image.name>${project.artifactId}</quarkus.container-image.name>
     <quarkus.container-image.tag>${project.version}</quarkus.container-image.tag>
     <quarkus.container-image.builder>jib</quarkus.container-image.builder>
     <quarkus.container-image.insecure>true</quarkus.container-image.insecure>
-    <quarkus.jib.base-jvm-image>registry.access.redhat.com/ubi8/openjdk-17-runtime:1.20</quarkus.jib.base-jvm-image>
+    <quarkus.jib.base-jvm-image>registry.access.redhat.com/ubi8/openjdk-21-runtime:1.20</quarkus.jib.base-jvm-image>
     <quarkus.jib.send-credentials-over-http>true</quarkus.jib.send-credentials-over-http>
   </properties>
 
