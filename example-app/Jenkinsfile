@@ -108,7 +108,8 @@ def deployToEnvironment(String environment, String branchPrefix, String mrTitle,
                         ./scripts/generate-manifests.sh ${environment}
 
                         # Stage all changes (synced config + CUE file + generated manifests)
-                        git add services/apps/ env.cue manifests/${environment}/ 2>/dev/null || git add env.cue manifests/${environment}/
+                        # Manifests are organized per-app, not per-environment
+                        git add services/apps/ env.cue manifests/ 2>/dev/null || git add env.cue manifests/
 
                         # Commit with metadata
                         COMMIT_MSG="${mrTitle}
