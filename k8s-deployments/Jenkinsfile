@@ -283,16 +283,18 @@ spec:
     }
 
     environment {
-        // GitLab configuration
-        GITLAB_URL = 'https://gitlab.jmann.local'
-        DEPLOYMENTS_REPO = "${GITLAB_URL}/root/k8s-deployments.git"
+        // Infrastructure URLs from pipeline-config ConfigMap
+        // These are injected as environment variables in Jenkins pod
+        // External URL for user-facing links and API calls
+        GITLAB_URL = "${env.GITLAB_EXTERNAL_URL ?: 'https://gitlab.local'}"
+        // Internal URL for in-cluster git operations
+        GITLAB_INTERNAL = "${env.GITLAB_INTERNAL_URL ?: 'http://gitlab.gitlab.svc.cluster.local'}"
+        // Deployment repository (use internal URL for git operations)
+        DEPLOYMENTS_REPO = "${env.GITLAB_INTERNAL_URL ?: 'http://gitlab.gitlab.svc.cluster.local'}/${env.GITLAB_GROUP ?: 'root'}/k8s-deployments.git"
 
-        // ArgoCD configuration
-        ARGOCD_SERVER = 'argocd-server.argocd.svc.cluster.local:80'
-        ARGOCD_OPTS = '--plaintext --grpc-web'
-
-        // Git SSL verification (self-signed certs)
-        GIT_SSL_NO_VERIFY = 'true'
+        // ArgoCD configuration (from ConfigMap or defaults)
+        ARGOCD_SERVER = "${env.ARGOCD_SERVER ?: 'argocd-server.argocd.svc.cluster.local:80'}"
+        ARGOCD_OPTS = "${env.ARGOCD_OPTS ?: '--plaintext --grpc-web'}"
     }
 
     stages {
@@ -487,8 +489,9 @@ Target Environment: ${params.TARGET_BRANCH}
                                             git add manifests/
                                             git commit -m "chore: regenerate manifests [ci skip]"
 
-                                            # Push using credentials
-                                            git push https://${GIT_USERNAME}:${GIT_PASSWORD}@gitlab.jmann.local/root/k8s-deployments.git HEAD:${TARGET_BRANCH}
+                                            # Push using credentials (extract host from GITLAB_INTERNAL URL)
+                                            GITLAB_HOST=$(echo "${GITLAB_INTERNAL}" | sed 's|http[s]*://||')
+                                            git push http://${GIT_USERNAME}:${GIT_PASSWORD}@${GITLAB_HOST}/${GITLAB_GROUP:-root}/k8s-deployments.git HEAD:${TARGET_BRANCH}
                                             echo "✓ Manifests committed and pushed"
                                         fi
                                     '''
