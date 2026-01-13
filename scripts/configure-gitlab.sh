@@ -4,7 +4,9 @@ set -euo pipefail
 # GitLab Configuration Script
 # Creates projects and access tokens via REST API
 
-GITLAB_URL="http://gitlab.local"
+# Source centralized GitLab configuration
+source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
+
 GITLAB_USER="root"
 GITLAB_PASS="changeme123"
 
@@ -73,16 +75,16 @@ GitLab Configuration Guide
 ========================================
 
 1. Login to GitLab:
-   URL: ${GITLAB_URL}
+   URL: ${GITLAB_URL_EXTERNAL}
    Username: ${GITLAB_USER}
    Password: ${GITLAB_PASS}
 
 2. Change Root Password:
-   - Go to: ${GITLAB_URL}/-/user_settings/password/edit
+   - Go to: ${GITLAB_URL_EXTERNAL}/-/user_settings/password/edit
    - Set a new password
 
 3. Create Personal Access Token:
-   - Go to: ${GITLAB_URL}/-/user_settings/personal_access_tokens
+   - Go to: ${GITLAB_URL_EXTERNAL}/-/user_settings/personal_access_tokens
    - Name: jenkins-integration
    - Scopes: api, read_repository, write_repository
    - Click "Create personal access token"
@@ -90,23 +92,23 @@ GitLab Configuration Guide
 
 4. Create Projects:
 
-   A. Project: example-app
-      - Go to: ${GITLAB_URL}/projects/new
-      - Project name: example-app
+   A. Project: ${APP_REPO_NAME}
+      - Go to: ${GITLAB_URL_EXTERNAL}/projects/new
+      - Project name: ${APP_REPO_NAME}
       - Visibility: Private
       - Initialize with README: No
       - Click "Create project"
 
-   B. Project: k8s-deployments
-      - Go to: ${GITLAB_URL}/projects/new
-      - Project name: k8s-deployments
+   B. Project: ${DEPLOYMENTS_REPO_NAME}
+      - Go to: ${GITLAB_URL_EXTERNAL}/projects/new
+      - Project name: ${DEPLOYMENTS_REPO_NAME}
       - Visibility: Private
       - Initialize with README: No
       - Click "Create project"
 
 5. Clone URLs (after creation):
-   - example-app: ${GITLAB_URL}/root/example-app.git
-   - k8s-deployments: ${GITLAB_URL}/root/k8s-deployments.git
+   - ${APP_REPO_NAME}: ${APP_REPO_URL_EXTERNAL}
+   - ${DEPLOYMENTS_REPO_NAME}: ${DEPLOYMENTS_REPO_URL_EXTERNAL}
 
 6. Setup Git Credentials (local machine):
    git config --global user.name "Root User"

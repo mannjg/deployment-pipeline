@@ -4,6 +4,9 @@ set -euo pipefail
 # Jenkins Configuration Script
 # Documents manual configuration steps for Jenkins
 
+# Source centralized GitLab configuration
+source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
+
 JENKINS_URL="http://jenkins.local"
 
 # Colors
@@ -31,7 +34,7 @@ wait_for_jenkins() {
 }
 
 print_configuration_guide() {
-    cat << 'EOF'
+    cat << EOF
 
 ========================================
 Jenkins Configuration Guide
@@ -133,7 +136,7 @@ IMPORTANT: Jenkins is running WITHOUT authentication (local dev only!)
 
    Scroll to "GitLab" section:
    - Connection name: gitlab
-   - GitLab host URL: http://gitlab.local
+   - GitLab host URL: ${GITLAB_URL_EXTERNAL}
    - Credentials: Select "gitlab-api-token"
    - Test Connection (should show success)
 
@@ -164,7 +167,7 @@ After manual configuration above, you'll create these pipeline jobs:
 1. example-app-ci
    - Type: Pipeline (Jenkinsfile from SCM)
    - SCM: Git
-   - Repository URL: http://gitlab.local/root/example-app.git
+   - Repository URL: ${APP_REPO_URL_EXTERNAL}
    - Credentials: gitlab-credentials
    - Branch: */main
    - Script Path: Jenkinsfile
@@ -239,7 +242,7 @@ Check "Environment variables"
 Add these for convenience:
 - NEXUS_URL: http://nexus.local
 - NEXUS_DOCKER_REGISTRY: nexus.local:5000
-- GITLAB_URL: http://gitlab.local
+- GITLAB_URL: ${GITLAB_URL_EXTERNAL}
 - ARGOCD_SERVER: argocd.local
 - K8S_NAMESPACE_DEV: dev
 - K8S_NAMESPACE_STAGE: stage

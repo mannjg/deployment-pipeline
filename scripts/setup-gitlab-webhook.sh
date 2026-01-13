@@ -4,7 +4,7 @@
 # Configure GitLab webhook to auto-trigger Jenkins builds
 #
 # Prerequisites:
-# 1. GitLab running at http://gitlab.local
+# 1. GitLab running (external URL configured in config/gitlab.env)
 # 2. Jenkins running with pipeline job configured
 # 3. GitLab personal access token with api scope
 #
@@ -14,6 +14,9 @@
 #
 
 set -e
+
+# Source centralized GitLab configuration
+source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
 
 # Colors for output
 RED='\033[0;31m'
@@ -31,17 +34,16 @@ if [ -z "$GITLAB_TOKEN" ]; then
     exit 1
 fi
 
-GITLAB_URL="http://gitlab.local"
-PROJECT_PATH="example/example-app"
-PROJECT_PATH_ENCODED="example%2Fexample-app"
+PROJECT_PATH="${APP_REPO_PATH}"
+PROJECT_PATH_ENCODED="${GITLAB_GROUP}%2F${APP_REPO_NAME}"
 
 # Jenkins webhook URL (using ingress - GitLab rejects cluster-internal DNS)
 # GitLab will call this URL when push events occur
 # Note: This uses the external ingress URL which GitLab can validate
-JENKINS_WEBHOOK_URL="http://jenkins.local/job/example-app-ci/build"
+JENKINS_WEBHOOK_URL="http://jenkins.local/job/${APP_REPO_NAME}-ci/build"
 
 echo -e "${YELLOW}Configuration:${NC}"
-echo "  GitLab URL: ${GITLAB_URL}"
+echo "  GitLab URL: ${GITLAB_URL_EXTERNAL}"
 echo "  Project: ${PROJECT_PATH}"
 echo "  Jenkins Webhook: ${JENKINS_WEBHOOK_URL}"
 echo ""
@@ -49,7 +51,7 @@ echo ""
 # Get project ID
 echo -e "${GREEN}Getting project ID...${NC}"
 PROJECT_ID=$(curl -s -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-    "${GITLAB_URL}/api/v4/projects/${PROJECT_PATH_ENCODED}" | \
+    "${GITLAB_URL_EXTERNAL}/api/v4/projects/${PROJECT_PATH_ENCODED}" | \
     python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
 
 echo "  Project ID: ${PROJECT_ID}"
@@ -57,7 +59,7 @@ echo "  Project ID: ${PROJECT_ID}"
 # Check if webhook already exists
 echo -e "\n${GREEN}Checking for existing webhooks...${NC}"
 EXISTING_WEBHOOKS=$(curl -s -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-    "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/hooks")
+    "${GITLAB_URL_EXTERNAL}/api/v4/projects/${PROJECT_ID}/hooks")
 
 WEBHOOK_COUNT=$(echo "$EXISTING_WEBHOOKS" | python3 -c "import sys, json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
@@ -77,8 +79,8 @@ for hook in hooks:
     if [ -n "$JENKINS_HOOK_ID" ]; then
         echo -e "${YELLOW}  Deleting existing Jenkins webhook (ID: ${JENKINS_HOOK_ID})...${NC}"
         curl -s -X DELETE -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-            "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/hooks/${JENKINS_HOOK_ID}" > /dev/null
-        echo -e "${GREEN}    ✓ Deleted${NC}"
+            "${GITLAB_URL_EXTERNAL}/api/v4/projects/${PROJECT_ID}/hooks/${JENKINS_HOOK_ID}" > /dev/null
+        echo -e "${GREEN}    Deleted${NC}"
     fi
 fi
 
@@ -87,7 +89,7 @@ echo -e "\n${GREEN}Creating new webhook...${NC}"
 WEBHOOK_RESPONSE=$(curl -s -X POST \
     -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
     -H "Content-Type: application/json" \
-    "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/hooks" \
+    "${GITLAB_URL_EXTERNAL}/api/v4/projects/${PROJECT_ID}/hooks" \
     -d @- <<EOF
 {
     "url": "${JENKINS_WEBHOOK_URL}",
@@ -118,7 +120,7 @@ fi
 # Verify webhook
 echo -e "\n${GREEN}Verifying webhook...${NC}"
 WEBHOOK_INFO=$(curl -s -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-    "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/hooks/${WEBHOOK_ID}")
+    "${GITLAB_URL_EXTERNAL}/api/v4/projects/${PROJECT_ID}/hooks/${WEBHOOK_ID}")
 
 echo "  URL: $(echo "$WEBHOOK_INFO" | python3 -c "import sys, json; print(json.load(sys.stdin)['url'])")"
 echo "  Push events: $(echo "$WEBHOOK_INFO" | python3 -c "import sys, json; print(json.load(sys.stdin)['push_events'])")"
@@ -131,4 +133,4 @@ echo "    git commit --allow-empty -m 'Test webhook'"
 echo "    git push origin main"
 echo ""
 echo "  Jenkins should automatically start a new build."
-echo "  Monitor at: http://jenkins.local/job/example-app-ci/"
+echo "  Monitor at: http://jenkins.local/job/${APP_REPO_NAME}-ci/"
