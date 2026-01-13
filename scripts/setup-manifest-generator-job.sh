@@ -4,6 +4,9 @@
 
 set -e
 
+# Source centralized GitLab configuration
+source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
+
 JENKINS_URL="${JENKINS_URL:-http://jenkins.local}"
 JOB_NAME="k8s-manifest-generator"
 
@@ -29,7 +32,7 @@ if [ "$JOB_EXISTS" = "200" ]; then
 fi
 
 # Create job configuration XML
-cat > "$CONFIG_FILE" << 'EOF'
+cat > "$CONFIG_FILE" << EOF
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job@2.40">
   <description>Automated Kubernetes manifest generation from CUE configuration files.
@@ -55,7 +58,7 @@ IMPORTANT: Never run generate-manifests.sh manually - this pipeline owns manifes
       <configVersion>2</configVersion>
       <userRemoteConfigs>
         <hudson.plugins.git.UserRemoteConfig>
-          <url>http://gitlab.gitlab.svc.cluster.local/example/k8s-deployments.git</url>
+          <url>${DEPLOYMENTS_REPO_URL}</url>
           <credentialsId>gitlab-credentials</credentialsId>
         </hudson.plugins.git.UserRemoteConfig>
       </userRemoteConfigs>

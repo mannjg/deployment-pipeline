@@ -32,7 +32,11 @@ data:
   # ==========================================================================
   GITLAB_EXTERNAL_URL: "https://${GITLAB_HOST}"
   GITLAB_INTERNAL_URL: "http://gitlab.gitlab.svc.cluster.local"
-  GITLAB_GROUP: "root"
+  GITLAB_GROUP: "p2c"
+
+  # Repository URLs (internal - for pod-to-pod communication)
+  APP_REPO_URL: "http://gitlab.gitlab.svc.cluster.local/p2c/example-app.git"
+  DEPLOYMENTS_REPO_URL: "http://gitlab.gitlab.svc.cluster.local/p2c/k8s-deployments.git"
 
   # ==========================================================================
   # Jenkins Configuration

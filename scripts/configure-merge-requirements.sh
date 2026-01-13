@@ -4,14 +4,16 @@
 
 set -e
 
-GITLAB_URL="${GITLAB_URL:-http://gitlab.local}"
+# Source centralized GitLab configuration
+source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
+
 GITLAB_TOKEN="${GITLAB_TOKEN:-glpat-9m86y9YHyGf77Kr8bRjX}"
 PROJECT_ID="2"  # k8s-deployments project ID
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Configuring merge requirements"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "GitLab URL: $GITLAB_URL"
+echo "GitLab URL: ${GITLAB_URL_EXTERNAL}"
 echo "Project ID: $PROJECT_ID"
 echo ""
 

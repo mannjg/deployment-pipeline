@@ -4,10 +4,12 @@
 
 set -e
 
+# Source centralized GitLab configuration
+source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
+
 JENKINS_URL="${JENKINS_URL:-http://jenkins.local}"
 JOB_NAME="k8s-deployments-validation"
-GITLAB_URL="http://gitlab.gitlab.svc.cluster.local"
-REPO_URL="${GITLAB_URL}/example/k8s-deployments.git"
+REPO_URL="${DEPLOYMENTS_REPO_URL}"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Setting up k8s-deployments validation job"

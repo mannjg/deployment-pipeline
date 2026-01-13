@@ -10,10 +10,15 @@ TARGET_BRANCH="${2:-}"
 MR_TITLE="${3:-}"
 MR_DESCRIPTION="${4:-}"
 
+# Source configuration if not already set
+if [[ -z "${GITLAB_URL:-}" ]]; then
+    source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
+fi
+
 # Environment variables (should be set by caller)
-GITLAB_URL="${GITLAB_URL:-http://gitlab.gitlab.svc.cluster.local}"
+GITLAB_URL="${GITLAB_URL:?GITLAB_URL is required - source config/gitlab.env or set directly}"
 GITLAB_TOKEN="${GITLAB_TOKEN:-}"
-PROJECT_ID="${PROJECT_ID:-example%2Fk8s-deployments}"
+PROJECT_ID="${PROJECT_ID:-${GITLAB_GROUP}%2F${DEPLOYMENTS_REPO_NAME}}"
 MR_DRAFT="${MR_DRAFT:-false}"
 AUTO_MERGE="${AUTO_MERGE:-false}"
 
@@ -36,10 +41,10 @@ usage() {
     echo ""
     echo "Required environment variables:"
     echo "  GITLAB_TOKEN   GitLab API token with api scope"
-    echo "  GITLAB_URL     GitLab base URL (default: http://gitlab.gitlab.svc.cluster.local)"
+    echo "  GITLAB_URL     GitLab base URL (sourced from config/gitlab.env if not set)"
     echo ""
     echo "Optional environment variables:"
-    echo "  PROJECT_ID     GitLab project ID (default: example%2Fk8s-deployments)"
+    echo "  PROJECT_ID     GitLab project ID (default: p2c%2Fk8s-deployments)"
     echo "  MR_DRAFT       Create as draft MR (default: false)"
     echo "  AUTO_MERGE     Enable auto-merge when pipeline succeeds (default: false)"
     echo ""

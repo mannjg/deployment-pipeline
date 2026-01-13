@@ -27,7 +27,7 @@ export JENKINS_BUILD_TIMEOUT="${JENKINS_BUILD_TIMEOUT:-600}"
 # =============================================================================
 
 # GitLab API URL (e.g., http://gitlab.gitlab.svc.cluster.local or https://gitlab.example.com)
-export GITLAB_URL="${GITLAB_URL:-http://gitlab.gitlab.svc.cluster.local}"
+export GITLAB_URL="${GITLAB_URL:-http://gitlab.jmann.local}"
 
 # GitLab API token (personal access token or project access token)
 export GITLAB_TOKEN="${GITLAB_TOKEN:-}"  # Set this to your GitLab token

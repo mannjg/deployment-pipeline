@@ -4,8 +4,10 @@
 
 set -e
 
+# Source centralized GitLab configuration
+source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
+
 JENKINS_URL="${JENKINS_URL:-http://jenkins.local}"
-GITLAB_URL="${GITLAB_URL:-http://gitlab.local}"
 GITLAB_TOKEN="${GITLAB_TOKEN:-glpat-9m86y9YHyGf77Kr8bRjX}"
 PROJECT_ID="2"  # k8s-deployments project ID
 JOB_NAME="k8s-deployments-validation"
@@ -13,7 +15,7 @@ JOB_NAME="k8s-deployments-validation"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Setting up k8s-deployments webhook"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "GitLab URL: $GITLAB_URL"
+echo "GitLab URL: ${GITLAB_URL_EXTERNAL}"
 echo "Project ID: $PROJECT_ID"
 echo "Jenkins Job: $JOB_NAME"
 echo ""

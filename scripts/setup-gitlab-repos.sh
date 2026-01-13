@@ -5,7 +5,7 @@
 #
 # Prerequisites:
 # 1. GitLab is running at http://gitlab.local
-# 2. GitLab projects created: example/example-app and example/k8s-deployments
+# 2. GitLab projects created: p2c/example-app and p2c/k8s-deployments
 # 3. GitLab personal access token created
 #
 # Usage:
@@ -31,8 +31,8 @@ if [ -z "$GITLAB_TOKEN" ]; then
     exit 1
 fi
 
-GITLAB_URL="http://gitlab.gitlab.svc.cluster.local"
-GITLAB_USER="root"
+source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
+GITLAB_USER="${GITLAB_USER:-root}"
 
 echo -e "${YELLOW}Using GitLab at: ${GITLAB_URL}${NC}"
 echo -e "${YELLOW}GitLab user: ${GITLAB_USER}${NC}\n"
@@ -41,7 +41,7 @@ echo -e "${YELLOW}GitLab user: ${GITLAB_USER}${NC}\n"
 push_repo() {
     local repo_path=$1
     local repo_name=$2
-    local remote_url="http://${GITLAB_USER}:${GITLAB_TOKEN}@gitlab.gitlab.svc.cluster.local/example/${repo_name}.git"
+    local remote_url="http://${GITLAB_USER}:${GITLAB_TOKEN}@${GITLAB_HOST_INTERNAL}/${GITLAB_GROUP}/${repo_name}.git"
 
     echo -e "${GREEN}Pushing ${repo_name}...${NC}"
 
@@ -59,7 +59,7 @@ push_repo() {
     # Push
     git push -u gitlab main 2>/dev/null || git push -u gitlab master 2>/dev/null || {
         echo -e "${RED}  ERROR: Failed to push ${repo_name}${NC}"
-        echo "  Make sure the GitLab project exists: example/${repo_name}"
+        echo "  Make sure the GitLab project exists: ${GITLAB_GROUP}/${repo_name}"
         return 1
     }
 
@@ -72,7 +72,7 @@ setup_k8s_deployments() {
     echo -e "${GREEN}Setting up k8s-deployments repository with branches...${NC}"
 
     local repo_path="./k8s-deployments"
-    local remote_url="http://${GITLAB_USER}:${GITLAB_TOKEN}@gitlab.gitlab.svc.cluster.local/example/k8s-deployments.git"
+    local remote_url="http://${GITLAB_USER}:${GITLAB_TOKEN}@${GITLAB_HOST_INTERNAL}/${DEPLOYMENTS_REPO_PATH}.git"
 
     cd "$repo_path"
 

@@ -1,11 +1,13 @@
 #!/bin/bash
 # Configure GitLab connection in Jenkins
-# This adds the gitlab.local connection for status reporting
+# This adds the GitLab connection for status reporting
 
 set -e
 
+# Source centralized GitLab configuration
+source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
+
 JENKINS_URL="http://jenkins.local"
-GITLAB_URL="http://gitlab.local"
 GITLAB_TOKEN="${GITLAB_TOKEN:-glpat-9m86y9YHyGf77Kr8bRjX}"
 CONNECTION_NAME="gitlab-local"
 
@@ -13,7 +15,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "Configuring GitLab connection in Jenkins"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Jenkins: $JENKINS_URL"
-echo "GitLab: $GITLAB_URL"
+echo "GitLab: ${GITLAB_URL_EXTERNAL}"
 echo "Connection: $CONNECTION_NAME"
 echo ""
 
@@ -54,7 +56,7 @@ echo "  URL: ${JENKINS_URL}/manage/configure"
 echo "  1. Scroll to 'GitLab' section"
 echo "  2. Click 'Add GitLab Server'"
 echo "  3. Connection name: ${CONNECTION_NAME}"
-echo "  4. GitLab host URL: ${GITLAB_URL}"
+echo "  4. GitLab host URL: ${GITLAB_URL_EXTERNAL}"
 echo "  5. Credentials: Select 'gitlab-api-token'"
 echo "  6. Click 'Test Connection' - should show 'Success'"
 echo "  7. Click 'Save'"
