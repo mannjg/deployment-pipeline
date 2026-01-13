@@ -197,7 +197,9 @@ def promoteEnvironment(String sourceEnv, String targetEnv, String branchPrefix, 
                         git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
                     '''
 
-                    // Clone deployment repository and create promotion branch
+                    // Clone deployment repository, checkout target branch, and update with promoted image
+                    // NOTE: We DON'T merge branches because each environment has distinct env.cue config
+                    // Instead, we extract the image from source and apply it to target's config
                     sh """
                         rm -rf k8s-deployments
                         git clone ${DEPLOYMENT_REPO} k8s-deployments
@@ -215,9 +217,36 @@ def promoteEnvironment(String sourceEnv, String targetEnv, String branchPrefix, 
                         FEATURE_BRANCH="${branchPrefix}-\${IMAGE_TAG}"
                         git checkout -b "\${FEATURE_BRANCH}"
 
-                        # Merge changes from source environment
-                        echo "Merging ${sourceEnv} into \${FEATURE_BRANCH}..."
-                        git merge origin/${sourceEnv} --no-edit -m "Promote from ${sourceEnv} to ${targetEnv}: \${IMAGE_TAG}"
+                        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        echo "Promoting ${APP_NAME} from ${sourceEnv} to ${targetEnv}"
+                        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        echo "Image being promoted: ${IMAGE_FOR_DEPLOY}"
+                        echo ""
+
+                        # Update the image in target environment's env.cue (same as dev deployment)
+                        ./scripts/update-app-image.sh ${targetEnv} ${APP_NAME} "${IMAGE_FOR_DEPLOY}"
+                        echo "[${targetEnv.toUpperCase()}] Updated ${APP_NAME} image in env.cue"
+
+                        # Regenerate Kubernetes manifests for target environment
+                        ./scripts/generate-manifests.sh ${targetEnv}
+
+                        # Stage all changes
+                        git add env.cue manifests/
+
+                        # Commit with promotion metadata
+                        git commit -m "Promote ${APP_NAME} to ${targetEnv}: \${IMAGE_TAG}
+
+Automated promotion from ${sourceEnv} environment.
+
+Changes:
+- Updated ${targetEnv} environment image to \${IMAGE_TAG}
+- Regenerated Kubernetes manifests
+
+Build: \${BUILD_URL}
+Image: ${IMAGE_FOR_DEPLOY}
+Source environment: ${sourceEnv}
+
+Generated manifests from CUE configuration." || echo "No changes to commit"
                     """
 
                     // Push feature branch and create merge request
@@ -241,7 +270,7 @@ def promoteEnvironment(String sourceEnv, String targetEnv, String branchPrefix, 
                             "${mrDescription}"
                     """
 
-                    echo "[${targetEnv.toUpperCase()}] ✓ Promotion MR created successfully: ${sourceEnv} → ${branchPrefix}-${env.IMAGE_TAG} → ${targetEnv}"
+                    echo "[${targetEnv.toUpperCase()}] ✓ Promotion MR created successfully: ${branchPrefix}-${env.IMAGE_TAG} → ${targetEnv}"
 
                 } finally {
                     // Always cleanup git credentials, even on failure
