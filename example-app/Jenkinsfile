@@ -32,7 +32,7 @@ def deployToEnvironment(String environment, String branchPrefix, String mrTitle,
                     // Clone or update deployment repository
                     sh """
                         rm -rf k8s-deployments
-                        git clone ${DEPLOYMENT_REPO} k8s-deployments
+                        git clone \${GITLAB_INTERNAL_URL}/\${GITLAB_GROUP}/k8s-deployments.git k8s-deployments
                         cd k8s-deployments
 
                         # Fetch and checkout target environment branch
@@ -150,7 +150,7 @@ Generated manifests from CUE configuration."
 
                         # Create MR using GitLab API
                         export GITLAB_TOKEN="${GITLAB_API_TOKEN}"
-                        export GITLAB_URL="${GITLAB_URL}"
+                        export GITLAB_URL="\${GITLAB_EXTERNAL_URL}"
 
                         ./scripts/create-gitlab-mr.sh \
                             "\${FEATURE_BRANCH}" \
@@ -160,85 +160,6 @@ Generated manifests from CUE configuration."
                     """
 
                     echo "[${environment.toUpperCase()}] ✓ MR created successfully: ${branchPrefix}-${env.IMAGE_TAG} → ${environment}"
-
-                } finally {
-                    // Always cleanup git credentials, even on failure
-                    sh 'git config --global --unset credential.helper || true'
-                }
-            }
-        }
-    }
-}
-
-/**
- * Promotes between environments by creating a merge request
- * Used for stage/prod promotions (merges changes from previous environment)
- * @param sourceEnv Source environment branch to promote from (dev or stage)
- * @param targetEnv Target environment branch to promote to (stage or prod)
- * @param branchPrefix Prefix for feature branch name
- * @param mrTitle Title for the merge request
- * @param mrDescription Detailed description for the merge request
- */
-def promoteEnvironment(String sourceEnv, String targetEnv, String branchPrefix, String mrTitle, String mrDescription) {
-    container('maven') {
-        script {
-            echo "[${targetEnv.toUpperCase()}] Creating promotion MR from ${sourceEnv}..."
-
-            withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
-                                              usernameVariable: 'GIT_USERNAME',
-                                              passwordVariable: 'GIT_PASSWORD')]) {
-                try {
-                    // Setup git credentials (ephemeral, memory-only)
-                    sh '''
-                        git config --global user.name "Jenkins CI"
-                        git config --global user.email "jenkins@local"
-                        git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
-                    '''
-
-                    // Clone deployment repository and create promotion branch
-                    sh """
-                        rm -rf k8s-deployments
-                        git clone ${DEPLOYMENT_REPO} k8s-deployments
-                        cd k8s-deployments
-
-                        # Fetch both source and target branches
-                        git fetch origin ${sourceEnv}
-                        git fetch origin ${targetEnv}
-
-                        # Checkout target environment branch
-                        git checkout ${targetEnv}
-                        git pull origin ${targetEnv}
-
-                        # Create feature branch for this promotion
-                        FEATURE_BRANCH="${branchPrefix}-\${IMAGE_TAG}"
-                        git checkout -b "\${FEATURE_BRANCH}"
-
-                        # Merge changes from source environment
-                        echo "Merging ${sourceEnv} into \${FEATURE_BRANCH}..."
-                        git merge origin/${sourceEnv} --no-edit -m "Promote from ${sourceEnv} to ${targetEnv}: \${IMAGE_TAG}"
-                    """
-
-                    // Push feature branch and create merge request
-                    sh """
-                        cd k8s-deployments
-                        FEATURE_BRANCH="${branchPrefix}-\${IMAGE_TAG}"
-
-                        # Delete remote branch if it exists, then push fresh
-                        git push origin --delete "\${FEATURE_BRANCH}" 2>/dev/null || echo "Branch does not exist remotely"
-                        git push -u origin "\${FEATURE_BRANCH}"
-
-                        # Create MR using GitLab API
-                        export GITLAB_TOKEN="${GITLAB_API_TOKEN}"
-                        export GITLAB_URL="${GITLAB_URL}"
-
-                        ./scripts/create-gitlab-mr.sh \
-                            "\${FEATURE_BRANCH}" \
-                            ${targetEnv} \
-                            "${mrTitle}" \
-                            "${mrDescription}"
-                    """
-
-                    echo "[${targetEnv.toUpperCase()}] ✓ Promotion MR created successfully: ${sourceEnv} → ${branchPrefix}-${env.IMAGE_TAG} → ${targetEnv}"
 
                 } finally {
                     // Always cleanup git credentials, even on failure
@@ -276,16 +197,28 @@ MAVEN_SETTINGS
 pipeline {
     agent {
         kubernetes {
+            yamlMergeStrategy merge()
             yaml """
 apiVersion: v1
 kind: Pod
 spec:
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
   containers:
+  - name: jnlp
+    envFrom:
+    - configMapRef:
+        name: pipeline-config
   - name: maven
     image: maven:3.9-eclipse-temurin-21
     command:
     - cat
     tty: true
+    envFrom:
+    - configMapRef:
+        name: pipeline-config
     resources:
       requests:
         memory: "1Gi"
@@ -294,10 +227,16 @@ spec:
         memory: "2Gi"
         cpu: "2000m"
   - name: cue
-    image: cuelang/cue:latest
+    image: alpine:3.19
     command:
     - cat
     tty: true
+    envFrom:
+    - configMapRef:
+        name: pipeline-config
+    env:
+    - name: PATH
+      value: /usr/local/bin:/usr/bin:/bin
     resources:
       requests:
         memory: "256Mi"
@@ -321,16 +260,6 @@ spec:
             defaultValue: false,
             description: 'Skip integration tests to speed up build'
         )
-        booleanParam(
-            name: 'SKIP_STAGE_PROMOTION',
-            defaultValue: false,
-            description: 'Skip creating stage promotion MR'
-        )
-        booleanParam(
-            name: 'SKIP_PROD_PROMOTION',
-            defaultValue: false,
-            description: 'Skip creating prod promotion MR'
-        )
     }
 
     environment {
@@ -338,24 +267,14 @@ spec:
         APP_NAME = 'example-app'
         APP_GROUP = 'example'
 
-        // Registry configuration
-        DOCKER_REGISTRY = 'nexus.jmann.local:8082'
-        NEXUS_URL = 'https://nexus.jmann.local'
-
-        // Git repositories
-        GITLAB_URL = 'https://gitlab.jmann.local'
-        DEPLOYMENT_REPO = "${GITLAB_URL}/root/k8s-deployments.git"
+        // Infrastructure URLs from pipeline-config ConfigMap (envFrom in pod spec)
+        // These MUST be provided by the ConfigMap - no defaults, fail if missing
 
         // Credentials
+        DOCKER_CREDENTIALS = credentials('docker-registry-credentials')
         NEXUS_CREDENTIALS = credentials('nexus-credentials')
         GITLAB_CREDENTIALS = credentials('gitlab-credentials')
         GITLAB_API_TOKEN = credentials('gitlab-api-token-secret')
-
-        // Git SSL verification (self-signed certs)
-        GIT_SSL_NO_VERIFY = 'true'
-
-        // Computed image reference
-        IMAGE_NAME = "${DOCKER_REGISTRY}/${APP_GROUP}/${APP_NAME}"
     }
 
     stages {
@@ -378,18 +297,89 @@ spec:
                             returnStdout: true
                         ).trim()
 
-                        env.IMAGE_TAG = "${env.APP_VERSION}-${env.GIT_SHORT_HASH}"
+                        // Detect branch type and target environment (GitFlow)
+                        def branchName = env.BRANCH_NAME ?: env.GIT_BRANCH?.replaceFirst('origin/', '')
+                        if (branchName ==~ /feature\/.*/) {
+                            env.BRANCH_TYPE = 'feature'
+                            env.TARGET_ENV = 'dev'
+                        } else if (branchName ==~ /release\/.*/) {
+                            env.BRANCH_TYPE = 'release-candidate'
+                            env.TARGET_ENV = 'stage'
+                        } else if (branchName == 'main' || branchName == 'master') {
+                            env.BRANCH_TYPE = 'release'
+                            env.TARGET_ENV = 'prod'
+                        } else {
+                            // Other branches (hotfix, bugfix, etc.) default to dev
+                            env.BRANCH_TYPE = 'feature'
+                            env.TARGET_ENV = 'dev'
+                        }
+                        echo "Branch: ${branchName} -> Type: ${env.BRANCH_TYPE} -> Environment: ${env.TARGET_ENV}"
+
+                        // Extract base version (strip any qualifiers for RC/release transformation)
+                        def baseVersion = env.APP_VERSION.replaceAll('-SNAPSHOT.*', '').replaceAll('-RC\\..*', '')
+
+                        // Version and tag logic based on branch type
+                        switch(env.BRANCH_TYPE) {
+                            case 'feature':
+                                // SNAPSHOT versions - append commit hash to Docker tag for traceability
+                                if (!env.APP_VERSION.endsWith('-SNAPSHOT')) {
+                                    error("Feature branch must have SNAPSHOT version in pom.xml, got: ${env.APP_VERSION}")
+                                }
+                                env.IMAGE_TAG = "${env.APP_VERSION}-${env.GIT_SHORT_HASH}"
+                                env.MAVEN_VERSION = env.APP_VERSION  // Keep as-is
+                                env.NEXUS_REPO = 'maven-snapshots'
+                                break
+
+                            case 'release-candidate':
+                                // RC versions - date-based for uniqueness
+                                def today = new Date().format('yyyyMMdd')
+                                env.MAVEN_VERSION = "${baseVersion}-RC.${today}"
+                                env.IMAGE_TAG = env.MAVEN_VERSION
+                                env.NEXUS_REPO = 'maven-releases'
+                                break
+
+                            case 'release':
+                                // Release versions - clean, no qualifiers
+                                if (env.APP_VERSION.contains('-SNAPSHOT') || env.APP_VERSION.contains('-RC')) {
+                                    error("Main branch must have clean release version, got: ${env.APP_VERSION}")
+                                }
+                                env.MAVEN_VERSION = baseVersion
+                                env.IMAGE_TAG = env.MAVEN_VERSION
+                                env.NEXUS_REPO = 'maven-releases'
+                                break
+                        }
+
+                        echo "Maven Version: ${env.MAVEN_VERSION}"
+                        echo "Docker Tag: ${env.IMAGE_TAG}"
+                        echo "Nexus Repo: ${env.NEXUS_REPO}"
 
                         // Validate IMAGE_TAG
                         if (!env.IMAGE_TAG || env.IMAGE_TAG.contains(' ')) {
                             error("Invalid IMAGE_TAG generated: '${env.IMAGE_TAG}'")
                         }
 
+                        // Validate required ConfigMap values
+                        def missing = []
+                        if (!env.DOCKER_REGISTRY) missing.add('DOCKER_REGISTRY')
+                        if (!env.GITLAB_INTERNAL_URL) missing.add('GITLAB_INTERNAL_URL')
+                        if (!env.GITLAB_EXTERNAL_URL) missing.add('GITLAB_EXTERNAL_URL')
+                        if (!env.GITLAB_GROUP) missing.add('GITLAB_GROUP')
+                        if (!env.NEXUS_INTERNAL_URL) missing.add('NEXUS_INTERNAL_URL')
+                        if (missing) {
+                            error("Missing required ConfigMap values: ${missing.join(', ')} - check pipeline-config ConfigMap")
+                        }
+
+                        // Build image reference from ConfigMap values
+                        env.IMAGE_NAME = "${env.DOCKER_REGISTRY}/${env.APP_GROUP}/${env.APP_NAME}"
                         env.FULL_IMAGE = "${env.IMAGE_NAME}:${env.IMAGE_TAG}"
 
-                        // Separate registry for deployment manifests (external ingress for kubelet)
-                        env.DEPLOY_REGISTRY = 'docker.local'
-                        env.IMAGE_FOR_DEPLOY = "${env.DEPLOY_REGISTRY}/${env.APP_GROUP}/${env.APP_NAME}:${env.IMAGE_TAG}"
+                        // Registry for deployment manifests (external hostname for kubelet)
+                        // This must match the ingress/external access to Nexus Docker registry
+                        if (!env.DOCKER_REGISTRY_EXTERNAL) {
+                            // Fall back to DOCKER_REGISTRY if external not specified separately
+                            env.DOCKER_REGISTRY_EXTERNAL = env.DOCKER_REGISTRY
+                        }
+                        env.IMAGE_FOR_DEPLOY = "${env.DOCKER_REGISTRY_EXTERNAL}/${env.APP_GROUP}/${env.APP_NAME}:${env.IMAGE_TAG}"
 
                         echo "✓ Application: ${env.APP_NAME} v${env.APP_VERSION}"
                         echo "✓ Git commit: ${env.GIT_SHORT_HASH}"
@@ -443,6 +433,12 @@ spec:
                         timeout(time: 30, unit: 'MINUTES') {
                             echo "=== Building and Publishing Artifacts ==="
 
+                            // Set version in pom.xml for RC/release builds
+                            if (env.BRANCH_TYPE != 'feature') {
+                                echo "Updating pom.xml version to ${env.MAVEN_VERSION}"
+                                sh "mvn versions:set -DnewVersion=${env.MAVEN_VERSION} -DgenerateBackupPoms=false"
+                            }
+
                             // Build and push Docker image with Jib
                             echo "Building Docker image..."
                             sh """
@@ -462,21 +458,12 @@ spec:
                             // Publish Maven artifacts to Nexus
                             echo "Publishing Maven artifacts to Nexus..."
                             createMavenSettings()
-
-                            // Determine repository based on version type
-                            def repoPath
-                            if (env.APP_VERSION.endsWith('-SNAPSHOT')) {
-                                repoPath = 'maven-snapshots'
-                                echo "Deploying SNAPSHOT version to maven-snapshots repository"
-                            } else {
-                                repoPath = 'maven-releases'
-                                echo "Deploying release version to maven-releases repository"
-                            }
+                            echo "Deploying ${env.MAVEN_VERSION} to ${env.NEXUS_REPO} repository"
 
                             sh """
                                 mvn deploy -DskipTests \
                                     -s /tmp/maven-settings.xml \
-                                    -DaltDeploymentRepository=nexus::default::${NEXUS_URL}/repository/${repoPath}/
+                                    -DaltDeploymentRepository=nexus::default::\${NEXUS_INTERNAL_URL}/repository/${env.NEXUS_REPO}/
                             """
 
                             echo "✓ Published Docker image: ${FULL_IMAGE}"
@@ -487,124 +474,45 @@ spec:
             }
         }
 
-        stage('Update Dev Environment') {
+        stage('Deploy') {
             steps {
                 script {
+                    def envUpper = env.TARGET_ENV.toUpperCase()
+                    def mrTitle = "[${envUpper}] ${env.APP_NAME} ${env.IMAGE_TAG}"
+                    def mrDesc = """## Automated Deployment from ${env.BRANCH_TYPE} Branch
+
+**Application**: ${env.APP_NAME}
+**Version**: ${env.MAVEN_VERSION}
+**Docker Image**: ${env.FULL_IMAGE}
+**Git Commit**: ${env.GIT_SHORT_HASH}
+**Branch Type**: ${env.BRANCH_TYPE}
+**Target Environment**: ${envUpper}
+
+### Build Information
+
+- Build URL: ${env.BUILD_URL}
+- Nexus Repository: ${env.NEXUS_REPO}
+
+### Testing
+
+- ✅ Unit tests passed
+- ✅ ${params.SKIP_INTEGRATION_TESTS ? 'Integration tests skipped' : 'Integration tests passed'}
+- ✅ Build successful
+
+### Deployment
+
+Once this MR is merged, ArgoCD will automatically deploy to the **${env.TARGET_ENV}** namespace.
+
+${env.TARGET_ENV == 'prod' ? '⚠️ **Production Deployment** - Please review carefully before merging.' : ''}
+
+---
+*Generated by Jenkins CI/CD Pipeline*"""
+
                     deployToEnvironment(
-                        'dev',
-                        'update-dev',
-                        "Deploy ${env.APP_NAME} to dev: ${env.IMAGE_TAG}",
-                        """## Automatic Deployment to Dev
-
-**Application**: ${env.APP_NAME}
-**Image Tag**: ${env.IMAGE_TAG}
-**Build**: ${env.BUILD_URL}
-**Git Commit**: ${env.GIT_SHORT_HASH}
-
-### Changes
-
-This merge request updates the dev environment with the latest build.
-
-**Image**: ${env.FULL_IMAGE}
-
-### Review Checklist
-
-- [ ] Image tag is correct
-- [ ] CUE configuration updated
-- [ ] Manifests regenerated successfully
-- [ ] Ready to deploy to dev
-
-Once merged, ArgoCD will automatically deploy to the dev namespace.
-
----
-*Generated by Jenkins CI/CD Pipeline*"""
-                    )
-                }
-            }
-        }
-
-        stage('Promote to Stage') {
-            when {
-                expression { return !params.SKIP_STAGE_PROMOTION }
-            }
-            steps {
-                script {
-                    promoteEnvironment(
-                        'dev',
-                        'stage',
-                        'promote-stage',
-                        "Promote ${env.APP_NAME} to stage: ${env.IMAGE_TAG}",
-                        """## Automatic Promotion from Dev
-
-**Application**: ${env.APP_NAME}
-**Image Tag**: ${env.IMAGE_TAG}
-**Build**: ${env.BUILD_URL}
-**Git Commit**: ${env.GIT_SHORT_HASH}
-
-### Changes
-
-This merge request updates the stage environment with the image currently deployed in dev.
-
-**Image**: ${env.FULL_IMAGE}
-
-### Testing
-
-- ✅ Unit tests passed
-- ✅ ${params.SKIP_INTEGRATION_TESTS ? 'Integration tests skipped' : 'Integration tests passed'}
-- ✅ Build successful
-- ✅ Deployed to dev environment
-
-### Deployment
-
-Once this MR is merged, ArgoCD will automatically deploy to the stage namespace.
-
----
-*Generated by Jenkins CI/CD Pipeline*"""
-                    )
-                }
-            }
-        }
-
-        stage('Promote to Prod') {
-            when {
-                expression { return !params.SKIP_PROD_PROMOTION }
-            }
-            steps {
-                script {
-                    promoteEnvironment(
-                        'stage',
-                        'prod',
-                        'promote-prod',
-                        "Promote ${env.APP_NAME} to prod: ${env.IMAGE_TAG}",
-                        """## Automatic Promotion from Stage
-
-**Application**: ${env.APP_NAME}
-**Image Tag**: ${env.IMAGE_TAG}
-**Build**: ${env.BUILD_URL}
-**Git Commit**: ${env.GIT_SHORT_HASH}
-
-### Changes
-
-This merge request updates the prod environment with the image currently deployed in stage.
-
-**Image**: ${env.FULL_IMAGE}
-
-### Testing
-
-- ✅ Unit tests passed
-- ✅ ${params.SKIP_INTEGRATION_TESTS ? 'Integration tests skipped' : 'Integration tests passed'}
-- ✅ Build successful
-- ✅ Deployed to dev environment
-- ✅ Promoted to stage environment
-
-### Deployment
-
-Once this MR is merged, ArgoCD will automatically deploy to the prod namespace.
-
-⚠️ **Production Deployment** - Please review carefully before merging.
-
----
-*Generated by Jenkins CI/CD Pipeline*"""
+                        env.TARGET_ENV,
+                        "deploy-${env.TARGET_ENV}",
+                        mrTitle,
+                        mrDesc
                     )
                 }
             }
