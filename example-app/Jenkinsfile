@@ -102,13 +102,13 @@ def deployToEnvironment(String environment, String branchPrefix, String mrTitle,
                         # This script ensures only the specified app's image is updated
                         ./scripts/update-app-image.sh ${environment} ${APP_NAME} "${IMAGE_FOR_DEPLOY}"
 
-                        echo "[${environment.toUpperCase()}] Updated ${APP_NAME} image in envs/${environment}.cue"
+                        echo "[${environment.toUpperCase()}] Updated ${APP_NAME} image in env.cue"
 
                         # Generate Kubernetes manifests from CUE configuration
                         ./scripts/generate-manifests.sh ${environment}
 
                         # Stage all changes (synced config + CUE file + generated manifests)
-                        git add services/apps/ envs/${environment}.cue manifests/${environment}/ 2>/dev/null || git add envs/${environment}.cue manifests/${environment}/
+                        git add services/apps/ env.cue manifests/${environment}/ 2>/dev/null || git add env.cue manifests/${environment}/
 
                         # Commit with metadata
                         COMMIT_MSG="${mrTitle}
