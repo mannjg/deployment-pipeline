@@ -2,6 +2,12 @@
 # E2E Pipeline Test Configuration
 # Auto-configured from ACCESS.md
 
+# Source central configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/../../../config/gitlab.env" ]]; then
+    source "${SCRIPT_DIR}/../../../config/gitlab.env"
+fi
+
 # =============================================================================
 # Jenkins Configuration
 # =============================================================================
@@ -24,10 +30,10 @@ export JENKINS_BUILD_TIMEOUT="600"
 # GitLab Configuration
 # =============================================================================
 
-export GITLAB_URL="http://gitlab.local"
+export GITLAB_URL="${GITLAB_URL_EXTERNAL:-http://gitlab.jmann.local}"
 export GITLAB_TOKEN="glpat-9m86y9YHyGf77Kr8bRjX"
 
-# GitLab project ID for k8s-deployments (example/k8s-deployments)
+# GitLab project ID for k8s-deployments (p2c/k8s-deployments)
 # Used for creating MRs in stages 3-6
 export K8S_DEPLOYMENTS_PROJECT_ID="2"
 
