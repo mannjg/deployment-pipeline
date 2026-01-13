@@ -1,52 +1,53 @@
-// Development environment configuration
+// Production environment configuration
 package envs
 
 import (
 	"deployments.local/k8s-deployments/services/apps"
 )
 
-// Development environment settings for example-app
-dev: exampleApp: apps.exampleApp & {
-	// Override namespace for dev
+// Production environment settings for example-app
+prod: exampleApp: apps.exampleApp & {
+	// Override namespace for prod
 	appConfig: {
-		namespace: "dev"
+		namespace: "prod"
 
 		labels: {
-			environment: "dev"
+			environment: "prod"
 			managed_by:  "argocd"
 		}
 
-		// Enable debug mode in dev
-		debug: true
+		// Disable debug mode in prod
+		debug: false
 
 		// Deployment configuration
 		deployment: {
 			// Image will be updated by CI/CD pipeline
-			image: "docker.local/example/example-app:1.2.0-e2e-20251106102442-7c0c9f2"
+			image: "docker.local/example/example-app:1.0.0-SNAPSHOT"
 
-			// Lower replicas in dev
-			replicas: 1
+			// Production replicas for HA
+			replicas: 3
 
-			// Resource limits for dev
+			// Production resource limits
 			resources: {
 				requests: {
-					cpu:    "100m"
-					memory: "256Mi"
+					cpu:    "500m"
+					memory: "1Gi"
 				}
 				limits: {
-					cpu:    "500m"
-					memory: "512Mi"
+					cpu:    "2000m"
+					memory: "2Gi"
 				}
 			}
 
-			// Health probes
+			// Health probes with production settings
 			livenessProbe: {
 				httpGet: {
 					path: "/health/live"
 					port: 8080
 				}
-				initialDelaySeconds: 10
-				periodSeconds:       10
+				initialDelaySeconds: 20
+				periodSeconds:       15
+				failureThreshold:    3
 			}
 
 			readinessProbe: {
@@ -54,65 +55,60 @@ dev: exampleApp: apps.exampleApp & {
 					path: "/health/ready"
 					port: 8080
 				}
-				initialDelaySeconds: 10
+				initialDelaySeconds: 20
 				periodSeconds:       10
+				failureThreshold:    3
 			}
 
-			// Dev-specific environment variables
+			// Production-specific environment variables
 			additionalEnv: [
 				{
 					name:  "QUARKUS_LOG_LEVEL"
-					value: "DEBUG"
+					value: "INFO"
 				},
 				{
 					name:  "ENVIRONMENT"
-					value: "dev"
+					value: "prod"
 				},
 			]
-		}
 
-		// ConfigMap data for development environment
-		configMap: {
-			data: {
-				"redis-url":     "redis://redis.dev.svc.cluster.local:6379"
-				"log-level":     "debug"
-				"feature-flags": "experimental-features=true"
+			// Production deployment strategy
+			strategy: {
+				type: "RollingUpdate"
+				rollingUpdate: {
+					maxSurge:       1
+					maxUnavailable: 0
+				}
 			}
 		}
 	}
 }
 
-// Development environment settings for postgres
-dev: postgres: apps.postgres & {
+// Production environment settings for postgres
+prod: postgres: apps.postgres & {
 	appConfig: {
-		namespace: "dev"
+		namespace: "prod"
 
 		labels: {
-			environment: "dev"
+			environment: "prod"
 			managed_by:  "argocd"
 		}
 
-		// Deployment configuration
 		deployment: {
-			// Official postgres image from Docker Hub (until we push to local registry)
-			image: "postgres:16-alpine"
+			image: "docker.local/library/postgres:16-alpine"
+			replicas: 2
 
-			// Single replica for dev
-			replicas: 1
-
-			// Resource limits for dev
 			resources: {
 				requests: {
-					cpu:    "100m"
-					memory: "256Mi"
+					cpu:    "500m"
+					memory: "1Gi"
 				}
 				limits: {
-					cpu:    "500m"
-					memory: "512Mi"
+					cpu:    "2000m"
+					memory: "2Gi"
 				}
 			}
 
-			// Postgres-specific health probes using pg_isready
 			livenessProbe: {
 				exec: {
 					command: ["pg_isready", "-U", "postgres"]
@@ -133,20 +129,26 @@ dev: postgres: apps.postgres & {
 				failureThreshold:    3
 			}
 
-			// Dev-specific environment variables
 			additionalEnv: [
 				{
 					name:  "ENVIRONMENT"
-					value: "dev"
+					value: "prod"
 				},
 			]
+
+			strategy: {
+				type: "RollingUpdate"
+				rollingUpdate: {
+					maxSurge:       1
+					maxUnavailable: 0
+				}
+			}
 		}
 
-		// Storage configuration for postgres data
 		storage: {
 			enablePVC: true
 			pvc: {
-				storageSize: "5Gi"
+				storageSize: "50Gi"
 			}
 		}
 	}
