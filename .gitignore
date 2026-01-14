@@ -54,3 +54,4 @@ tests/e2e/state/*
 # Local environment configuration (contains secrets)
 env.local
 config/local.env
+config/validate-pipeline.env
