@@ -95,7 +95,7 @@ data:
 
     # Reduce worker processes for single-user setup
     puma['worker_processes'] = 2
-    sidekiq['max_concurrency'] = 10
+    sidekiq['concurrency'] = 10
 
     # Time zone
     gitlab_rails['time_zone'] = 'UTC'
@@ -122,7 +122,7 @@ spec:
       hostname: gitlab
       containers:
       - name: gitlab
-        image: gitlab/gitlab-ce:18.4.2-ce.0
+        image: gitlab/gitlab-ce:18.7.1-ce.0
         ports:
         - name: http
           containerPort: 80
