@@ -26,11 +26,31 @@ deployment-pipeline/              ← GitHub: mannjg/deployment-pipeline (full m
 │   ├── manifests/
 │   ├── Jenkinsfile
 │   └── scripts/
-├── scripts/                      ← Only on GitHub
-├── argocd/                       ← Only on GitHub
-├── k8s/                          ← Only on GitHub
-├── config/                       ← Only on GitHub
-└── docs/                         ← Only on GitHub
+├── scripts/                      ← Not synced to GitLab
+├── argocd/                       ← Not synced to GitLab
+├── k8s/                          ← Not synced to GitLab
+├── config/                       ← Not synced to GitLab
+└── docs/                         ← Not synced to GitLab
+```
+
+## Key Principle: GitHub is Always Complete
+
+GitHub (`origin`) ALWAYS receives the complete monorepo—every file, every commit, every folder.
+
+The phrase "not synced to GitLab" means those files are not duplicated to GitLab subtrees.
+It does NOT mean they skip GitHub or have special handling.
+
+**Push workflow (always in this order):**
+1. Push to GitHub (`git push origin main`) — full repo, all files
+2. Sync subtrees to GitLab — only if `example-app/` or `k8s-deployments/` changed
+
+```
+Your commit
+    │
+    ├──► GitHub (origin)     ← ALWAYS gets everything
+    │
+    └──► GitLab subtrees     ← Only example-app/ and k8s-deployments/
+                               (and only when those folders changed)
 ```
 
 ## Remote Configuration

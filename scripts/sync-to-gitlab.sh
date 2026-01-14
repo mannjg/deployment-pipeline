@@ -47,6 +47,18 @@ if ! git remote get-url gitlab-deployments &>/dev/null; then
     exit 1
 fi
 
+# Verify origin points to GitHub (full monorepo should be pushed there first)
+ORIGIN_URL=$(git remote get-url origin 2>/dev/null || echo "")
+if [[ "$ORIGIN_URL" != *"github.com"*"deployment-pipeline"* ]]; then
+    echo -e "${YELLOW}WARNING: origin URL doesn't point to GitHub deployment-pipeline${NC}"
+    echo "  Current: $ORIGIN_URL"
+    echo "  Expected: https://github.com/mannjg/deployment-pipeline.git (or SSH equivalent)"
+    echo ""
+    echo "Remember: Push to GitHub FIRST, then sync subtrees to GitLab."
+    echo "See docs/GIT_REMOTE_STRATEGY.md for details."
+    echo ""
+fi
+
 # Check for clean working tree
 if ! git diff-index --quiet HEAD -- 2>/dev/null; then
     echo -e "${YELLOW}WARNING: Working tree has uncommitted changes${NC}"
