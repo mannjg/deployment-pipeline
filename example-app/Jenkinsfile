@@ -380,6 +380,9 @@ spec:
         GITLAB_GROUP = System.getenv('GITLAB_GROUP')
         DEPLOYMENT_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
 
+        // External registry for deployment manifests (what kubelet uses to pull)
+        DEPLOY_REGISTRY = System.getenv('DOCKER_REGISTRY')
+
         // Credentials
         NEXUS_CREDENTIALS = credentials('nexus-credentials')
         DOCKER_CREDENTIALS = credentials('docker-registry-credentials')
@@ -405,6 +408,9 @@ spec:
                         if (!env.DEPLOYMENT_REPO) {
                             error "DEPLOYMENTS_REPO_URL not set. Configure pipeline-config ConfigMap."
                         }
+                        if (!env.DEPLOY_REGISTRY) {
+                            error "DOCKER_REGISTRY not set. Configure pipeline-config ConfigMap."
+                        }
 
                         // Extract version from pom.xml
                         env.APP_VERSION = sh(
@@ -427,8 +433,6 @@ spec:
 
                         env.FULL_IMAGE = "${env.IMAGE_NAME}:${env.IMAGE_TAG}"
 
-                        // Separate registry for deployment manifests (external ingress for kubelet)
-                        env.DEPLOY_REGISTRY = 'docker.local'
                         env.IMAGE_FOR_DEPLOY = "${env.DEPLOY_REGISTRY}/${env.APP_GROUP}/${env.APP_NAME}:${env.IMAGE_TAG}"
 
                         echo "✓ Application: ${env.APP_NAME} v${env.APP_VERSION}"
