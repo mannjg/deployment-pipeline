@@ -5,9 +5,14 @@
 # Usage: ./validate-pipeline.sh
 #
 # Prerequisites:
-#   - kubectl configured for target cluster
-#   - config/validate-pipeline.env with credentials
+#   - kubectl configured for target cluster with access to jenkins/gitlab namespaces
 #   - curl, jq, git installed
+#
+# Credentials are loaded from K8s secrets by default:
+#   - jenkins-admin-credentials (jenkins namespace)
+#   - gitlab-api-token (gitlab namespace)
+#
+# Override with config/validate-pipeline.env if needed.
 
 set -euo pipefail
 
@@ -16,14 +21,42 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
+
+# Load config file override if present
 if [[ -f "$SCRIPT_DIR/config/validate-pipeline.env" ]]; then
     source "$SCRIPT_DIR/config/validate-pipeline.env"
-elif [[ -f "$SCRIPT_DIR/config/validate-pipeline.env.template" ]]; then
-    echo "[✗] Config file not found"
-    echo "    Copy config/validate-pipeline.env.template to config/validate-pipeline.env"
-    echo "    and fill in your credentials"
-    exit 1
 fi
+
+# Fetch credentials from K8s secrets (if not already set)
+load_credentials_from_secrets() {
+    # Jenkins credentials
+    if [[ -z "${JENKINS_USER:-}" ]]; then
+        JENKINS_USER=$(kubectl get secret jenkins-admin-credentials -n jenkins \
+            -o jsonpath='{.data.username}' 2>/dev/null | base64 -d) || true
+    fi
+    if [[ -z "${JENKINS_TOKEN:-}" ]]; then
+        JENKINS_TOKEN=$(kubectl get secret jenkins-admin-credentials -n jenkins \
+            -o jsonpath='{.data.password}' 2>/dev/null | base64 -d) || true
+    fi
+
+    # GitLab credentials
+    if [[ -z "${GITLAB_TOKEN:-}" ]]; then
+        GITLAB_TOKEN=$(kubectl get secret gitlab-api-token -n gitlab \
+            -o jsonpath='{.data.token}' 2>/dev/null | base64 -d) || true
+    fi
+}
+
+# Set defaults (can be overridden by config file)
+JENKINS_URL="${JENKINS_URL:-https://jenkins.jmann.local}"
+JENKINS_JOB_NAME="${JENKINS_JOB_NAME:-example-app-ci}"
+GITLAB_URL="${GITLAB_URL:-https://gitlab.jmann.local}"
+GITLAB_PROJECT_PATH="${GITLAB_PROJECT_PATH:-p2c/example-app}"
+JENKINS_BUILD_TIMEOUT="${JENKINS_BUILD_TIMEOUT:-600}"
+ARGOCD_SYNC_TIMEOUT="${ARGOCD_SYNC_TIMEOUT:-300}"
+ARGOCD_APP_NAME="${ARGOCD_APP_NAME:-example-app-dev}"
+ARGOCD_NAMESPACE="${ARGOCD_NAMESPACE:-argocd}"
+DEV_NAMESPACE="${DEV_NAMESPACE:-dev}"
+APP_LABEL="${APP_LABEL:-app=example-app}"
 
 # -----------------------------------------------------------------------------
 # Output Helpers
@@ -49,28 +82,41 @@ preflight_checks() {
     else
         log_fail "kubectl: cannot connect to cluster"
         failed=1
+        return 1  # Can't proceed without kubectl
     fi
 
-    # Check GitLab
+    # Load credentials from K8s secrets
+    log_info "Loading credentials from K8s secrets..."
+    load_credentials_from_secrets
+
+    # Verify GitLab credentials work
     if [[ -z "${GITLAB_TOKEN:-}" ]]; then
-        log_fail "GitLab: GITLAB_TOKEN not set"
+        log_fail "GitLab: GITLAB_TOKEN not set (check gitlab-api-token secret in gitlab namespace)"
         failed=1
-    elif curl -sf -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$GITLAB_URL/api/v4/user" &>/dev/null; then
-        log_info "GitLab: $GITLAB_URL (reachable)"
     else
-        log_fail "GitLab: $GITLAB_URL (not reachable or token invalid)"
-        failed=1
+        local gitlab_user
+        gitlab_user=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$GITLAB_URL/api/v4/user" 2>/dev/null | jq -r '.username // empty')
+        if [[ -n "$gitlab_user" ]]; then
+            log_info "GitLab: authenticated as '$gitlab_user' at $GITLAB_URL"
+        else
+            log_fail "GitLab: $GITLAB_URL (token invalid or API unreachable)"
+            failed=1
+        fi
     fi
 
-    # Check Jenkins
+    # Verify Jenkins credentials work
     if [[ -z "${JENKINS_TOKEN:-}" ]]; then
-        log_fail "Jenkins: JENKINS_TOKEN not set"
+        log_fail "Jenkins: JENKINS_TOKEN not set (check jenkins-admin-credentials secret in jenkins namespace)"
         failed=1
-    elif curl -sf -u "$JENKINS_USER:$JENKINS_TOKEN" "$JENKINS_URL/api/json" &>/dev/null; then
-        log_info "Jenkins: $JENKINS_URL (reachable)"
     else
-        log_fail "Jenkins: $JENKINS_URL (not reachable or credentials invalid)"
-        failed=1
+        local jenkins_mode
+        jenkins_mode=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" "$JENKINS_URL/api/json" 2>/dev/null | jq -r '.mode // empty')
+        if [[ -n "$jenkins_mode" ]]; then
+            log_info "Jenkins: authenticated as '$JENKINS_USER' at $JENKINS_URL (mode: $jenkins_mode)"
+        else
+            log_fail "Jenkins: $JENKINS_URL (credentials invalid or API unreachable)"
+            failed=1
+        fi
     fi
 
     # Check ArgoCD application exists
@@ -176,14 +222,14 @@ wait_for_jenkins_build() {
     local build_url=""
 
     # Get the last build number before we triggered
-    local last_build=$(curl -sf -u "$JENKINS_USER:$JENKINS_TOKEN" \
+    local last_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
         "$JENKINS_URL/job/$JENKINS_JOB_NAME/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
 
     # Wait for a new build to start
     log_info "Waiting for new build (last was #$last_build)..."
 
     while [[ $elapsed -lt $timeout ]]; do
-        local current_build=$(curl -sf -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        local current_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
             "$JENKINS_URL/job/$JENKINS_JOB_NAME/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
 
         if [[ "$current_build" -gt "$last_build" ]]; then
@@ -204,7 +250,7 @@ wait_for_jenkins_build() {
 
     # Wait for build to complete
     while [[ $elapsed -lt $timeout ]]; do
-        local build_info=$(curl -sf -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        local build_info=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
             "$build_url/api/json")
 
         local building=$(echo "$build_info" | jq -r '.building')
@@ -223,7 +269,7 @@ wait_for_jenkins_build() {
                 log_fail "Build #$build_number $result"
                 echo ""
                 echo "--- Build Console (last 50 lines) ---"
-                curl -sf -u "$JENKINS_USER:$JENKINS_TOKEN" \
+                curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
                     "$build_url/consoleText" | tail -50
                 echo "--- End Console ---"
                 exit 1
