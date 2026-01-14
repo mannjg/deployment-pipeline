@@ -31,7 +31,9 @@ export JENKINS_BUILD_TIMEOUT="600"
 # =============================================================================
 
 export GITLAB_URL="${GITLAB_URL_EXTERNAL:-http://gitlab.jmann.local}"
-export GITLAB_TOKEN="glpat-9m86y9YHyGf77Kr8bRjX"
+# GITLAB_TOKEN should be set in environment or local.env (not committed)
+# Can also be retrieved from k8s: kubectl get secret gitlab-api-token -n gitlab -o jsonpath='{.data.token}' | base64 -d
+export GITLAB_TOKEN="${GITLAB_TOKEN:-}"
 
 # GitLab project ID for k8s-deployments (p2c/k8s-deployments)
 # Used for creating MRs in stages 3-6

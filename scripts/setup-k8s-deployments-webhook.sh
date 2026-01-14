@@ -8,7 +8,11 @@ set -e
 source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
 
 JENKINS_URL="${JENKINS_URL:-http://jenkins.local}"
-GITLAB_TOKEN="${GITLAB_TOKEN:-glpat-9m86y9YHyGf77Kr8bRjX}"
+GITLAB_TOKEN="${GITLAB_TOKEN:-$(kubectl get secret gitlab-api-token -n gitlab -o jsonpath='{.data.token}' 2>/dev/null | base64 -d)}"
+if [[ -z "$GITLAB_TOKEN" ]]; then
+    echo "Error: GITLAB_TOKEN not set. Export it or ensure gitlab-api-token k8s secret exists."
+    exit 1
+fi
 PROJECT_ID="2"  # k8s-deployments project ID
 JOB_NAME="k8s-deployments-validation"
 
