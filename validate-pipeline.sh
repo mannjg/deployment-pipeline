@@ -275,6 +275,45 @@ wait_for_argocd_sync() {
 }
 
 # -----------------------------------------------------------------------------
+# Deployment Verification
+# -----------------------------------------------------------------------------
+verify_deployment() {
+    log_step "Verifying deployment..."
+
+    # Get pod info
+    local pod_info=$(kubectl get pods -n "$DEV_NAMESPACE" -l "$APP_LABEL" -o json 2>/dev/null)
+    local pod_count=$(echo "$pod_info" | jq '.items | length')
+
+    if [[ "$pod_count" -eq 0 ]]; then
+        log_fail "No pods found with label $APP_LABEL in $DEV_NAMESPACE"
+        exit 1
+    fi
+
+    # Check pod status
+    local ready_pods=$(echo "$pod_info" | jq '[.items[] | select(.status.phase == "Running")] | length')
+
+    if [[ "$ready_pods" -eq 0 ]]; then
+        log_fail "No pods in Running state"
+        echo ""
+        echo "--- Pod Status ---"
+        kubectl get pods -n "$DEV_NAMESPACE" -l "$APP_LABEL"
+        echo ""
+        echo "--- Pod Events ---"
+        kubectl describe pods -n "$DEV_NAMESPACE" -l "$APP_LABEL" | grep -A 20 "Events:" | head -25
+        echo "--- End ---"
+        exit 1
+    fi
+
+    # Get deployed image
+    local deployed_image=$(echo "$pod_info" | jq -r '.items[0].spec.containers[0].image')
+
+    log_pass "Pod running with image: $deployed_image"
+    echo ""
+
+    export DEPLOYED_IMAGE="$deployed_image"
+}
+
+# -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 main() {
