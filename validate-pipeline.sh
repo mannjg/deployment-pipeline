@@ -320,9 +320,20 @@ main() {
     local start_time=$(date +%s)
 
     preflight_checks
+    bump_version
+    commit_and_push
+    wait_for_jenkins_build
+    wait_for_argocd_sync
+    verify_deployment
 
-    # TODO: Implement remaining steps
-    echo "Pre-flight checks complete. Implementation continues in next tasks."
+    # Calculate duration
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+    local minutes=$((duration / 60))
+    local seconds=$((duration % 60))
+
+    echo "=== VALIDATION PASSED ==="
+    echo "Version $NEW_VERSION deployed to dev in ${minutes}m ${seconds}s"
 }
 
 main "$@"
