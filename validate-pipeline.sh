@@ -239,6 +239,42 @@ wait_for_jenkins_build() {
 }
 
 # -----------------------------------------------------------------------------
+# ArgoCD Sync
+# -----------------------------------------------------------------------------
+wait_for_argocd_sync() {
+    log_step "Waiting for ArgoCD sync..."
+
+    local timeout="${ARGOCD_SYNC_TIMEOUT:-300}"
+    local poll_interval=15
+    local elapsed=0
+
+    while [[ $elapsed -lt $timeout ]]; do
+        local app_status=$(kubectl get application "$ARGOCD_APP_NAME" -n "$ARGOCD_NAMESPACE" -o json 2>/dev/null)
+
+        local sync_status=$(echo "$app_status" | jq -r '.status.sync.status // "Unknown"')
+        local health_status=$(echo "$app_status" | jq -r '.status.health.status // "Unknown"')
+
+        if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" ]]; then
+            log_pass "$ARGOCD_APP_NAME synced and healthy (${elapsed}s)"
+            echo ""
+            return 0
+        fi
+
+        log_info "Status: sync=$sync_status health=$health_status (${elapsed}s elapsed)"
+
+        sleep $poll_interval
+        elapsed=$((elapsed + poll_interval))
+    done
+
+    log_fail "Timeout waiting for ArgoCD sync"
+    echo ""
+    echo "--- ArgoCD Application Status ---"
+    kubectl describe application "$ARGOCD_APP_NAME" -n "$ARGOCD_NAMESPACE" 2>/dev/null | tail -30
+    echo "--- End Status ---"
+    exit 1
+}
+
+# -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 main() {
