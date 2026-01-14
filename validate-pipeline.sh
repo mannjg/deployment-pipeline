@@ -130,6 +130,40 @@ bump_version() {
 }
 
 # -----------------------------------------------------------------------------
+# Git Operations
+# -----------------------------------------------------------------------------
+commit_and_push() {
+    log_step "Committing and pushing to GitLab..."
+
+    cd "$SCRIPT_DIR"
+
+    # Stage the pom.xml change
+    git add example-app/pom.xml
+
+    # Commit with identifiable message
+    git commit -m "chore: bump version to $NEW_VERSION [pipeline-validation]"
+
+    # Push to origin first (GitHub - full monorepo)
+    log_info "Pushing to origin (GitHub)..."
+    git push origin main
+
+    # Sync subtree to GitLab
+    log_info "Syncing to GitLab..."
+    GIT_SSL_NO_VERIFY=true git subtree push --prefix=example-app gitlab-app main 2>&1 || {
+        log_fail "Failed to sync to GitLab"
+        echo ""
+        echo "--- Diagnostic ---"
+        echo "Check that 'gitlab-app' remote is configured:"
+        git remote -v | grep gitlab-app || echo "Remote not found"
+        echo "--- End Diagnostic ---"
+        exit 1
+    }
+
+    log_pass "Committed and pushed to GitLab"
+    echo ""
+}
+
+# -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 main() {
