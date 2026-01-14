@@ -258,6 +258,6 @@ git stash pop
 
 ## Related Documentation
 
-- [Airgap Migration Process](plans/2026-01-12-revitalization-design.md#airgap-migration-process)
-- [Multi-Repository Architecture](MULTI_REPO_ARCHITECTURE.md)
-- [GitLab P2C Migration](plans/2026-01-13-gitlab-p2c-migration-design.md)
+Historical design docs (archived):
+- [Revitalization Design](archives/plans/2026-01-12-revitalization-design.md)
+- [GitLab P2C Migration](archives/plans/2026-01-13-gitlab-p2c-migration-design.md)
