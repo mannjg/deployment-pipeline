@@ -92,6 +92,44 @@ preflight_checks() {
 }
 
 # -----------------------------------------------------------------------------
+# Version Bump
+# -----------------------------------------------------------------------------
+bump_version() {
+    log_step "Bumping version in example-app/pom.xml..."
+
+    local pom_file="$SCRIPT_DIR/example-app/pom.xml"
+
+    if [[ ! -f "$pom_file" ]]; then
+        log_fail "pom.xml not found at $pom_file"
+        exit 1
+    fi
+
+    # Extract current version (handles X.Y.Z or X.Y.Z-SNAPSHOT)
+    local current_version=$(grep -m1 '<version>' "$pom_file" | sed 's/.*<version>\(.*\)<\/version>.*/\1/')
+
+    # Parse version parts
+    local base_version="${current_version%-SNAPSHOT}"
+    local suffix=""
+    [[ "$current_version" == *-SNAPSHOT ]] && suffix="-SNAPSHOT"
+
+    local major minor patch
+    IFS='.' read -r major minor patch <<< "$base_version"
+
+    # Increment patch
+    patch=$((patch + 1))
+    local new_version="${major}.${minor}.${patch}${suffix}"
+
+    log_info "Version: $current_version → $new_version"
+
+    # Update pom.xml (first <version> tag after <artifactId>example-app</artifactId>)
+    sed -i "0,/<version>$current_version<\/version>/s//<version>$new_version<\/version>/" "$pom_file"
+
+    # Export for later use
+    export NEW_VERSION="$new_version"
+    export NEW_VERSION_TAG="${new_version%-SNAPSHOT}"  # Tag without SNAPSHOT
+}
+
+# -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 main() {
