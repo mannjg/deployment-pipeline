@@ -164,6 +164,81 @@ commit_and_push() {
 }
 
 # -----------------------------------------------------------------------------
+# Jenkins Build
+# -----------------------------------------------------------------------------
+wait_for_jenkins_build() {
+    log_step "Waiting for Jenkins build..."
+
+    local timeout="${JENKINS_BUILD_TIMEOUT:-600}"
+    local poll_interval=10
+    local elapsed=0
+    local build_number=""
+    local build_url=""
+
+    # Get the last build number before we triggered
+    local last_build=$(curl -sf -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        "$JENKINS_URL/job/$JENKINS_JOB_NAME/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
+
+    # Wait for a new build to start
+    log_info "Waiting for new build (last was #$last_build)..."
+
+    while [[ $elapsed -lt $timeout ]]; do
+        local current_build=$(curl -sf -u "$JENKINS_USER:$JENKINS_TOKEN" \
+            "$JENKINS_URL/job/$JENKINS_JOB_NAME/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
+
+        if [[ "$current_build" -gt "$last_build" ]]; then
+            build_number="$current_build"
+            build_url="$JENKINS_URL/job/$JENKINS_JOB_NAME/$build_number"
+            log_info "Build #$build_number started"
+            break
+        fi
+
+        sleep $poll_interval
+        elapsed=$((elapsed + poll_interval))
+    done
+
+    if [[ -z "$build_number" ]]; then
+        log_fail "Timeout waiting for build to start"
+        exit 1
+    fi
+
+    # Wait for build to complete
+    while [[ $elapsed -lt $timeout ]]; do
+        local build_info=$(curl -sf -u "$JENKINS_USER:$JENKINS_TOKEN" \
+            "$build_url/api/json")
+
+        local building=$(echo "$build_info" | jq -r '.building')
+        local result=$(echo "$build_info" | jq -r '.result // "null"')
+
+        if [[ "$building" == "false" ]]; then
+            local duration=$(echo "$build_info" | jq -r '.duration')
+            local duration_sec=$((duration / 1000))
+
+            if [[ "$result" == "SUCCESS" ]]; then
+                log_pass "Build #$build_number completed successfully (${duration_sec}s)"
+                echo ""
+                export BUILD_NUMBER="$build_number"
+                return 0
+            else
+                log_fail "Build #$build_number $result"
+                echo ""
+                echo "--- Build Console (last 50 lines) ---"
+                curl -sf -u "$JENKINS_USER:$JENKINS_TOKEN" \
+                    "$build_url/consoleText" | tail -50
+                echo "--- End Console ---"
+                exit 1
+            fi
+        fi
+
+        sleep $poll_interval
+        elapsed=$((elapsed + poll_interval))
+    done
+
+    log_fail "Timeout waiting for build to complete"
+    exit 1
+}
+
+# -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 main() {
