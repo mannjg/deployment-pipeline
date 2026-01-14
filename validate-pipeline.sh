@@ -22,7 +22,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Configuration
 # -----------------------------------------------------------------------------
 
-# Load config file override if present
+# Load infrastructure config (single source of truth)
+if [[ -f "$SCRIPT_DIR/config/infra.env" ]]; then
+    source "$SCRIPT_DIR/config/infra.env"
+else
+    echo "[✗] Infrastructure config not found: config/infra.env"
+    exit 1
+fi
+
+# Load local overrides if present (for credentials, custom timeouts)
 if [[ -f "$SCRIPT_DIR/config/validate-pipeline.env" ]]; then
     source "$SCRIPT_DIR/config/validate-pipeline.env"
 fi
@@ -46,17 +54,22 @@ load_credentials_from_secrets() {
     fi
 }
 
-# Set defaults (can be overridden by config file)
-JENKINS_URL="${JENKINS_URL:-https://jenkins.jmann.local}"
-JENKINS_JOB_NAME="${JENKINS_JOB_NAME:-example-app-ci}"
-GITLAB_URL="${GITLAB_URL:-https://gitlab.jmann.local}"
-GITLAB_PROJECT_PATH="${GITLAB_PROJECT_PATH:-p2c/example-app}"
+# Map infra.env variables to script variables (no defaults - must be set)
+JENKINS_URL="${JENKINS_URL_EXTERNAL:?JENKINS_URL_EXTERNAL not set in infra.env}"
+JENKINS_JOB_NAME="${JENKINS_APP_JOB_PATH:?JENKINS_APP_JOB_PATH not set in infra.env}"
+GITLAB_URL="${GITLAB_URL_EXTERNAL:?GITLAB_URL_EXTERNAL not set in infra.env}"
+GITLAB_PROJECT_PATH="${APP_REPO_PATH:?APP_REPO_PATH not set in infra.env}"
+ARGOCD_NAMESPACE="${ARGOCD_NAMESPACE:?ARGOCD_NAMESPACE not set in infra.env}"
+DEV_NAMESPACE="${DEV_NAMESPACE:?DEV_NAMESPACE not set in infra.env}"
+
+# Derived values (from required infra.env variables)
+APP_REPO_NAME="${APP_REPO_NAME:?APP_REPO_NAME not set in infra.env}"
+ARGOCD_APP_NAME="${APP_REPO_NAME}-dev"
+APP_LABEL="app=${APP_REPO_NAME}"
+
+# Timeouts (sensible defaults)
 JENKINS_BUILD_TIMEOUT="${JENKINS_BUILD_TIMEOUT:-600}"
 ARGOCD_SYNC_TIMEOUT="${ARGOCD_SYNC_TIMEOUT:-300}"
-ARGOCD_APP_NAME="${ARGOCD_APP_NAME:-example-app-dev}"
-ARGOCD_NAMESPACE="${ARGOCD_NAMESPACE:-argocd}"
-DEV_NAMESPACE="${DEV_NAMESPACE:-dev}"
-APP_LABEL="${APP_LABEL:-app=example-app}"
 
 # -----------------------------------------------------------------------------
 # Output Helpers
@@ -75,6 +88,28 @@ preflight_checks() {
     log_step "Running pre-flight checks..."
 
     local failed=0
+
+    # Validate required configuration
+    local missing_config=()
+    [[ -z "$JENKINS_URL" ]] && missing_config+=("JENKINS_URL")
+    [[ -z "$JENKINS_JOB_NAME" ]] && missing_config+=("JENKINS_JOB_NAME")
+    [[ -z "$GITLAB_URL" ]] && missing_config+=("GITLAB_URL")
+    [[ -z "$GITLAB_PROJECT_PATH" ]] && missing_config+=("GITLAB_PROJECT_PATH")
+    [[ -z "$ARGOCD_APP_NAME" ]] && missing_config+=("ARGOCD_APP_NAME")
+    [[ -z "$ARGOCD_NAMESPACE" ]] && missing_config+=("ARGOCD_NAMESPACE")
+    [[ -z "$DEV_NAMESPACE" ]] && missing_config+=("DEV_NAMESPACE")
+    [[ -z "$APP_LABEL" ]] && missing_config+=("APP_LABEL")
+
+    if [[ ${#missing_config[@]} -gt 0 ]]; then
+        log_fail "Missing required configuration:"
+        for var in "${missing_config[@]}"; do
+            log_info "  - $var"
+        done
+        log_info ""
+        log_info "Create config/validate-pipeline.env from the template:"
+        log_info "  cp config/validate-pipeline.env.template config/validate-pipeline.env"
+        return 1
+    fi
 
     # Check kubectl
     if kubectl cluster-info &>/dev/null; then

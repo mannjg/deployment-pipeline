@@ -38,7 +38,7 @@ deployment-pipeline/
 ├── argocd/                # ArgoCD application definitions
 ├── k8s/                   # Infrastructure K8s manifests (GitLab, Jenkins, Nexus, ArgoCD)
 ├── config/                # Centralized configuration
-│   └── gitlab.env         # GitLab URLs and paths - source this for scripts
+│   └── infra.env          # Infrastructure URLs (GitLab, Jenkins, ArgoCD, Nexus)
 ├── docs/                  # Documentation
 │   ├── ARCHITECTURE.md    # System design details
 │   ├── GIT_REMOTE_STRATEGY.md  # Full git workflow details
@@ -139,11 +139,12 @@ pkill -f "port-forward.*example-app"
 | prod | Production environment |
 
 **Centralized Config:**
-Source `config/gitlab.env` for GitLab URLs and paths in scripts:
+Source `config/infra.env` for infrastructure URLs in scripts:
 ```bash
-source config/gitlab.env
-echo $GITLAB_URL_EXTERNAL  # http://gitlab.jmann.local
-echo $APP_REPO_PATH        # p2c/example-app
+source config/infra.env
+echo $GITLAB_URL_EXTERNAL   # https://gitlab.jmann.local
+echo $JENKINS_URL_EXTERNAL  # https://jenkins.jmann.local
+echo $APP_REPO_PATH         # p2c/example-app
 ```
 
 ## Documentation Index
