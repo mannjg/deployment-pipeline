@@ -29,15 +29,6 @@ spec:
         environment: prod
         managed_by: argocd
     spec:
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - podAffinityTerm:
-                labelSelector:
-                  matchLabels:
-                    app: example-app
-                topologyKey: kubernetes.io/hostname
-              weight: 100
       containers:
         - env:
             - name: QUARKUS_HTTP_PORT
@@ -61,7 +52,7 @@ spec:
             - name: ENVIRONMENT
               value: prod
           envFrom: []
-          image: docker.local/example/example-app:1.0.0-SNAPSHOT
+          image: docker.local/example/example-app:1.0.0-SNAPSHOT-a602183
           imagePullPolicy: Always
           livenessProbe:
             failureThreshold: 3
