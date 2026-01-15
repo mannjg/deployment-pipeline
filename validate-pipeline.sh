@@ -725,37 +725,43 @@ wait_for_env_sync() {
 verify_deployment() {
     log_step "Verifying deployment..."
 
-    # Get pod info
-    local pod_info=$(kubectl get pods -n "$DEV_NAMESPACE" -l "$APP_LABEL" -o json 2>/dev/null)
-    local pod_count=$(echo "$pod_info" | jq '.items | length')
+    # Expected image tag from the build
+    local expected_tag="$IMAGE_TAG"
+    local timeout=120
+    local elapsed=0
+    local poll_interval=5
 
-    if [[ "$pod_count" -eq 0 ]]; then
-        log_fail "No pods found with label $APP_LABEL in $DEV_NAMESPACE"
-        exit 1
-    fi
+    while [[ $elapsed -lt $timeout ]]; do
+        # Get pod info - look for pods with the expected image
+        local pod_info=$(kubectl get pods -n "$DEV_NAMESPACE" -l "$APP_LABEL" -o json 2>/dev/null)
 
-    # Check pod status
-    local ready_pods=$(echo "$pod_info" | jq '[.items[] | select(.status.phase == "Running")] | length')
+        # Find running pods with the correct image tag
+        local matching_pod=$(echo "$pod_info" | jq -r --arg tag "$expected_tag" \
+            '.items[] | select(.status.phase == "Running") | select(.spec.containers[0].image | contains($tag)) | .metadata.name' | head -1)
 
-    if [[ "$ready_pods" -eq 0 ]]; then
-        log_fail "No pods in Running state"
-        echo ""
-        echo "--- Pod Status ---"
-        kubectl get pods -n "$DEV_NAMESPACE" -l "$APP_LABEL"
-        echo ""
-        echo "--- Pod Events ---"
-        kubectl describe pods -n "$DEV_NAMESPACE" -l "$APP_LABEL" | grep -A 20 "Events:" | head -25
-        echo "--- End ---"
-        exit 1
-    fi
+        if [[ -n "$matching_pod" ]]; then
+            local deployed_image=$(echo "$pod_info" | jq -r --arg name "$matching_pod" \
+                '.items[] | select(.metadata.name == $name) | .spec.containers[0].image')
+            log_pass "Pod running with image: $deployed_image"
+            echo ""
+            export DEPLOYED_IMAGE="$deployed_image"
+            return 0
+        fi
 
-    # Get deployed image
-    local deployed_image=$(echo "$pod_info" | jq -r '.items[0].spec.containers[0].image')
+        log_info "Waiting for pod with image tag $expected_tag... (${elapsed}s elapsed)"
+        sleep $poll_interval
+        elapsed=$((elapsed + poll_interval))
+    done
 
-    log_pass "Pod running with image: $deployed_image"
+    log_fail "Timeout waiting for pod with image tag $expected_tag"
     echo ""
-
-    export DEPLOYED_IMAGE="$deployed_image"
+    echo "--- Pod Status ---"
+    kubectl get pods -n "$DEV_NAMESPACE" -l "$APP_LABEL"
+    echo ""
+    echo "--- Pod Events ---"
+    kubectl describe pods -n "$DEV_NAMESPACE" -l "$APP_LABEL" | grep -A 20 "Events:" | head -25
+    echo "--- End ---"
+    exit 1
 }
 
 verify_env_deployment() {
@@ -764,29 +770,38 @@ verify_env_deployment() {
 
     log_step "Verifying deployment ($env_name)..."
 
-    local pod_info=$(kubectl get pods -n "$namespace" -l "$APP_LABEL" -o json 2>/dev/null)
-    local pod_count=$(echo "$pod_info" | jq '.items | length')
+    # Expected image tag from the build (same as dev)
+    local expected_tag="$IMAGE_TAG"
+    local timeout=120
+    local elapsed=0
+    local poll_interval=5
 
-    if [[ "$pod_count" -eq 0 ]]; then
-        log_fail "No pods found with label $APP_LABEL in $namespace"
-        exit 1
-    fi
+    while [[ $elapsed -lt $timeout ]]; do
+        local pod_info=$(kubectl get pods -n "$namespace" -l "$APP_LABEL" -o json 2>/dev/null)
 
-    local ready_pods=$(echo "$pod_info" | jq '[.items[] | select(.status.phase == "Running")] | length')
+        # Find running pods with the correct image tag
+        local matching_pod=$(echo "$pod_info" | jq -r --arg tag "$expected_tag" \
+            '.items[] | select(.status.phase == "Running") | select(.spec.containers[0].image | contains($tag)) | .metadata.name' | head -1)
 
-    if [[ "$ready_pods" -eq 0 ]]; then
-        log_fail "No pods in Running state ($env_name)"
-        echo ""
-        echo "--- Pod Status ---"
-        kubectl get pods -n "$namespace" -l "$APP_LABEL"
-        echo "--- End ---"
-        exit 1
-    fi
+        if [[ -n "$matching_pod" ]]; then
+            local deployed_image=$(echo "$pod_info" | jq -r --arg name "$matching_pod" \
+                '.items[] | select(.metadata.name == $name) | .spec.containers[0].image')
+            log_pass "Pod running with image: $deployed_image ($env_name)"
+            echo ""
+            return 0
+        fi
 
-    local deployed_image=$(echo "$pod_info" | jq -r '.items[0].spec.containers[0].image')
+        log_info "Waiting for pod with image tag $expected_tag in $env_name... (${elapsed}s elapsed)"
+        sleep $poll_interval
+        elapsed=$((elapsed + poll_interval))
+    done
 
-    log_pass "Pod running with image: $deployed_image ($env_name)"
+    log_fail "Timeout waiting for pod with image tag $expected_tag ($env_name)"
     echo ""
+    echo "--- Pod Status ---"
+    kubectl get pods -n "$namespace" -l "$APP_LABEL"
+    echo "--- End ---"
+    exit 1
 }
 
 # -----------------------------------------------------------------------------
