@@ -533,20 +533,45 @@ except Exception as e:
 # -----------------------------------------------------------------------------
 # Promotion Job
 # -----------------------------------------------------------------------------
+get_jenkins_crumb() {
+    # Get CSRF crumb for Jenkins API calls
+    local cookie_jar=$(mktemp)
+    local crumb_response=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        -c "$cookie_jar" \
+        "$JENKINS_URL/crumbIssuer/api/json" 2>/dev/null)
+
+    JENKINS_CRUMB_FIELD=$(echo "$crumb_response" | jq -r '.crumbRequestField // empty')
+    JENKINS_CRUMB_VALUE=$(echo "$crumb_response" | jq -r '.crumb // empty')
+    JENKINS_COOKIE_JAR="$cookie_jar"
+
+    if [[ -z "$JENKINS_CRUMB_FIELD" || -z "$JENKINS_CRUMB_VALUE" ]]; then
+        log_fail "Could not get Jenkins CSRF crumb"
+        rm -f "$cookie_jar"
+        exit 1
+    fi
+}
+
 trigger_promotion_job() {
     local source_env="$1"
     local target_env="$2"
 
     log_step "Triggering promotion: $source_env → $target_env..."
 
+    # Get CSRF crumb
+    get_jenkins_crumb
+
     local trigger_url="$JENKINS_URL/job/$JENKINS_PROMOTE_JOB_NAME/buildWithParameters"
 
     local response=$(curl -sk -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        -b "$JENKINS_COOKIE_JAR" \
+        -H "$JENKINS_CRUMB_FIELD: $JENKINS_CRUMB_VALUE" \
         --data-urlencode "APP_NAME=$APP_REPO_NAME" \
         --data-urlencode "SOURCE_ENV=$source_env" \
         --data-urlencode "TARGET_ENV=$target_env" \
         -w "\n%{http_code}" \
         "$trigger_url" 2>/dev/null)
+
+    rm -f "$JENKINS_COOKIE_JAR"
 
     local http_code=$(echo "$response" | tail -n1)
 

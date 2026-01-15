@@ -251,7 +251,7 @@ Changes:
 - Updated ${params.TARGET_ENV} environment image to ${PROMOTE_IMAGE_TAG}
 - Regenerated Kubernetes manifests
 
-Build: ${BUILD_URL}
+Build: ${env.BUILD_URL}
 Image: ${PROMOTE_FULL_IMAGE}
 Source environment: ${params.SOURCE_ENV}
 
