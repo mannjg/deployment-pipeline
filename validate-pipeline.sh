@@ -5,13 +5,11 @@
 # Usage: ./validate-pipeline.sh
 #
 # Prerequisites:
-#   - kubectl configured for target cluster with access to jenkins/gitlab namespaces
+#   - kubectl configured for target cluster
 #   - curl, jq, git installed
+#   - config/infra.env with infrastructure URLs and secret references
 #
-# Credentials are loaded from K8s secrets by default:
-#   - jenkins-admin-credentials (jenkins namespace)
-#   - gitlab-api-token (gitlab namespace)
-#
+# Credentials are loaded from K8s secrets as configured in infra.env.
 # Override with config/validate-pipeline.env if needed.
 
 set -euo pipefail
@@ -36,21 +34,22 @@ if [[ -f "$SCRIPT_DIR/config/validate-pipeline.env" ]]; then
 fi
 
 # Fetch credentials from K8s secrets (if not already set)
+# Uses secret names/keys from infra.env
 load_credentials_from_secrets() {
     # Jenkins credentials
     if [[ -z "${JENKINS_USER:-}" ]]; then
-        JENKINS_USER=$(kubectl get secret jenkins-admin-credentials -n jenkins \
-            -o jsonpath='{.data.username}' 2>/dev/null | base64 -d) || true
+        JENKINS_USER=$(kubectl get secret "$JENKINS_ADMIN_SECRET" -n "$JENKINS_NAMESPACE" \
+            -o jsonpath="{.data.${JENKINS_ADMIN_USER_KEY}}" 2>/dev/null | base64 -d) || true
     fi
     if [[ -z "${JENKINS_TOKEN:-}" ]]; then
-        JENKINS_TOKEN=$(kubectl get secret jenkins-admin-credentials -n jenkins \
-            -o jsonpath='{.data.password}' 2>/dev/null | base64 -d) || true
+        JENKINS_TOKEN=$(kubectl get secret "$JENKINS_ADMIN_SECRET" -n "$JENKINS_NAMESPACE" \
+            -o jsonpath="{.data.${JENKINS_ADMIN_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
     fi
 
     # GitLab credentials
     if [[ -z "${GITLAB_TOKEN:-}" ]]; then
-        GITLAB_TOKEN=$(kubectl get secret gitlab-api-token -n gitlab \
-            -o jsonpath='{.data.token}' 2>/dev/null | base64 -d) || true
+        GITLAB_TOKEN=$(kubectl get secret "$GITLAB_API_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
+            -o jsonpath="{.data.${GITLAB_API_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
     fi
 }
 
