@@ -319,6 +319,154 @@ wait_for_jenkins_build() {
 }
 
 # -----------------------------------------------------------------------------
+# Merge Dev MR
+# -----------------------------------------------------------------------------
+merge_dev_mr() {
+    log_step "Finding and merging dev MR..."
+
+    local deployments_project="${DEPLOYMENTS_REPO_PATH:?DEPLOYMENTS_REPO_PATH not set}"
+    local encoded_project=$(echo "$deployments_project" | sed 's/\//%2F/g')
+
+    # Match MR by version - handles multiple open MRs correctly
+    # Branch format: update-dev-{version}-{commit}
+    local branch_prefix="update-dev-${NEW_VERSION}-"
+
+    local timeout=60
+    local poll_interval=5
+    local elapsed=0
+    local mr_iid=""
+    local source_branch=""
+
+    log_info "Looking for MR with branch: ${branch_prefix}*"
+
+    while [[ $elapsed -lt $timeout ]]; do
+        local mrs=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests?state=opened&target_branch=dev" 2>/dev/null)
+
+        # Find MR matching our specific version (ignores stale MRs)
+        local match=$(echo "$mrs" | jq -r --arg prefix "$branch_prefix" \
+            'first(.[] | select(.source_branch | startswith($prefix))) // empty')
+
+        if [[ -n "$match" ]]; then
+            mr_iid=$(echo "$match" | jq -r '.iid')
+            source_branch=$(echo "$match" | jq -r '.source_branch')
+            break
+        fi
+
+        sleep $poll_interval
+        elapsed=$((elapsed + poll_interval))
+    done
+
+    if [[ -z "$mr_iid" ]]; then
+        log_fail "No MR found for version $NEW_VERSION"
+        log_info "Open MRs targeting dev:"
+        curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests?state=opened&target_branch=dev" | \
+            jq -r '.[] | "  !\(.iid): \(.source_branch)"' 2>/dev/null || echo "  (none)"
+        exit 1
+    fi
+
+    log_info "Found MR !$mr_iid (branch: $source_branch)"
+
+    # Verify the image in the MR is correct
+    verify_mr_image "$encoded_project" "$source_branch"
+
+    # Merge the MR
+    log_info "Merging MR !$mr_iid..."
+    local merge_result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests/$mr_iid/merge" 2>/dev/null)
+
+    local merge_state=$(echo "$merge_result" | jq -r '.state // .message // "unknown"')
+
+    if [[ "$merge_state" == "merged" ]]; then
+        log_pass "MR !$mr_iid merged successfully"
+        echo ""
+    else
+        log_fail "Failed to merge MR: $merge_state"
+        echo "$merge_result" | jq .
+        exit 1
+    fi
+}
+
+verify_mr_image() {
+    local encoded_project="$1"
+    local branch="$2"
+
+    log_info "Verifying image in MR..."
+
+    # Fetch the GENERATED MANIFEST (not env.cue) - this is what actually deploys
+    # Using manifests avoids parsing CUE and handles only the target app's deployment
+    local app_cue_name="${APP_CUE_NAME:?APP_CUE_NAME not set in infra.env}"
+    local manifest_path="manifests%2F${app_cue_name}%2F${app_cue_name}.yaml"
+    local manifest=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$manifest_path/raw?ref=$branch" 2>/dev/null)
+
+    if [[ -z "$manifest" ]] || [[ "$manifest" == *"error"* ]] || [[ "$manifest" == *"404"* ]]; then
+        log_fail "Could not fetch manifest from branch $branch"
+        exit 1
+    fi
+
+    # Extract image from Deployment resource only (ignores ConfigMap, Service, etc.)
+    # Uses Python for proper multi-document YAML parsing
+    local mr_image=$(echo "$manifest" | python3 -c "
+import sys
+import yaml
+
+try:
+    for doc in yaml.safe_load_all(sys.stdin):
+        if doc and doc.get('kind') == 'Deployment':
+            containers = doc.get('spec', {}).get('template', {}).get('spec', {}).get('containers', [])
+            if containers:
+                print(containers[0].get('image', ''))
+                break
+except Exception as e:
+    print(f'ERROR: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>&1)
+
+    if [[ -z "$mr_image" ]] || [[ "$mr_image" == "ERROR:"* ]]; then
+        log_fail "Could not extract image from manifest: $mr_image"
+        exit 1
+    fi
+
+    # Validate the image meets all requirements
+    local expected_registry="${DOCKER_REGISTRY_EXTERNAL:?DOCKER_REGISTRY_EXTERNAL not set}"
+    local expected_app="${APP_REPO_NAME}"
+
+    # Check for placeholder/internal URLs (should have been replaced by Jenkins)
+    if [[ "$mr_image" == *"NOT_SET"* ]] || [[ "$mr_image" == *"nexus.nexus.svc"* ]]; then
+        log_fail "Image contains invalid/placeholder URL: $mr_image"
+        exit 1
+    fi
+
+    # Check external registry
+    if [[ "$mr_image" != "${expected_registry}/"* ]]; then
+        log_fail "Image uses wrong registry"
+        log_info "  Expected: ${expected_registry}/..."
+        log_info "  Got:      $mr_image"
+        exit 1
+    fi
+
+    # Check app name in path
+    if [[ "$mr_image" != *"/${expected_app}:"* ]]; then
+        log_fail "Image missing app name in path"
+        log_info "  Expected: .../${expected_app}:..."
+        log_info "  Got:      $mr_image"
+        exit 1
+    fi
+
+    # Check version in tag (format: {version}-{commit})
+    if [[ "$mr_image" != *":${NEW_VERSION}-"* ]]; then
+        log_fail "Image has wrong version in tag"
+        log_info "  Expected: ...:${NEW_VERSION}-..."
+        log_info "  Got:      $mr_image"
+        exit 1
+    fi
+
+    log_info "Image validated: $mr_image"
+}
+
+# -----------------------------------------------------------------------------
 # ArgoCD Sync
 # -----------------------------------------------------------------------------
 wait_for_argocd_sync() {
@@ -403,6 +551,7 @@ main() {
     bump_version
     commit_and_push
     wait_for_jenkins_build
+    merge_dev_mr
     wait_for_argocd_sync
     verify_deployment
 
