@@ -64,6 +64,7 @@ DEV_NAMESPACE="${DEV_NAMESPACE:?DEV_NAMESPACE not set in infra.env}"
 # Derived values (from required infra.env variables)
 APP_REPO_NAME="${APP_REPO_NAME:?APP_REPO_NAME not set in infra.env}"
 ARGOCD_APP_NAME="${APP_REPO_NAME}-dev"
+JENKINS_PROMOTE_JOB_NAME="${JENKINS_PROMOTE_JOB_NAME:-promote-environment}"
 APP_LABEL="app=${APP_REPO_NAME}"
 
 # Timeouts (sensible defaults)
@@ -388,6 +389,69 @@ merge_dev_mr() {
     fi
 }
 
+merge_env_mr() {
+    local target_env="$1"
+    local branch_prefix="promote-${target_env}"
+
+    log_step "Finding and merging $target_env MR..."
+
+    local deployments_project="${DEPLOYMENTS_REPO_PATH:?DEPLOYMENTS_REPO_PATH not set}"
+    local encoded_project=$(echo "$deployments_project" | sed 's/\//%2F/g')
+
+    local branch_pattern="${branch_prefix}-${NEW_VERSION}-"
+
+    local timeout=60
+    local poll_interval=5
+    local elapsed=0
+    local mr_iid=""
+    local source_branch=""
+
+    log_info "Looking for MR with branch: ${branch_pattern}*"
+
+    while [[ $elapsed -lt $timeout ]]; do
+        local mrs=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests?state=opened&target_branch=$target_env" 2>/dev/null)
+
+        local match=$(echo "$mrs" | jq -r --arg prefix "$branch_pattern" \
+            'first(.[] | select(.source_branch | startswith($prefix))) // empty')
+
+        if [[ -n "$match" ]]; then
+            mr_iid=$(echo "$match" | jq -r '.iid')
+            source_branch=$(echo "$match" | jq -r '.source_branch')
+            break
+        fi
+
+        sleep $poll_interval
+        elapsed=$((elapsed + poll_interval))
+    done
+
+    if [[ -z "$mr_iid" ]]; then
+        log_fail "No MR found for $target_env promotion"
+        log_info "Open MRs targeting $target_env:"
+        curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests?state=opened&target_branch=$target_env" | \
+            jq -r '.[] | "  !\(.iid): \(.source_branch)"' 2>/dev/null || echo "  (none)"
+        exit 1
+    fi
+
+    log_info "Found MR !$mr_iid (branch: $source_branch)"
+
+    log_info "Merging MR !$mr_iid..."
+    local merge_result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests/$mr_iid/merge" 2>/dev/null)
+
+    local merge_state=$(echo "$merge_result" | jq -r '.state // .message // "unknown"')
+
+    if [[ "$merge_state" == "merged" ]]; then
+        log_pass "MR !$mr_iid merged successfully"
+        echo ""
+    else
+        log_fail "Failed to merge MR: $merge_state"
+        echo "$merge_result" | jq .
+        exit 1
+    fi
+}
+
 verify_mr_image() {
     local encoded_project="$1"
     local branch="$2"
@@ -467,6 +531,100 @@ except Exception as e:
 }
 
 # -----------------------------------------------------------------------------
+# Promotion Job
+# -----------------------------------------------------------------------------
+trigger_promotion_job() {
+    local source_env="$1"
+    local target_env="$2"
+
+    log_step "Triggering promotion: $source_env → $target_env..."
+
+    local trigger_url="$JENKINS_URL/job/$JENKINS_PROMOTE_JOB_NAME/buildWithParameters"
+
+    local response=$(curl -sk -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        --data-urlencode "APP_NAME=$APP_REPO_NAME" \
+        --data-urlencode "SOURCE_ENV=$source_env" \
+        --data-urlencode "TARGET_ENV=$target_env" \
+        -w "\n%{http_code}" \
+        "$trigger_url" 2>/dev/null)
+
+    local http_code=$(echo "$response" | tail -n1)
+
+    if [[ "$http_code" != "201" && "$http_code" != "200" ]]; then
+        log_fail "Failed to trigger promotion job (HTTP $http_code)"
+        log_info "URL: $trigger_url"
+        exit 1
+    fi
+
+    log_info "Promotion job triggered"
+}
+
+wait_for_promotion_job() {
+    log_step "Waiting for promotion job to complete..."
+
+    local timeout="${JENKINS_BUILD_TIMEOUT:-600}"
+    local poll_interval=10
+    local elapsed=0
+    local build_number=""
+    local build_url=""
+
+    local last_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        "$JENKINS_URL/job/$JENKINS_PROMOTE_JOB_NAME/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
+
+    log_info "Waiting for new build (last was #$last_build)..."
+
+    while [[ $elapsed -lt $timeout ]]; do
+        local current_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+            "$JENKINS_URL/job/$JENKINS_PROMOTE_JOB_NAME/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
+
+        if [[ "$current_build" -gt "$last_build" ]]; then
+            build_number="$current_build"
+            build_url="$JENKINS_URL/job/$JENKINS_PROMOTE_JOB_NAME/$build_number"
+            log_info "Build #$build_number started"
+            break
+        fi
+
+        sleep $poll_interval
+        elapsed=$((elapsed + poll_interval))
+    done
+
+    if [[ -z "$build_number" ]]; then
+        log_fail "Timeout waiting for promotion build to start"
+        exit 1
+    fi
+
+    while [[ $elapsed -lt $timeout ]]; do
+        local build_info=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" "$build_url/api/json")
+        local building=$(echo "$build_info" | jq -r '.building')
+        local result=$(echo "$build_info" | jq -r '.result // "null"')
+
+        if [[ "$building" == "false" ]]; then
+            local duration=$(echo "$build_info" | jq -r '.duration')
+            local duration_sec=$((duration / 1000))
+
+            if [[ "$result" == "SUCCESS" ]]; then
+                log_pass "Promotion build #$build_number completed (${duration_sec}s)"
+                echo ""
+                return 0
+            else
+                log_fail "Promotion build #$build_number $result"
+                echo ""
+                echo "--- Build Console (last 50 lines) ---"
+                curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" "$build_url/consoleText" | tail -50
+                echo "--- End Console ---"
+                exit 1
+            fi
+        fi
+
+        sleep $poll_interval
+        elapsed=$((elapsed + poll_interval))
+    done
+
+    log_fail "Timeout waiting for promotion build to complete"
+    exit 1
+}
+
+# -----------------------------------------------------------------------------
 # ArgoCD Sync
 # -----------------------------------------------------------------------------
 wait_for_argocd_sync() {
@@ -498,6 +656,40 @@ wait_for_argocd_sync() {
     echo ""
     echo "--- ArgoCD Application Status ---"
     kubectl describe application "$ARGOCD_APP_NAME" -n "$ARGOCD_NAMESPACE" 2>/dev/null | tail -30
+    echo "--- End Status ---"
+    exit 1
+}
+
+wait_for_env_sync() {
+    local env_name="$1"
+    local app_name="${APP_REPO_NAME}-${env_name}"
+
+    log_step "Waiting for ArgoCD sync ($env_name)..."
+
+    local timeout="${ARGOCD_SYNC_TIMEOUT:-300}"
+    local poll_interval=15
+    local elapsed=0
+
+    while [[ $elapsed -lt $timeout ]]; do
+        local app_status=$(kubectl get application "$app_name" -n "$ARGOCD_NAMESPACE" -o json 2>/dev/null)
+        local sync_status=$(echo "$app_status" | jq -r '.status.sync.status // "Unknown"')
+        local health_status=$(echo "$app_status" | jq -r '.status.health.status // "Unknown"')
+
+        if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" ]]; then
+            log_pass "$app_name synced and healthy (${elapsed}s)"
+            echo ""
+            return 0
+        fi
+
+        log_info "Status: sync=$sync_status health=$health_status (${elapsed}s elapsed)"
+        sleep $poll_interval
+        elapsed=$((elapsed + poll_interval))
+    done
+
+    log_fail "Timeout waiting for ArgoCD sync ($env_name)"
+    echo ""
+    echo "--- ArgoCD Application Status ---"
+    kubectl describe application "$app_name" -n "$ARGOCD_NAMESPACE" 2>/dev/null | tail -30
     echo "--- End Status ---"
     exit 1
 }
@@ -541,6 +733,37 @@ verify_deployment() {
     export DEPLOYED_IMAGE="$deployed_image"
 }
 
+verify_env_deployment() {
+    local env_name="$1"
+    local namespace="${env_name}"
+
+    log_step "Verifying deployment ($env_name)..."
+
+    local pod_info=$(kubectl get pods -n "$namespace" -l "$APP_LABEL" -o json 2>/dev/null)
+    local pod_count=$(echo "$pod_info" | jq '.items | length')
+
+    if [[ "$pod_count" -eq 0 ]]; then
+        log_fail "No pods found with label $APP_LABEL in $namespace"
+        exit 1
+    fi
+
+    local ready_pods=$(echo "$pod_info" | jq '[.items[] | select(.status.phase == "Running")] | length')
+
+    if [[ "$ready_pods" -eq 0 ]]; then
+        log_fail "No pods in Running state ($env_name)"
+        echo ""
+        echo "--- Pod Status ---"
+        kubectl get pods -n "$namespace" -l "$APP_LABEL"
+        echo "--- End ---"
+        exit 1
+    fi
+
+    local deployed_image=$(echo "$pod_info" | jq -r '.items[0].spec.containers[0].image')
+
+    log_pass "Pod running with image: $deployed_image ($env_name)"
+    echo ""
+}
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
@@ -555,6 +778,13 @@ main() {
     wait_for_argocd_sync
     verify_deployment
 
+    # Stage promotion
+    trigger_promotion_job "dev" "stage"
+    wait_for_promotion_job
+    merge_env_mr "stage"
+    wait_for_env_sync "stage"
+    verify_env_deployment "stage"
+
     # Calculate duration
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
@@ -562,7 +792,7 @@ main() {
     local seconds=$((duration % 60))
 
     echo "=== VALIDATION PASSED ==="
-    echo "Version $NEW_VERSION deployed to dev in ${minutes}m ${seconds}s"
+    echo "Version $NEW_VERSION deployed to dev and stage in ${minutes}m ${seconds}s"
 }
 
 main "$@"
