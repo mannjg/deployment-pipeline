@@ -250,7 +250,7 @@ spec:
     environment {
         // Application metadata
         APP_NAME = 'example-app'
-        APP_GROUP = 'example'
+        APP_GROUP = 'p2c'
 
         // Registry configuration (internal cluster DNS)
         DOCKER_REGISTRY = 'nexus.nexus.svc.cluster.local:5000'

@@ -83,8 +83,8 @@ spec:
         // External registry for deployment manifests (what kubelet uses to pull)
         DEPLOY_REGISTRY = System.getenv('DOCKER_REGISTRY')
 
-        // Application group (Docker registry path segment)
-        APP_GROUP = 'example'
+        // Application group (Docker registry path segment, matches GitLab group)
+        APP_GROUP = 'p2c'
 
         // Credentials
         GITLAB_CREDENTIALS = credentials('gitlab-credentials')

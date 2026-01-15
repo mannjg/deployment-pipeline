@@ -32,10 +32,10 @@ if [ -z "$ENVIRONMENT" ] || [ -z "$APP_NAME" ] || [ -z "$NEW_IMAGE" ]; then
     echo "Arguments:"
     echo "  environment  Target environment (dev|stage|prod)"
     echo "  app-name     Application name (e.g., example-app, postgres)"
-    echo "  new-image    New Docker image reference (e.g., docker.local/example/example-app:1.2.0-abc123)"
+    echo "  new-image    New Docker image reference (e.g., docker.local/p2c/example-app:1.2.0-abc123)"
     echo ""
     echo "Example:"
-    echo "  $0 dev example-app docker.local/example/example-app:1.2.0-abc123"
+    echo "  $0 dev example-app docker.local/p2c/example-app:1.2.0-abc123"
     exit 1
 fi
 
