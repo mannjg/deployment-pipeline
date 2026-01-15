@@ -56,6 +56,17 @@ This script:
 - If you fix an issue in any branch's `env.cue`, also update `example-env.cue`
 - This ensures future demo resets start with correct configuration
 
+**Workflow Order (Critical):**
+
+The setup script reads `example-env.cue` from GitLab's main branch, not local files.
+This means changes must be synced to GitLab before running setup.
+
+| Scenario | Commands |
+|----------|----------|
+| Full reset (or after k8s-deployments changes) | `git push origin main` → `./scripts/sync-to-gitlab.sh` → `./scripts/setup-gitlab-env-branches.sh --reset` |
+| Validation only (no k8s-deployments changes) | `./validate-pipeline.sh` |
+| After example-app changes only | `git push origin main` → `./validate-pipeline.sh` (script syncs example-app internally) |
+
 ## Repository Layout
 
 ```
