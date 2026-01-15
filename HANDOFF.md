@@ -1,7 +1,7 @@
 # Handoff Document
 
 **Date:** 2026-01-15
-**Status:** Iteration 3 (Prod Promotion) complete and validated
+**Status:** Iteration 4 (Component Health Checks) complete and validated
 
 ## Current State
 
@@ -38,6 +38,7 @@ The `validate-pipeline.sh` script successfully executes the full dev-to-stage-to
 | File | Purpose |
 |------|---------|
 | `validate-pipeline.sh` | End-to-end pipeline validation script |
+| `check-health.sh` | Quick infrastructure health check |
 | `k8s-deployments/jenkins/pipelines/Jenkinsfile.promote` | Promotion pipeline (dev->stage, stage->prod) |
 | `scripts/setup-jenkins-promote-job.sh` | Creates Jenkins promote-environment job |
 | `scripts/setup-gitlab-env-branches.sh` | Creates/resets dev/stage/prod branches |
@@ -63,7 +64,6 @@ The `validate-pipeline.sh` script successfully executes the full dev-to-stage-to
 
 From `docs/plans/2026-01-15-gitops-promotion-redesign.md` "Future Iterations":
 
-- **Iteration 4:** Component health checks (quick infrastructure verification)
 - **Iteration 5:** Pattern validation (CUE schema, GitOps structure checks)
 
 ## Workflow Order (Critical)
