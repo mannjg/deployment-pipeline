@@ -57,6 +57,33 @@ load_credentials() {
 }
 
 # -----------------------------------------------------------------------------
+# Get Jenkins CSRF Crumb
+# -----------------------------------------------------------------------------
+get_crumb() {
+    log_step "Getting Jenkins CSRF crumb..."
+
+    # Create cookie jar for session
+    COOKIE_JAR=$(mktemp)
+    trap "rm -f $COOKIE_JAR" EXIT
+
+    local crumb_response
+    crumb_response=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        -c "$COOKIE_JAR" \
+        "$JENKINS_URL/crumbIssuer/api/json" 2>/dev/null)
+
+    CRUMB_FIELD=$(echo "$crumb_response" | jq -r '.crumbRequestField // empty')
+    CRUMB_VALUE=$(echo "$crumb_response" | jq -r '.crumb // empty')
+
+    if [[ -z "$CRUMB_FIELD" || -z "$CRUMB_VALUE" ]]; then
+        log_fail "Could not get Jenkins CSRF crumb"
+        log_info "Response: $crumb_response"
+        exit 1
+    fi
+
+    log_info "Got crumb: $CRUMB_FIELD"
+}
+
+# -----------------------------------------------------------------------------
 # Check if Job Exists
 # -----------------------------------------------------------------------------
 job_exists() {
@@ -166,7 +193,9 @@ create_job() {
     local response
     response=$(curl -sk -X POST \
         -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        -b "$COOKIE_JAR" \
         -H "Content-Type: application/xml" \
+        -H "$CRUMB_FIELD: $CRUMB_VALUE" \
         -d "$config" \
         -w "\n%{http_code}" \
         "$JENKINS_URL/createItem?name=$JOB_NAME")
@@ -202,7 +231,9 @@ update_job() {
     local response
     response=$(curl -sk -X POST \
         -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        -b "$COOKIE_JAR" \
         -H "Content-Type: application/xml" \
+        -H "$CRUMB_FIELD: $CRUMB_VALUE" \
         -d "$config" \
         -w "\n%{http_code}" \
         "$JENKINS_URL/job/$JOB_NAME/config.xml")
@@ -227,6 +258,7 @@ main() {
     echo ""
 
     load_credentials
+    get_crumb
 
     if job_exists; then
         log_info "Job '$JOB_NAME' already exists"
