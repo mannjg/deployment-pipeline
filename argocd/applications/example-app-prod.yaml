@@ -11,9 +11,9 @@ spec:
 
   # Source repository configuration
   source:
-    repoURL: http://gitlab.gitlab.svc.cluster.local/p2c/k8s-deployments.git
+    repoURL: https://gitlab.jmann.local/p2c/k8s-deployments.git
     targetRevision: prod
-    path: manifests/prod/exampleApp
+    path: manifests/exampleApp
 
   # Destination cluster and namespace
   destination:

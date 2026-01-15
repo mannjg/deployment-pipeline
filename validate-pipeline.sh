@@ -154,13 +154,16 @@ preflight_checks() {
         fi
     fi
 
-    # Check ArgoCD application exists
-    if kubectl get application "$ARGOCD_APP_NAME" -n "$ARGOCD_NAMESPACE" &>/dev/null; then
-        log_info "ArgoCD: $ARGOCD_APP_NAME application exists"
-    else
-        log_fail "ArgoCD: $ARGOCD_APP_NAME application not found in $ARGOCD_NAMESPACE namespace"
-        failed=1
-    fi
+    # Check ArgoCD applications exist (dev, stage, prod)
+    for env in dev stage prod; do
+        local app="${APP_REPO_NAME}-${env}"
+        if kubectl get application "$app" -n "$ARGOCD_NAMESPACE" &>/dev/null; then
+            log_info "ArgoCD: $app application exists"
+        else
+            log_fail "ArgoCD: $app application not found in $ARGOCD_NAMESPACE namespace"
+            failed=1
+        fi
+    done
 
     if [[ $failed -eq 1 ]]; then
         echo ""
@@ -848,6 +851,13 @@ main() {
     wait_for_env_sync "stage"
     verify_env_deployment "stage"
 
+    # Prod promotion
+    trigger_promotion_job "stage" "prod"
+    wait_for_promotion_job
+    merge_env_mr "prod"
+    wait_for_env_sync "prod"
+    verify_env_deployment "prod"
+
     # Calculate duration
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
@@ -855,7 +865,7 @@ main() {
     local seconds=$((duration % 60))
 
     echo "=== VALIDATION PASSED ==="
-    echo "Version $NEW_VERSION deployed to dev and stage in ${minutes}m ${seconds}s"
+    echo "Version $NEW_VERSION deployed to dev, stage, and prod in ${minutes}m ${seconds}s"
 }
 
 main "$@"
