@@ -369,6 +369,9 @@ merge_dev_mr() {
 
     log_info "Found MR !$mr_iid (branch: $source_branch)"
 
+    # Extract IMAGE_TAG from branch name (update-dev-{version}-{commit} -> {version}-{commit})
+    export IMAGE_TAG="${source_branch#update-dev-}"
+
     # Verify the image in the MR is correct
     verify_mr_image "$encoded_project" "$source_branch"
 
