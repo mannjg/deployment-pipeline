@@ -1,0 +1,364 @@
+/**
+ * Jenkins Pipeline: Promote Environment
+ *
+ * Purpose: Promote an application from one environment to the next by:
+ * 1. Auto-detecting the image from source environment deployment (or using provided IMAGE_TAG)
+ * 2. Updating the image in target environment's env.cue
+ * 3. Regenerating Kubernetes manifests
+ * 4. Creating a GitLab MR targeting the target environment branch
+ *
+ * Valid promotion paths:
+ *   dev -> stage
+ *   stage -> prod
+ *
+ * This pipeline replaces the inline promotion logic that was previously in the CI pipeline,
+ * ensuring that fixes made during dev MR review propagate correctly to stage/prod.
+ */
+
+// Agent image from environment (ConfigMap)
+def agentImage = System.getenv('JENKINS_AGENT_IMAGE')
+if (!agentImage) {
+    error "JENKINS_AGENT_IMAGE environment variable is required but not set. Configure it in the pipeline-config ConfigMap."
+}
+
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: maven
+    image: ${agentImage}
+    command:
+    - cat
+    tty: true
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+"""
+        }
+    }
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '20', daysToKeepStr: '30'))
+        disableConcurrentBuilds()
+    }
+
+    parameters {
+        string(
+            name: 'APP_NAME',
+            defaultValue: 'example-app',
+            description: 'Application name to promote (e.g., example-app)'
+        )
+        choice(
+            name: 'SOURCE_ENV',
+            choices: ['dev', 'stage'],
+            description: 'Source environment to promote FROM'
+        )
+        choice(
+            name: 'TARGET_ENV',
+            choices: ['stage', 'prod'],
+            description: 'Target environment to promote TO'
+        )
+        string(
+            name: 'IMAGE_TAG',
+            defaultValue: '',
+            description: 'Optional: Image tag to promote (e.g., 1.0.0-abc123). If empty, auto-detects from source environment deployment.'
+        )
+    }
+
+    environment {
+        // Git repositories (from pipeline-config ConfigMap)
+        GITLAB_URL = System.getenv('GITLAB_INTERNAL_URL')
+        GITLAB_GROUP = System.getenv('GITLAB_GROUP')
+        DEPLOYMENT_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
+
+        // External registry for deployment manifests (what kubelet uses to pull)
+        DEPLOY_REGISTRY = System.getenv('DOCKER_REGISTRY')
+
+        // Credentials
+        GITLAB_CREDENTIALS = credentials('gitlab-credentials')
+        GITLAB_API_TOKEN = credentials('gitlab-api-token-secret')
+    }
+
+    stages {
+        stage('Validate Parameters') {
+            steps {
+                container('maven') {
+                    script {
+                        echo "=== Validate Promotion Parameters ==="
+
+                        // Validate required environment variables
+                        if (!env.GITLAB_URL) {
+                            error "GITLAB_INTERNAL_URL not set. Configure pipeline-config ConfigMap."
+                        }
+                        if (!env.DEPLOYMENT_REPO) {
+                            error "DEPLOYMENTS_REPO_URL not set. Configure pipeline-config ConfigMap."
+                        }
+                        if (!env.DEPLOY_REGISTRY) {
+                            error "DOCKER_REGISTRY not set. Configure pipeline-config ConfigMap."
+                        }
+
+                        // Validate promotion path
+                        def validPromotions = [
+                            'dev': 'stage',
+                            'stage': 'prod'
+                        ]
+
+                        def expectedTarget = validPromotions[params.SOURCE_ENV]
+                        if (expectedTarget != params.TARGET_ENV) {
+                            error """Invalid promotion path: ${params.SOURCE_ENV} -> ${params.TARGET_ENV}
+
+Valid promotion paths:
+  - dev -> stage
+  - stage -> prod
+
+You selected: ${params.SOURCE_ENV} -> ${params.TARGET_ENV}"""
+                        }
+
+                        echo "Promotion path validated: ${params.SOURCE_ENV} -> ${params.TARGET_ENV}"
+                        echo "Application: ${params.APP_NAME}"
+                        echo "Image tag: ${params.IMAGE_TAG ?: '(will auto-detect)'}"
+                    }
+                }
+            }
+        }
+
+        stage('Detect Image') {
+            steps {
+                container('maven') {
+                    script {
+                        echo "=== Detect Image to Promote ==="
+
+                        if (params.IMAGE_TAG?.trim()) {
+                            // Use provided image tag
+                            env.PROMOTE_IMAGE_TAG = params.IMAGE_TAG.trim()
+                            echo "Using provided image tag: ${env.PROMOTE_IMAGE_TAG}"
+                        } else {
+                            // Auto-detect from source environment deployment
+                            echo "Auto-detecting image from ${params.SOURCE_ENV} environment..."
+
+                            // Map environment to namespace (they're the same in this project)
+                            def namespace = params.SOURCE_ENV
+
+                            // Get the current image from the deployment
+                            def currentImage = sh(
+                                script: """
+                                    kubectl get deployment ${params.APP_NAME} -n ${namespace} \
+                                        -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo ""
+                                """,
+                                returnStdout: true
+                            ).trim()
+
+                            if (!currentImage) {
+                                error """Could not detect image for ${params.APP_NAME} in ${namespace} namespace.
+
+Ensure the application is deployed to ${params.SOURCE_ENV} before promoting.
+Check: kubectl get deployment ${params.APP_NAME} -n ${namespace}"""
+                            }
+
+                            // Extract the tag from the full image reference
+                            // Format: registry/group/name:tag
+                            def imageTag = currentImage.tokenize(':').last()
+                            env.PROMOTE_IMAGE_TAG = imageTag
+
+                            echo "Detected image: ${currentImage}"
+                            echo "Extracted tag: ${env.PROMOTE_IMAGE_TAG}"
+                        }
+
+                        // Construct full image reference for target environment
+                        // Assumes image follows pattern: registry/group/app-name:tag
+                        env.PROMOTE_FULL_IMAGE = "${env.DEPLOY_REGISTRY}/example/${params.APP_NAME}:${env.PROMOTE_IMAGE_TAG}"
+                        echo "Full image for promotion: ${env.PROMOTE_FULL_IMAGE}"
+                    }
+                }
+            }
+        }
+
+        stage('Create Promotion MR') {
+            steps {
+                container('maven') {
+                    script {
+                        echo "=== Create Promotion MR: ${params.SOURCE_ENV} -> ${params.TARGET_ENV} ==="
+
+                        withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
+                                                          usernameVariable: 'GIT_USERNAME',
+                                                          passwordVariable: 'GIT_PASSWORD')]) {
+                            try {
+                                // Setup git credentials (ephemeral, memory-only)
+                                sh '''
+                                    git config --global user.name "Jenkins CI"
+                                    git config --global user.email "jenkins@local"
+                                    git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
+                                '''
+
+                                // Clone deployment repository and create feature branch
+                                sh """
+                                    rm -rf k8s-deployments
+                                    git clone ${DEPLOYMENT_REPO} k8s-deployments
+                                    cd k8s-deployments
+
+                                    # Fetch target environment branch
+                                    git fetch origin ${params.TARGET_ENV}
+                                    git checkout ${params.TARGET_ENV}
+                                    git pull origin ${params.TARGET_ENV}
+
+                                    # Create feature branch for this promotion
+                                    FEATURE_BRANCH="promote-${params.TARGET_ENV}-${PROMOTE_IMAGE_TAG}"
+                                    git checkout -b "\${FEATURE_BRANCH}"
+
+                                    echo "============================================"
+                                    echo "Promoting ${params.APP_NAME} from ${params.SOURCE_ENV} to ${params.TARGET_ENV}"
+                                    echo "============================================"
+                                    echo "Image: ${PROMOTE_FULL_IMAGE}"
+                                    echo "Feature branch: \${FEATURE_BRANCH}"
+                                    echo ""
+                                """
+
+                                // Update image and generate manifests
+                                sh """
+                                    cd k8s-deployments
+
+                                    # Update the image in target environment's env.cue
+                                    ./scripts/update-app-image.sh ${params.TARGET_ENV} ${params.APP_NAME} "${PROMOTE_FULL_IMAGE}"
+                                    echo "[${params.TARGET_ENV.toUpperCase()}] Updated ${params.APP_NAME} image in env.cue"
+
+                                    # Regenerate Kubernetes manifests for target environment
+                                    ./scripts/generate-manifests.sh ${params.TARGET_ENV}
+
+                                    # Stage all changes
+                                    git add env.cue manifests/
+
+                                    # Commit with promotion metadata
+                                    git commit -m "Promote ${params.APP_NAME} to ${params.TARGET_ENV}: ${PROMOTE_IMAGE_TAG}
+
+Automated promotion from ${params.SOURCE_ENV} environment.
+
+Changes:
+- Updated ${params.TARGET_ENV} environment image to ${PROMOTE_IMAGE_TAG}
+- Regenerated Kubernetes manifests
+
+Build: ${BUILD_URL}
+Image: ${PROMOTE_FULL_IMAGE}
+Source environment: ${params.SOURCE_ENV}
+
+Generated manifests from CUE configuration." || echo "No changes to commit"
+                                """
+
+                                // Push feature branch and create merge request
+                                def mrDescription = """## Promotion from ${params.SOURCE_ENV.capitalize()}
+
+**Application**: ${params.APP_NAME}
+**Image Tag**: ${env.PROMOTE_IMAGE_TAG}
+**Source Environment**: ${params.SOURCE_ENV}
+**Target Environment**: ${params.TARGET_ENV}
+**Build**: ${env.BUILD_URL}
+
+### Changes
+
+This merge request promotes ${params.APP_NAME} from ${params.SOURCE_ENV} to ${params.TARGET_ENV}.
+
+**Image**: ${env.PROMOTE_FULL_IMAGE}
+
+### Promotion Path
+
+${params.SOURCE_ENV == 'dev' ? '- [x] dev (current)\n- [ ] stage (this promotion)\n- [ ] prod' : '- [x] dev\n- [x] stage (current)\n- [ ] prod (this promotion)'}
+
+### Deployment
+
+Once this MR is merged, ArgoCD will automatically deploy to the ${params.TARGET_ENV} namespace.
+
+${params.TARGET_ENV == 'prod' ? '> **Production Deployment** - Please review carefully before merging.' : ''}
+
+---
+*Generated by Jenkins Promote Pipeline*"""
+
+                                sh """
+                                    cd k8s-deployments
+                                    FEATURE_BRANCH="promote-${params.TARGET_ENV}-${PROMOTE_IMAGE_TAG}"
+
+                                    # Delete remote branch if it exists, then push fresh
+                                    git push origin --delete "\${FEATURE_BRANCH}" 2>/dev/null || echo "Branch does not exist remotely"
+                                    git push -u origin "\${FEATURE_BRANCH}"
+
+                                    # Create MR using GitLab API
+                                    export GITLAB_TOKEN="${GITLAB_API_TOKEN}"
+                                    export GITLAB_URL="${GITLAB_URL}"
+                                    export GITLAB_GROUP="${GITLAB_GROUP}"
+
+                                    ./scripts/create-gitlab-mr.sh \\
+                                        "\${FEATURE_BRANCH}" \\
+                                        ${params.TARGET_ENV} \\
+                                        "Promote ${params.APP_NAME} to ${params.TARGET_ENV}: ${PROMOTE_IMAGE_TAG}" \\
+                                        "${mrDescription}"
+                                """
+
+                                echo "[${params.TARGET_ENV.toUpperCase()}] Promotion MR created successfully: promote-${params.TARGET_ENV}-${env.PROMOTE_IMAGE_TAG} -> ${params.TARGET_ENV}"
+
+                            } finally {
+                                // Always cleanup git credentials, even on failure
+                                sh 'git config --global --unset credential.helper || true'
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo """
+=======================================================
+PROMOTION MR CREATED SUCCESSFULLY
+=======================================================
+Application: ${params.APP_NAME}
+Source: ${params.SOURCE_ENV}
+Target: ${params.TARGET_ENV}
+Image Tag: ${env.PROMOTE_IMAGE_TAG}
+Image: ${env.PROMOTE_FULL_IMAGE}
+Build URL: ${env.BUILD_URL}
+=======================================================
+
+Next steps:
+1. Review the merge request in GitLab
+2. Merge to deploy to ${params.TARGET_ENV}
+3. ArgoCD will automatically sync the deployment
+=======================================================
+"""
+        }
+        failure {
+            echo """
+=======================================================
+PROMOTION FAILED
+=======================================================
+Application: ${params.APP_NAME}
+Source: ${params.SOURCE_ENV}
+Target: ${params.TARGET_ENV}
+Build URL: ${env.BUILD_URL}
+Check logs above for error details
+=======================================================
+"""
+        }
+        always {
+            container('maven') {
+                script {
+                    // Cleanup temporary files and credentials
+                    sh '''
+                        echo "Performing cleanup..."
+                        git config --global --unset credential.helper || true
+                        rm -rf k8s-deployments || true
+                        echo "Cleanup completed"
+                    '''
+                }
+            }
+        }
+    }
+}
