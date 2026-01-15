@@ -1,11 +1,11 @@
 # Handoff Document
 
 **Date:** 2026-01-15
-**Status:** Iteration 2 (Stage Promotion) complete and validated
+**Status:** Iteration 3 (Prod Promotion) complete and validated
 
 ## Current State
 
-The `validate-pipeline.sh` script successfully executes the full dev-to-stage promotion flow:
+The `validate-pipeline.sh` script successfully executes the full dev-to-stage-to-prod promotion flow:
 
 1. Bumps version in pom.xml, pushes to GitHub, syncs to GitLab
 2. Waits for Jenkins CI build to complete
@@ -17,8 +17,13 @@ The `validate-pipeline.sh` script successfully executes the full dev-to-stage pr
 8. Finds and merges stage MR
 9. Waits for ArgoCD sync (stage)
 10. Verifies stage pod running with correct image
+11. Triggers `promote-environment` Jenkins job (stage -> prod)
+12. Waits for promotion job to complete
+13. Finds and merges prod MR
+14. Waits for ArgoCD sync (prod)
+15. Verifies prod pod running with correct image
 
-**Last successful run:** Version 1.0.19-SNAPSHOT deployed to dev and stage in ~2m 46s.
+**Last successful run:** Version 1.0.20-SNAPSHOT deployed to dev, stage, and prod in ~3m 50s.
 
 ## Reference Documents
 
@@ -52,12 +57,12 @@ The `validate-pipeline.sh` script successfully executes the full dev-to-stage pr
 4. **ArgoCD sync race** - Now waits for revision change, not just status
 5. **Image verification race** - Waits for pod with correct image tag
 6. **Stage ArgoCD app** - Fixed manifest paths and applied to cluster
+7. **Prod ArgoCD app** - Fixed URL (internal->external) and path (added prod app)
 
 ## Not Yet Implemented
 
 From `docs/plans/2026-01-15-gitops-promotion-redesign.md` "Future Iterations":
 
-- **Iteration 3:** Prod promotion (stage -> prod flow)
 - **Iteration 4:** Component health checks (quick infrastructure verification)
 - **Iteration 5:** Pattern validation (CUE schema, GitOps structure checks)
 
