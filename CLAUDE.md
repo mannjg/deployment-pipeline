@@ -4,14 +4,14 @@ This is the primary reference for AI coding agents working with this repository.
 
 ## Project Overview
 
-Local GitOps CI/CD pipeline demonstration using Jenkins, GitLab, ArgoCD, and Nexus on MicroK8s. This is a reference implementation for airgapped environments, showing how to build, test, and deploy containerized applications using GitOps principles.
+Local GitOps CI/CD pipeline demonstration using Jenkins, GitLab, ArgoCD, and Nexus on Kubernetes. This is a reference implementation for airgapped environments, showing how to build, test, and deploy containerized applications using GitOps principles.
 
 **Components:**
 - **GitLab** - Source control and webhooks (airgap-compatible)
 - **Jenkins** - CI/CD builds and artifact publishing
 - **Nexus** - Maven artifacts and Docker registry
 - **ArgoCD** - GitOps deployment to Kubernetes
-- **MicroK8s** - Local Kubernetes cluster
+- **Kubernetes** - Local cluster
 
 ## Git Remote Strategy (Critical)
 
@@ -27,6 +27,34 @@ This repo uses **monorepo-with-subtree-publishing**:
 **Why:** GitLab triggers Jenkins webhooks and ArgoCD watches. GitHub is the source of truth.
 
 See `docs/GIT_REMOTE_STRATEGY.md` for subtree commands, troubleshooting, and full rationale.
+
+## Demo Setup: Environment Branches
+
+The k8s-deployments repo uses **branch-per-environment** (dev/stage/prod branches in GitLab).
+These branches are NOT managed by subtree sync - they're created directly in GitLab.
+
+**Initial Setup (run once after syncing subtrees):**
+```bash
+export GITLAB_USER="root"  # or your GitLab username
+export GITLAB_TOKEN="your-gitlab-token"  # or let script get from K8s secret
+./scripts/setup-gitlab-env-branches.sh
+```
+
+This script:
+1. Clones k8s-deployments from GitLab
+2. Creates dev/stage/prod branches from main
+3. Transforms `example-env.cue` into `env.cue` with environment-specific values
+4. Pushes all branches to GitLab
+
+**Reset Demo State:**
+```bash
+./scripts/setup-gitlab-env-branches.sh --reset
+```
+
+**Seed Template Maintenance:**
+- `k8s-deployments/example-env.cue` is the seed template (persisted to GitHub)
+- If you fix an issue in any branch's `env.cue`, also update `example-env.cue`
+- This ensures future demo resets start with correct configuration
 
 ## Repository Layout
 
@@ -49,7 +77,7 @@ deployment-pipeline/
 
 ## Current State
 
-**Infrastructure:** MicroK8s cluster with GitLab, Jenkins, Nexus, ArgoCD deployed.
+**Infrastructure:** Kubernetes cluster with GitLab, Jenkins, Nexus, ArgoCD deployed.
 
 **GitLab Configuration:**
 - External URL: `http://gitlab.jmann.local`
@@ -58,7 +86,7 @@ deployment-pipeline/
 - Repositories: `p2c/example-app`, `p2c/k8s-deployments`
 
 **Known Limitations:**
-- Single cluster (all environments in one MicroK8s instance)
+- Single cluster (all environments in one cluster)
 - No HA (single replicas of infrastructure components)
 - Local storage only
 
@@ -79,7 +107,7 @@ deployment-pipeline/
 
 **Check service health:**
 ```bash
-sg microk8s -c "microk8s kubectl get pods -A | grep -E 'gitlab|jenkins|nexus|argocd'"
+kubectl get pods -A | grep -E 'gitlab|jenkins|nexus|argocd'
 ```
 
 ## Common Operations
@@ -97,8 +125,8 @@ curl -s "http://jenkins.local/job/example-app-ci/lastBuild/api/json" | \
 
 ### Check Deployment Status
 ```bash
-sg microk8s -c "microk8s kubectl get applications -n argocd"
-sg microk8s -c "microk8s kubectl get pods -n dev"
+kubectl get applications -n argocd
+kubectl get pods -n dev
 ```
 
 ### Sync to GitLab (after pushing to GitHub)
@@ -115,16 +143,15 @@ Promotion is manual via GitLab merge requests:
 
 ### Access Application
 ```bash
-sg microk8s -c "microk8s kubectl port-forward -n dev svc/example-app 8080:8080" &
+kubectl port-forward -n dev svc/example-app 8080:8080 &
 curl http://localhost:8080/api/greetings
 pkill -f "port-forward.*example-app"
 ```
 
 ## Infrastructure Notes
 
-**MicroK8s Cluster:**
-- Runs locally via snap
-- Uses `sg microk8s -c "microk8s kubectl ..."` for kubectl commands
+**Kubernetes Cluster:**
+- Local cluster with standard `kubectl` access
 - Addons: dns, storage, ingress
 
 **Namespaces:**
@@ -160,13 +187,13 @@ echo $APP_REPO_PATH         # p2c/example-app
 
 **Pod not starting:**
 ```bash
-sg microk8s -c "microk8s kubectl describe pod -n <namespace> <pod-name>"
-sg microk8s -c "microk8s kubectl logs -n <namespace> <pod-name>"
+kubectl describe pod -n <namespace> <pod-name>
+kubectl logs -n <namespace> <pod-name>
 ```
 
 **ArgoCD not syncing:**
 ```bash
-sg microk8s -c "microk8s kubectl describe application -n argocd <app-name>"
+kubectl describe application -n argocd <app-name>
 ```
 
 **CUE validation:**

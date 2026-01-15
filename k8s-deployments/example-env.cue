@@ -29,7 +29,7 @@ dev: exampleApp: apps.exampleApp & {
 		deployment: {
 			// Image will be updated by CI/CD pipeline
 			// Initial value should be a valid image tag
-			image: "nexus.nexus.svc.cluster.local:5000/example/example-app:latest"
+			image: "REGISTRY_URL_NOT_SET/example/example-app:IMAGE_TAG_NOT_SET"
 
 			// Adjust replicas per environment:
 			// - dev: 1
