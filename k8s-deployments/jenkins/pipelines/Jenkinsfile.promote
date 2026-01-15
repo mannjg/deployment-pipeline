@@ -83,6 +83,9 @@ spec:
         // External registry for deployment manifests (what kubelet uses to pull)
         DEPLOY_REGISTRY = System.getenv('DOCKER_REGISTRY')
 
+        // Application group (Docker registry path segment)
+        APP_GROUP = 'example'
+
         // Credentials
         GITLAB_CREDENTIALS = credentials('gitlab-credentials')
         GITLAB_API_TOKEN = credentials('gitlab-api-token-secret')
@@ -98,6 +101,9 @@ spec:
                         // Validate required environment variables
                         if (!env.GITLAB_URL) {
                             error "GITLAB_INTERNAL_URL not set. Configure pipeline-config ConfigMap."
+                        }
+                        if (!env.GITLAB_GROUP) {
+                            error "GITLAB_GROUP not set. Configure pipeline-config ConfigMap."
                         }
                         if (!env.DEPLOYMENT_REPO) {
                             error "DEPLOYMENTS_REPO_URL not set. Configure pipeline-config ConfigMap."
@@ -175,7 +181,7 @@ Check: kubectl get deployment ${params.APP_NAME} -n ${namespace}"""
 
                         // Construct full image reference for target environment
                         // Assumes image follows pattern: registry/group/app-name:tag
-                        env.PROMOTE_FULL_IMAGE = "${env.DEPLOY_REGISTRY}/example/${params.APP_NAME}:${env.PROMOTE_IMAGE_TAG}"
+                        env.PROMOTE_FULL_IMAGE = "${env.DEPLOY_REGISTRY}/${APP_GROUP}/${params.APP_NAME}:${env.PROMOTE_IMAGE_TAG}"
                         echo "Full image for promotion: ${env.PROMOTE_FULL_IMAGE}"
                     }
                 }
