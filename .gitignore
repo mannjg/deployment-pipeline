@@ -37,9 +37,8 @@ Thumbs.db
 *.swp
 *~
 
-# Nested git repositories (for CI/CD demo with gitlab.local)
-# These directories have their own .git folders that point to gitlab.local
-# The root repo tracks their source code but ignores their git metadata
+# Defensive: ignore any accidentally-created nested .git folders
+# The subtree workflow does NOT require nested repos - see docs/GIT_REMOTE_STRATEGY.md
 example-app/.git/
 k8s-deployments/.git/
 argocd/.git/
