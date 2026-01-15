@@ -658,6 +658,14 @@ wait_for_promotion_job() {
 wait_for_argocd_sync() {
     log_step "Waiting for ArgoCD sync..."
 
+    # Get the current sync revision before waiting (to detect change)
+    local prev_revision=$(kubectl get application "$ARGOCD_APP_NAME" -n "$ARGOCD_NAMESPACE" \
+        -o jsonpath='{.status.sync.revision}' 2>/dev/null)
+
+    # Trigger ArgoCD to refresh by annotating the application
+    kubectl annotate application "$ARGOCD_APP_NAME" -n "$ARGOCD_NAMESPACE" \
+        argocd.argoproj.io/refresh=normal --overwrite >/dev/null 2>&1 || true
+
     local timeout="${ARGOCD_SYNC_TIMEOUT:-300}"
     local poll_interval=15
     local elapsed=0
@@ -667,14 +675,16 @@ wait_for_argocd_sync() {
 
         local sync_status=$(echo "$app_status" | jq -r '.status.sync.status // "Unknown"')
         local health_status=$(echo "$app_status" | jq -r '.status.health.status // "Unknown"')
+        local current_revision=$(echo "$app_status" | jq -r '.status.sync.revision // ""')
 
-        if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" ]]; then
+        # Wait for revision to change AND status to be Synced+Healthy
+        if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" && "$current_revision" != "$prev_revision" ]]; then
             log_pass "$ARGOCD_APP_NAME synced and healthy (${elapsed}s)"
             echo ""
             return 0
         fi
 
-        log_info "Status: sync=$sync_status health=$health_status (${elapsed}s elapsed)"
+        log_info "Status: sync=$sync_status health=$health_status rev=${current_revision:0:7} (${elapsed}s elapsed)"
 
         sleep $poll_interval
         elapsed=$((elapsed + poll_interval))
@@ -694,6 +704,14 @@ wait_for_env_sync() {
 
     log_step "Waiting for ArgoCD sync ($env_name)..."
 
+    # Get the current sync revision before waiting (to detect change)
+    local prev_revision=$(kubectl get application "$app_name" -n "$ARGOCD_NAMESPACE" \
+        -o jsonpath='{.status.sync.revision}' 2>/dev/null)
+
+    # Trigger ArgoCD to refresh
+    kubectl annotate application "$app_name" -n "$ARGOCD_NAMESPACE" \
+        argocd.argoproj.io/refresh=normal --overwrite >/dev/null 2>&1 || true
+
     local timeout="${ARGOCD_SYNC_TIMEOUT:-300}"
     local poll_interval=15
     local elapsed=0
@@ -702,14 +720,16 @@ wait_for_env_sync() {
         local app_status=$(kubectl get application "$app_name" -n "$ARGOCD_NAMESPACE" -o json 2>/dev/null)
         local sync_status=$(echo "$app_status" | jq -r '.status.sync.status // "Unknown"')
         local health_status=$(echo "$app_status" | jq -r '.status.health.status // "Unknown"')
+        local current_revision=$(echo "$app_status" | jq -r '.status.sync.revision // ""')
 
-        if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" ]]; then
+        # Wait for revision to change AND status to be Synced+Healthy
+        if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" && "$current_revision" != "$prev_revision" ]]; then
             log_pass "$app_name synced and healthy (${elapsed}s)"
             echo ""
             return 0
         fi
 
-        log_info "Status: sync=$sync_status health=$health_status (${elapsed}s elapsed)"
+        log_info "Status: sync=$sync_status health=$health_status rev=${current_revision:0:7} (${elapsed}s elapsed)"
         sleep $poll_interval
         elapsed=$((elapsed + poll_interval))
     done
