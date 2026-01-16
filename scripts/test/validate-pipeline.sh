@@ -328,7 +328,8 @@ wait_for_k8s_deployments_ci() {
 
     log_step "Waiting for k8s-deployments CI to generate manifests..."
 
-    local job_name="${K8S_DEPLOYMENTS_CI_JOB:-k8s-deployments-ci}"
+    # k8s-deployments is a MultiBranch Pipeline - the job is named after the repo
+    local job_name="${DEPLOYMENTS_REPO_NAME:-k8s-deployments}"
     local job_path="job/${job_name}/job/${branch}"
 
     local timeout="${K8S_DEPLOYMENTS_VALIDATION_TIMEOUT:-300}"

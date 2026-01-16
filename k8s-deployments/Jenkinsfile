@@ -490,13 +490,7 @@ Build: ${env.BUILD_URL}
                                     sh """
                                         curl -X POST "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/merge_requests/${params.MR_IID}/notes" \
                                           -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                                          -d "body=✓ **Deployment Successful**
-
-Environment \`${params.TARGET_BRANCH}\` has been successfully deployed.
-
-All ArgoCD applications are synced and healthy.
-
-**Jenkins Build:** ${env.BUILD_URL}" \
+                                          -d "body=✓ **Deployment Successful**%0A%0AEnvironment ${params.TARGET_BRANCH} has been successfully deployed.%0A%0AAll ArgoCD applications are synced and healthy.%0A%0A**Jenkins Build:** ${env.BUILD_URL}" \
                                           || echo "⚠ Could not post MR comment (non-blocking)"
                                     """
                                 }
@@ -570,11 +564,7 @@ Check logs above for error details.
                             sh """
                                 curl -X POST "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/merge_requests/${params.MR_IID}/notes" \
                                   -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                                  -d "body=✗ **Pipeline Failed**
-
-Workflow: \`${env.WORKFLOW}\`
-
-Check Jenkins logs for details: ${env.BUILD_URL}" \
+                                  -d "body=✗ **Pipeline Failed**%0A%0AWorkflow: ${env.WORKFLOW}%0A%0ACheck Jenkins logs for details: ${env.BUILD_URL}" \
                                   || echo "⚠ Could not post MR comment"
                             """
                         }
