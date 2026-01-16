@@ -199,8 +199,11 @@ All applications in ${sourceEnv} have been deployed and verified as healthy.
 // MAIN PIPELINE
 // ============================================================================
 
-// Agent image from environment (ConfigMap) or fallback default
-def agentImage = System.getenv('JENKINS_AGENT_IMAGE') ?: 'jenkins/inbound-agent:latest-jdk21'
+// Agent image from environment (ConfigMap) - required, no fallback
+def agentImage = System.getenv('JENKINS_AGENT_IMAGE')
+if (!agentImage) {
+    error "JENKINS_AGENT_IMAGE environment variable is required but not set. Configure it in the pipeline-config ConfigMap."
+}
 
 pipeline {
     agent {
@@ -262,7 +265,8 @@ spec:
 
     environment {
         // GitLab configuration (from pipeline-config ConfigMap)
-        GITLAB_URL = System.getenv('GITLAB_INTERNAL_URL')
+        GITLAB_URL = System.getenv('GITLAB_URL_INTERNAL')
+        GITLAB_GROUP = System.getenv('GITLAB_GROUP')
         DEPLOYMENTS_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
 
         // ArgoCD configuration
@@ -288,7 +292,7 @@ Target Branch: ${params.TARGET_BRANCH}
 
                         // Validate required environment variables
                         if (!env.GITLAB_URL) {
-                            error "GITLAB_INTERNAL_URL not set. Configure pipeline-config ConfigMap."
+                            error "GITLAB_URL_INTERNAL not set. Configure pipeline-config ConfigMap."
                         }
                         if (!env.DEPLOYMENTS_REPO) {
                             error "DEPLOYMENTS_REPO_URL not set. Configure pipeline-config ConfigMap."
@@ -349,7 +353,7 @@ VALIDATION WORKFLOW
                         // Post comment to MR
                         withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                             sh """
-                                curl -X POST "${env.GITLAB_URL}/api/v4/projects/2/merge_requests/${params.MR_IID}/notes" \
+                                curl -X POST "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/merge_requests/${params.MR_IID}/notes" \
                                   -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
                                   -d "body=✓ **Validation Passed**
 
@@ -484,7 +488,7 @@ Build: ${env.BUILD_URL}
                                 // Post comment to MR
                                 withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                                     sh """
-                                        curl -X POST "${env.GITLAB_URL}/api/v4/projects/2/merge_requests/${params.MR_IID}/notes" \
+                                        curl -X POST "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/merge_requests/${params.MR_IID}/notes" \
                                           -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
                                           -d "body=✓ **Deployment Successful**
 
@@ -564,7 +568,7 @@ Check logs above for error details.
                     container('pipeline') {
                         withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                             sh """
-                                curl -X POST "${env.GITLAB_URL}/api/v4/projects/2/merge_requests/${params.MR_IID}/notes" \
+                                curl -X POST "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/merge_requests/${params.MR_IID}/notes" \
                                   -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
                                   -d "body=✗ **Pipeline Failed**
 
