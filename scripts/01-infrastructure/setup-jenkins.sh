@@ -45,7 +45,7 @@ check_prerequisites() {
 
     # Check if custom agent image exists
     if ! docker images | grep -q "jenkins-agent-custom"; then
-        log_error "Custom Jenkins agent image not found. Please run: ./jenkins/build-agent-image.sh"
+        log_error "Custom Jenkins agent image not found. Please run: ./k8s/jenkins/agent/build-agent-image.sh"
         exit 1
     fi
 
