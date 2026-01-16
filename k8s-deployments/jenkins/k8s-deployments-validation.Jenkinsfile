@@ -211,6 +211,46 @@ See: k8s-deployments/docs/CONFIGURATION.md"""
             }
         }
 
+        stage('Commit Generated Manifests') {
+            steps {
+                container('validator') {
+                    script {
+                        echo "=== Committing Generated Manifests ==="
+
+                        withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
+                                                          usernameVariable: 'GIT_USERNAME',
+                                                          passwordVariable: 'GIT_PASSWORD')]) {
+                            sh '''
+                                # Setup git credentials
+                                git config user.name "Jenkins CI"
+                                git config user.email "jenkins@local"
+                                git config credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
+
+                                # Stage generated manifests
+                                git add manifests/
+
+                                # Only commit if there are changes
+                                if ! git diff --cached --quiet; then
+                                    git commit -m "chore: generate manifests for ${BRANCH_NAME}
+
+Automated manifest generation by k8s-deployments CI.
+Build: ${BUILD_URL}"
+
+                                    git push origin HEAD:${BRANCH_NAME}
+                                    echo "✓ Manifests committed and pushed"
+                                else
+                                    echo "✓ No manifest changes to commit"
+                                fi
+
+                                # Cleanup credentials
+                                git config --unset credential.helper || true
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Integration Tests') {
             steps {
                 container('validator') {
