@@ -10,7 +10,6 @@
 #   - config/infra.env with infrastructure URLs and secret references
 #
 # Credentials are loaded from K8s secrets as configured in infra.env.
-# Override with config/validate-pipeline.env if needed.
 
 set -euo pipefail
 
@@ -29,12 +28,7 @@ else
     exit 1
 fi
 
-# Load local overrides if present (for credentials, custom timeouts)
-if [[ -f "$REPO_ROOT/config/validate-pipeline.env" ]]; then
-    source "$REPO_ROOT/config/validate-pipeline.env"
-fi
-
-# Fetch credentials from K8s secrets (if not already set)
+# Fetch credentials from K8s secrets
 # Uses secret names/keys from infra.env
 load_credentials_from_secrets() {
     # Jenkins credentials
