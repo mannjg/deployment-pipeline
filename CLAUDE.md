@@ -74,8 +74,14 @@ deployment-pipeline/
 ├── example-app/           # Sample Quarkus app (synced to GitLab p2c/example-app)
 ├── k8s-deployments/       # CUE-based K8s configs (synced to GitLab p2c/k8s-deployments)
 ├── scripts/               # Helper scripts (NOT synced to GitLab)
-├── argocd/                # ArgoCD application definitions
-├── k8s/                   # Infrastructure K8s manifests (GitLab, Jenkins, Nexus, ArgoCD)
+├── k8s/                   # Infrastructure manifests
+│   ├── argocd/            # ArgoCD install and ingress
+│   ├── cert-manager/      # TLS certificate management
+│   ├── gitlab/            # GitLab deployment
+│   ├── jenkins/           # Jenkins Helm values and manifests
+│   │   └── agent/         # Custom Jenkins agent (Dockerfile, build script, CA cert)
+│   ├── microk8s/          # Cluster config (kubeconfig)
+│   └── nexus/             # Nexus deployment
 ├── config/                # Centralized configuration
 │   └── infra.env          # Infrastructure URLs (GitLab, Jenkins, ArgoCD, Nexus)
 ├── docs/                  # Documentation
@@ -101,7 +107,7 @@ deployment-pipeline/
 - No HA (single replicas of infrastructure components)
 - Local storage only
 
-**Last verified:** 2026-01-14
+**Last verified:** 2026-01-16
 
 ## Service Access
 
