@@ -44,7 +44,7 @@ data:
   # ==========================================================================
   JENKINS_URL_EXTERNAL: "https://${JENKINS_HOST}"
   JENKINS_URL_INTERNAL: "http://jenkins.jenkins.svc.cluster.local:8080"
-  JENKINS_AGENT_IMAGE: "${DOCKER_REGISTRY}/jenkins/agent-custom:latest"
+  JENKINS_AGENT_IMAGE: "${DOCKER_REGISTRY}/jenkins-agent-custom:latest"
 
   # ==========================================================================
   # Nexus / Docker Registry Configuration
