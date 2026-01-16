@@ -2,6 +2,26 @@
 # Test case implementations for k8s-deployments pipeline validation
 # Sourced by validate-k8s-deployments-pipeline.sh
 
+# Skip SSL verification for git (self-signed certs in local infrastructure)
+export GIT_SSL_NO_VERIFY=1
+
+# =============================================================================
+# Git Credential Setup (for GitLab access)
+# =============================================================================
+
+# Setup git credentials for GitLab access using the API token
+setup_git_credentials() {
+    # Use 'oauth2' as username with PAT as password (GitLab convention)
+    git config --global credential.helper "!f() { echo username=oauth2; echo password=${GITLAB_TOKEN}; }; f"
+    git config --global user.name "Test Automation"
+    git config --global user.email "test@local"
+}
+
+# Cleanup git credentials
+cleanup_git_credentials() {
+    git config --global --unset credential.helper 2>/dev/null || true
+}
+
 # =============================================================================
 # Test Helper Functions
 # =============================================================================
@@ -17,7 +37,7 @@ verify_manifest_value() {
 
     local manifest_url="${GITLAB_URL}/api/v4/projects/${K8S_DEPLOYMENTS_PROJECT_ID}/repository/files/manifests%2F${app}%2F${app}.yaml/raw?ref=${branch}"
     local actual
-    actual=$(curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "${manifest_url}" | yq eval "${yq_path}" -)
+    actual=$(curl -sfk -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "${manifest_url}" | yq eval "${yq_path}" -)
 
     if [[ "${actual}" == "${expected}" ]]; then
         log_pass "Manifest value matches: ${actual}"
@@ -61,7 +81,7 @@ wait_for_jenkins_validation() {
     while [[ $elapsed -lt $timeout ]]; do
         # Check for recent successful build
         local result
-        result=$(curl -sf -u "${JENKINS_USER}:${JENKINS_TOKEN}" \
+        result=$(curl -sfk -u "${JENKINS_USER}:${JENKINS_TOKEN}" \
             "${JENKINS_URL}/job/${K8S_DEPLOYMENTS_VALIDATION_JOB}/lastBuild/api/json" | jq -r '.result // "BUILDING"')
 
         case "${result}" in
@@ -121,7 +141,7 @@ create_gitlab_mr() {
     log_step "Creating MR: ${source_branch} -> ${target_branch}"
 
     local response
-    response=$(curl -sf -X POST \
+    response=$(curl -sfk -X POST \
         -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
         -H "Content-Type: application/json" \
         -d "{
@@ -153,7 +173,7 @@ merge_gitlab_mr() {
     log_step "Merging MR !${mr_iid}"
 
     local response
-    response=$(curl -sf -X PUT \
+    response=$(curl -sfk -X PUT \
         -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
         "${GITLAB_URL}/api/v4/projects/${K8S_DEPLOYMENTS_PROJECT_ID}/merge_requests/${mr_iid}/merge")
 
@@ -389,7 +409,7 @@ test_L6_replica_promotion() {
     log_step "Looking for promotion MR..."
     sleep 10  # Give auto-promote time to create MR
     local promote_mr_iid
-    promote_mr_iid=$(curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+    promote_mr_iid=$(curl -sfk -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
         "${GITLAB_URL}/api/v4/projects/${K8S_DEPLOYMENTS_PROJECT_ID}/merge_requests?state=opened&target_branch=stage" \
         | jq -r '.[0].iid // empty')
 
@@ -479,7 +499,7 @@ test_L5_app_env_var() {
     # 6. Verify manifest has the env var
     local manifest_url="${GITLAB_URL}/api/v4/projects/${K8S_DEPLOYMENTS_PROJECT_ID}/repository/files/manifests%2FexampleApp%2FexampleApp.yaml/raw?ref=${branch}"
     local has_env_var
-    has_env_var=$(curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "${manifest_url}" | yq eval ".spec.template.spec.containers[0].env[] | select(.name == \"${env_var_name}\") | .value" -)
+    has_env_var=$(curl -sfk -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "${manifest_url}" | yq eval ".spec.template.spec.containers[0].env[] | select(.name == \"${env_var_name}\") | .value" -)
 
     if [[ "${has_env_var}" == "${env_var_value}" ]]; then
         log_pass "Manifest contains env var: ${env_var_name}=${env_var_value}"
@@ -636,7 +656,7 @@ cleanup_test() {
         (cd "${work_dir}/k8s-deployments" && git push origin --delete "${branch}" 2>/dev/null) || true
     else
         # Fallback: use GitLab API to delete branch if work_dir already removed
-        curl -sf -X DELETE \
+        curl -sfk -X DELETE \
             -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
             "${GITLAB_URL}/api/v4/projects/${K8S_DEPLOYMENTS_PROJECT_ID}/repository/branches/${branch}" 2>/dev/null || true
     fi

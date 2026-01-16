@@ -93,11 +93,11 @@ preflight_checks() {
     # Check GitLab access
     if [[ -n "${GITLAB_TOKEN:-}" ]]; then
         local gitlab_user
-        gitlab_user=$(curl -sf -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$GITLAB_URL/api/v4/user" | jq -r '.username // empty')
+        gitlab_user=$(curl -sfkk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$GITLAB_URL/api/v4/user" | jq -r '.username // empty')
         if [[ -n "$gitlab_user" ]]; then
             log_info "GitLab: authenticated as '$gitlab_user'"
             # Get project ID for API calls
-            K8S_DEPLOYMENTS_PROJECT_ID=$(curl -sf -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            K8S_DEPLOYMENTS_PROJECT_ID=$(curl -sfk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
                 "$GITLAB_URL/api/v4/projects/$(echo ${K8S_DEPLOYMENTS_REPO_PATH} | sed 's/\//%2F/g')" | jq -r '.id')
             log_info "GitLab project ID: ${K8S_DEPLOYMENTS_PROJECT_ID}"
         else
@@ -112,7 +112,7 @@ preflight_checks() {
     # Check Jenkins access
     if [[ -n "${JENKINS_TOKEN:-}" ]]; then
         local jenkins_mode
-        jenkins_mode=$(curl -sf -u "$JENKINS_USER:$JENKINS_TOKEN" "$JENKINS_URL/api/json" | jq -r '.mode // empty')
+        jenkins_mode=$(curl -sfk -u "$JENKINS_USER:$JENKINS_TOKEN" "$JENKINS_URL/api/json" | jq -r '.mode // empty')
         if [[ -n "$jenkins_mode" ]]; then
             log_info "Jenkins: authenticated as '$JENKINS_USER'"
         else
@@ -173,6 +173,9 @@ run_tests() {
     echo "=== Running Tests (filter: ${test_filter}) ==="
     echo ""
 
+    # Setup git credentials for GitLab access
+    setup_git_credentials
+
     # Define test matrix
     declare -A tests=(
         ["T1"]="test_L2_default_resource_limit:L2:Default resource limit"
@@ -217,6 +220,9 @@ run_tests() {
 
         echo ""
     done
+
+    # Cleanup git credentials
+    cleanup_git_credentials
 
     # Summary
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
