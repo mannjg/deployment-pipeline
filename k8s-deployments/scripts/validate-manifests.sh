@@ -13,6 +13,13 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Check required tools
+if ! command -v yq &> /dev/null; then
+    echo -e "${RED}✗ Required tool 'yq' not found${NC}"
+    echo "  Install: https://github.com/mikefarah/yq"
+    exit 1
+fi
+
 # Environment to validate (default: all)
 ENVIRONMENT="${1:-}"
 
@@ -42,23 +49,10 @@ validate_yaml_syntax() {
         return 1
     fi
 
-    # Validate YAML syntax with yq if available
-    if command -v yq &> /dev/null; then
-        if ! yq eval '.' "$file" > /dev/null 2>&1; then
-            echo -e "${RED}✗ Invalid YAML syntax in: $file${NC}"
-            return 1
-        fi
-    else
-        # Fallback: basic YAML check with kubectl
-        if command -v kubectl &> /dev/null; then
-            if ! kubectl apply --dry-run=client -f "$file" &> /dev/null; then
-                echo -e "${YELLOW}⚠ Warning: kubectl validation failed for: $file${NC}"
-                echo -e "${YELLOW}  (This may be expected for CRDs or some resources)${NC}"
-                # Don't fail - some valid K8s resources might not validate without cluster context
-            fi
-        else
-            echo -e "${YELLOW}⚠ Neither yq nor kubectl found - skipping detailed validation${NC}"
-        fi
+    # Validate YAML syntax with yq (required, no fallback)
+    if ! yq eval '.' "$file" > /dev/null 2>&1; then
+        echo -e "${RED}✗ Invalid YAML syntax in: $file${NC}"
+        return 1
     fi
 
     echo -e "${GREEN}✓ YAML syntax valid: $(basename "$file")${NC}"
