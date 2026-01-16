@@ -107,12 +107,12 @@ git subtree push --prefix=k8s-deployments gitlab-deployments main
 Or use the helper script:
 
 ```bash
-./scripts/sync-to-gitlab.sh
+./scripts/04-operations/sync-to-gitlab.sh
 ```
 
 ### Helper Script
 
-Create `scripts/sync-to-gitlab.sh`:
+The script `scripts/04-operations/sync-to-gitlab.sh` implements the subtree sync:
 
 ```bash
 #!/bin/bash
@@ -187,7 +187,7 @@ Developer Machine                    GitHub                         GitLab (Airg
 git commit
 git push origin ──────────────────> mannjg/deployment-pipeline
                                          │
-./scripts/sync-to-gitlab.sh              │
+./scripts/04-operations/sync-to-gitlab.sh│
     │                                    │
     ├── subtree push example-app ────────┼───────────────────────> p2c/example-app
     │                                    │                              │
