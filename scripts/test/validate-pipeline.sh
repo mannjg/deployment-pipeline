@@ -321,6 +321,83 @@ wait_for_jenkins_build() {
 }
 
 # -----------------------------------------------------------------------------
+# Wait for k8s-deployments CI
+# -----------------------------------------------------------------------------
+wait_for_k8s_deployments_ci() {
+    local branch="$1"
+
+    log_step "Waiting for k8s-deployments CI to generate manifests..."
+
+    local job_name="${K8S_DEPLOYMENTS_CI_JOB:-k8s-deployments-ci}"
+    local job_path="job/${job_name}/job/${branch}"
+
+    local timeout="${K8S_DEPLOYMENTS_VALIDATION_TIMEOUT:-300}"
+    local poll_interval=10
+    local elapsed=0
+    local build_number=""
+    local build_url=""
+
+    # Get the last build number before we started (if job branch exists)
+    local last_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        "$JENKINS_URL/${job_path}/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
+
+    log_info "Waiting for new build on branch $branch (last was #$last_build)..."
+
+    while [[ $elapsed -lt $timeout ]]; do
+        local current_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+            "$JENKINS_URL/${job_path}/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
+
+        if [[ "$current_build" -gt "$last_build" ]]; then
+            build_number="$current_build"
+            build_url="$JENKINS_URL/${job_path}/$build_number"
+            log_info "Build #$build_number started"
+            break
+        fi
+
+        sleep $poll_interval
+        elapsed=$((elapsed + poll_interval))
+    done
+
+    if [[ -z "$build_number" ]]; then
+        log_fail "Timeout waiting for k8s-deployments CI build to start"
+        exit 1
+    fi
+
+    # Wait for build to complete
+    while [[ $elapsed -lt $timeout ]]; do
+        local build_info=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+            "$build_url/api/json" 2>/dev/null)
+
+        local building=$(echo "$build_info" | jq -r '.building')
+        local result=$(echo "$build_info" | jq -r '.result // "null"')
+
+        if [[ "$building" == "false" ]]; then
+            local duration=$(echo "$build_info" | jq -r '.duration')
+            local duration_sec=$((duration / 1000))
+
+            if [[ "$result" == "SUCCESS" ]]; then
+                log_pass "k8s-deployments CI build #$build_number completed (${duration_sec}s)"
+                return 0
+            else
+                log_fail "k8s-deployments CI build #$build_number $result"
+                echo ""
+                echo "--- Build Console (last 50 lines) ---"
+                curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+                    "$build_url/consoleText" | tail -50
+                echo "--- End Console ---"
+                exit 1
+            fi
+        fi
+
+        sleep $poll_interval
+        elapsed=$((elapsed + poll_interval))
+    done
+
+    log_fail "Timeout waiting for k8s-deployments CI build to complete"
+    exit 1
+}
+
+# -----------------------------------------------------------------------------
 # Merge Dev MR
 # -----------------------------------------------------------------------------
 merge_dev_mr() {
@@ -372,6 +449,10 @@ merge_dev_mr() {
 
     # Extract IMAGE_TAG from branch name (update-dev-{version}-{commit} -> {version}-{commit})
     export IMAGE_TAG="${source_branch#update-dev-}"
+
+    # Wait for k8s-deployments CI to generate manifests before verifying
+    # (example-app CI only updates L5/L6 CUE files, k8s-deployments CI generates manifests)
+    wait_for_k8s_deployments_ci "$source_branch"
 
     # Verify the image in the MR is correct
     verify_mr_image "$encoded_project" "$source_branch"
