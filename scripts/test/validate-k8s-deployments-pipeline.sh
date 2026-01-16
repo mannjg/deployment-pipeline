@@ -176,8 +176,10 @@ run_tests() {
     # Define test matrix
     declare -A tests=(
         ["T1"]="test_L2_default_resource_limit:L2:Default resource limit"
+        ["T2"]="test_L5_app_env_var:L5:App environment variable"
         ["T3"]="test_L6_annotation:L6:Deployment annotation"
         ["T4"]="test_L6_replica_promotion:L6:Replica count with promotion"
+        ["T5"]="test_L6_configmap_value:L6:ConfigMap value"
     )
 
     for test_id in "${!tests[@]}"; do
@@ -249,7 +251,7 @@ main() {
             -h|--help)
                 echo "Usage: $0 [--test=<filter>]"
                 echo ""
-                echo "Filters: all, L2, L5, L6, T1, T3, T4"
+                echo "Filters: all, L2, L5, L6, T1, T2, T3, T4, T5"
                 exit 0
                 ;;
             *)

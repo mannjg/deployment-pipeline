@@ -438,6 +438,190 @@ test_L6_replica_promotion() {
 }
 
 # =============================================================================
+# Test Case: L5 - App Environment Variable
+# =============================================================================
+test_L5_app_env_var() {
+    local test_name="T2: L5 App Environment Variable"
+    log_step "Starting ${test_name}"
+
+    local env_var_name="TEST_VALIDATION_VAR"
+    local env_var_value="validation-test-value"
+    local branch="test-L5-envvar-$(date +%s)"
+
+    # 1. Clone k8s-deployments, create branch from main
+    local work_dir
+    work_dir=$(mktemp -d)
+    git clone "${K8S_DEPLOYMENTS_REPO_URL}" "${work_dir}/k8s-deployments" || { log_fail "Failed to clone repository"; return 1; }
+    cd "${work_dir}/k8s-deployments" || { log_fail "Failed to change to repo directory"; return 1; }
+    git checkout -b "${branch}"
+
+    # 2. Add env var to services/apps/example-app.cue
+    # Insert after the last env var in appEnvVars
+    sed -i '/QUARKUS_DATASOURCE_PASSWORD/a\        {\n            name: "'"${env_var_name}"'"\n            value: "'"${env_var_value}"'"\n        },' services/apps/example-app.cue
+    if ! grep -q "${env_var_name}" services/apps/example-app.cue; then
+        log_fail "sed replacement failed - env var not found in example-app.cue"
+        cleanup_test "${work_dir}" "${branch}"
+        return 1
+    fi
+
+    # 3. Commit and push
+    git add services/apps/example-app.cue
+    git commit -m "test: add ${env_var_name} to example-app"
+    git push -u origin "${branch}"
+
+    # 4. Create MR: branch → dev
+    local mr_iid
+    mr_iid=$(create_gitlab_mr "${branch}" "dev" "[TEST] L5 Env Var" "Automated test - will revert")
+
+    # 5. Wait for Jenkins validation
+    wait_for_jenkins_validation || { cleanup_test "${work_dir}" "${branch}"; return 1; }
+
+    # 6. Verify manifest has the env var
+    local manifest_url="${GITLAB_URL}/api/v4/projects/${K8S_DEPLOYMENTS_PROJECT_ID}/repository/files/manifests%2FexampleApp%2FexampleApp.yaml/raw?ref=${branch}"
+    local has_env_var
+    has_env_var=$(curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "${manifest_url}" | yq eval ".spec.template.spec.containers[0].env[] | select(.name == \"${env_var_name}\") | .value" -)
+
+    if [[ "${has_env_var}" == "${env_var_value}" ]]; then
+        log_pass "Manifest contains env var: ${env_var_name}=${env_var_value}"
+    else
+        log_fail "Manifest missing env var"
+        cleanup_test "${work_dir}" "${branch}"
+        return 1
+    fi
+
+    # 7. Merge MR
+    merge_gitlab_mr "${mr_iid}" || { cleanup_test "${work_dir}" "${branch}"; return 1; }
+
+    # 8. Wait for ArgoCD sync
+    wait_for_argocd_sync "example-app-dev" || { cleanup_test "${work_dir}" "${branch}"; return 1; }
+
+    # 9. Verify cluster state
+    local cluster_env_var
+    cluster_env_var=$(kubectl get deployment example-app -n dev -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name=='${env_var_name}')].value}")
+
+    if [[ "${cluster_env_var}" == "${env_var_value}" ]]; then
+        log_pass "Cluster has env var: ${env_var_name}=${env_var_value}"
+    else
+        log_fail "Cluster missing env var"
+        cleanup_test "${work_dir}" "${branch}"
+        return 1
+    fi
+
+    # 10. Revert
+    log_step "Reverting change..."
+    git checkout main || log_info "Failed to checkout main for revert"
+    git pull origin main || log_info "Failed to pull main for revert"
+    local revert_branch="revert-${branch}"
+    git checkout -b "${revert_branch}" || log_info "Failed to create revert branch"
+    sed -i "/${env_var_name}/,+3d" services/apps/example-app.cue
+    if grep -q "${env_var_name}" services/apps/example-app.cue; then
+        log_info "Revert sed replacement may have failed - env var still present"
+    fi
+    git add services/apps/example-app.cue
+    git commit -m "revert: remove ${env_var_name} from example-app" || log_info "Failed to commit revert"
+    git push -u origin "${revert_branch}" || log_info "Failed to push revert branch"
+    local revert_mr_iid
+    revert_mr_iid=$(create_gitlab_mr "${revert_branch}" "dev" "[REVERT] L5 Env Var" "Reverting test")
+    if [[ -n "${revert_mr_iid}" ]]; then
+        wait_for_jenkins_validation || log_info "Jenkins validation failed for revert"
+        merge_gitlab_mr "${revert_mr_iid}" || log_info "Failed to merge revert MR"
+        wait_for_argocd_sync "example-app-dev" || log_info "ArgoCD sync failed for revert"
+    else
+        log_info "Failed to create revert MR"
+    fi
+
+    cleanup_test "${work_dir}" "${branch}"
+    log_pass "${test_name} PASSED"
+    return 0
+}
+
+# =============================================================================
+# Test Case: L6 - ConfigMap Value
+# =============================================================================
+test_L6_configmap_value() {
+    local test_name="T5: L6 ConfigMap Value"
+    log_step "Starting ${test_name}"
+
+    local key="test-validation-key"
+    local value="test-validation-value"
+    local branch="test-L6-configmap-$(date +%s)"
+
+    # 1. Clone k8s-deployments, create branch from dev
+    local work_dir
+    work_dir=$(mktemp -d)
+    git clone "${K8S_DEPLOYMENTS_REPO_URL}" "${work_dir}/k8s-deployments" || { log_fail "Failed to clone repository"; return 1; }
+    cd "${work_dir}/k8s-deployments" || { log_fail "Failed to change to repo directory"; return 1; }
+    git fetch origin dev
+    git checkout dev
+    git checkout -b "${branch}"
+
+    # 2. Add key to configMap in env.cue
+    sed -i '/configMap: {/,/}/ s/data: {/data: {\n                "'"${key}"'": "'"${value}"'"/' env.cue
+    if ! grep -q "${key}" env.cue; then
+        log_fail "sed replacement failed - key not found in env.cue"
+        cleanup_test "${work_dir}" "${branch}"
+        return 1
+    fi
+
+    # 3. Commit and push
+    git add env.cue
+    git commit -m "test: add ${key} to dev configMap"
+    git push -u origin "${branch}"
+
+    # 4. Create MR: branch → dev
+    local mr_iid
+    mr_iid=$(create_gitlab_mr "${branch}" "dev" "[TEST] L6 ConfigMap" "Automated test - will revert")
+
+    # 5. Wait for Jenkins validation
+    wait_for_jenkins_validation || { cleanup_test "${work_dir}" "${branch}"; return 1; }
+
+    # 6. Merge MR
+    merge_gitlab_mr "${mr_iid}" || { cleanup_test "${work_dir}" "${branch}"; return 1; }
+
+    # 7. Wait for ArgoCD sync
+    wait_for_argocd_sync "example-app-dev" || { cleanup_test "${work_dir}" "${branch}"; return 1; }
+
+    # 8. Verify ConfigMap in cluster
+    local cm_value
+    cm_value=$(kubectl get configmap example-app -n dev -o jsonpath="{.data.${key}}" 2>/dev/null)
+
+    if [[ "${cm_value}" == "${value}" ]]; then
+        log_pass "ConfigMap has key: ${key}=${value}"
+    else
+        log_fail "ConfigMap missing key or wrong value: got '${cm_value}'"
+        cleanup_test "${work_dir}" "${branch}"
+        return 1
+    fi
+
+    # 9. Revert
+    log_step "Reverting change..."
+    git checkout dev || log_info "Failed to checkout dev for revert"
+    git pull origin dev || log_info "Failed to pull dev for revert"
+    local revert_branch="revert-${branch}"
+    git checkout -b "${revert_branch}" || log_info "Failed to create revert branch"
+    sed -i "/${key}/d" env.cue
+    if grep -q "${key}" env.cue; then
+        log_info "Revert sed replacement may have failed - key still present"
+    fi
+    git add env.cue
+    git commit -m "revert: remove ${key} from dev configMap" || log_info "Failed to commit revert"
+    git push -u origin "${revert_branch}" || log_info "Failed to push revert branch"
+    local revert_mr_iid
+    revert_mr_iid=$(create_gitlab_mr "${revert_branch}" "dev" "[REVERT] L6 ConfigMap" "Reverting test")
+    if [[ -n "${revert_mr_iid}" ]]; then
+        wait_for_jenkins_validation || log_info "Jenkins validation failed for revert"
+        merge_gitlab_mr "${revert_mr_iid}" || log_info "Failed to merge revert MR"
+        wait_for_argocd_sync "example-app-dev" || log_info "ArgoCD sync failed for revert"
+    else
+        log_info "Failed to create revert MR"
+    fi
+
+    cleanup_test "${work_dir}" "${branch}"
+    log_pass "${test_name} PASSED"
+    return 0
+}
+
+# =============================================================================
 # Cleanup Helper
 # =============================================================================
 cleanup_test() {
