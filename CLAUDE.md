@@ -22,7 +22,7 @@ This repo uses **monorepo-with-subtree-publishing**:
 
 **Workflow (always in this order):**
 1. `git push origin main` - full repo to GitHub
-2. `./scripts/sync-to-gitlab.sh` - subtrees to GitLab (only if those folders changed)
+2. `./scripts/04-operations/sync-to-gitlab.sh` - subtrees to GitLab (only if those folders changed)
 
 **Why:** GitLab triggers Jenkins webhooks and ArgoCD watches. GitHub is the source of truth.
 
@@ -37,7 +37,7 @@ These branches are NOT managed by subtree sync - they're created directly in Git
 ```bash
 export GITLAB_USER="root"  # or your GitLab username
 export GITLAB_TOKEN="your-gitlab-token"  # or let script get from K8s secret
-./scripts/setup-gitlab-env-branches.sh
+./scripts/03-pipelines/setup-gitlab-env-branches.sh
 ```
 
 This script:
@@ -48,7 +48,7 @@ This script:
 
 **Reset Demo State:**
 ```bash
-./scripts/setup-gitlab-env-branches.sh --reset
+./scripts/03-pipelines/setup-gitlab-env-branches.sh --reset
 ```
 
 **Seed Template Maintenance:**
@@ -63,9 +63,9 @@ This means changes must be synced to GitLab before running setup.
 
 | Scenario | Commands |
 |----------|----------|
-| Full reset (or after k8s-deployments changes) | `git push origin main` → `./scripts/sync-to-gitlab.sh` → `./scripts/setup-gitlab-env-branches.sh --reset` |
-| Validation only (no k8s-deployments changes) | `./validate-pipeline.sh` |
-| After example-app changes only | `git push origin main` → `./validate-pipeline.sh` (script syncs example-app internally) |
+| Full reset (or after k8s-deployments changes) | `git push origin main` → `./scripts/04-operations/sync-to-gitlab.sh` → `./scripts/03-pipelines/setup-gitlab-env-branches.sh --reset` |
+| Validation only (no k8s-deployments changes) | `./scripts/test/validate-pipeline.sh` |
+| After example-app changes only | `git push origin main` → `./scripts/test/validate-pipeline.sh` (script syncs example-app internally) |
 
 ## Repository Layout
 
@@ -142,7 +142,7 @@ kubectl get pods -n dev
 
 ### Sync to GitLab (after pushing to GitHub)
 ```bash
-./scripts/sync-to-gitlab.sh
+./scripts/04-operations/sync-to-gitlab.sh
 ```
 
 ### Environment Promotion
