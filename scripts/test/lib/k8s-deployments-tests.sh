@@ -184,12 +184,17 @@ test_L2_default_resource_limit() {
     # 1. Clone k8s-deployments, create branch from main
     local work_dir
     work_dir=$(mktemp -d)
-    git clone "${K8S_DEPLOYMENTS_REPO_URL}" "${work_dir}/k8s-deployments"
-    cd "${work_dir}/k8s-deployments"
+    git clone "${K8S_DEPLOYMENTS_REPO_URL}" "${work_dir}/k8s-deployments" || { log_fail "Failed to clone repository"; return 1; }
+    cd "${work_dir}/k8s-deployments" || { log_fail "Failed to change to repo directory"; return 1; }
     git checkout -b "${branch}"
 
     # 2. Modify defaults.cue
     sed -i "s/memory: \"${original_value}\"/memory: \"${test_value}\"/" "${file}"
+    if ! grep -q "memory: \"${test_value}\"" "${file}"; then
+        log_fail "sed replacement failed - expected value not found in ${file}"
+        cleanup_test "${work_dir}" "${branch}"
+        return 1
+    fi
 
     # 3. Commit and push
     git add "${file}"
@@ -219,19 +224,26 @@ test_L2_default_resource_limit() {
 
     # 10. Revert
     log_step "Reverting change..."
-    git checkout dev
-    git pull origin dev
+    git checkout dev || log_info "Failed to checkout dev for revert"
+    git pull origin dev || log_info "Failed to pull dev for revert"
     local revert_branch="revert-${branch}"
-    git checkout -b "${revert_branch}"
+    git checkout -b "${revert_branch}" || log_info "Failed to create revert branch"
     sed -i "s/memory: \"${test_value}\"/memory: \"${original_value}\"/" "${file}"
+    if ! grep -q "memory: \"${original_value}\"" "${file}"; then
+        log_info "Revert sed replacement may have failed"
+    fi
     git add "${file}"
-    git commit -m "revert: restore default dev memory limit to ${original_value}"
-    git push -u origin "${revert_branch}"
+    git commit -m "revert: restore default dev memory limit to ${original_value}" || log_info "Failed to commit revert"
+    git push -u origin "${revert_branch}" || log_info "Failed to push revert branch"
     local revert_mr_iid
     revert_mr_iid=$(create_gitlab_mr "${revert_branch}" "dev" "[REVERT] L2 Resource Limit" "Reverting test change")
-    wait_for_jenkins_validation
-    merge_gitlab_mr "${revert_mr_iid}"
-    wait_for_argocd_sync "example-app-dev"
+    if [[ -n "${revert_mr_iid}" ]]; then
+        wait_for_jenkins_validation || log_info "Jenkins validation failed for revert"
+        merge_gitlab_mr "${revert_mr_iid}" || log_info "Failed to merge revert MR"
+        wait_for_argocd_sync "example-app-dev" || log_info "ArgoCD sync failed for revert"
+    else
+        log_info "Failed to create revert MR"
+    fi
 
     cleanup_test "${work_dir}" "${branch}"
     log_pass "${test_name} PASSED"
@@ -252,8 +264,8 @@ test_L6_annotation() {
     # 1. Clone k8s-deployments, create branch from dev
     local work_dir
     work_dir=$(mktemp -d)
-    git clone "${K8S_DEPLOYMENTS_REPO_URL}" "${work_dir}/k8s-deployments"
-    cd "${work_dir}/k8s-deployments"
+    git clone "${K8S_DEPLOYMENTS_REPO_URL}" "${work_dir}/k8s-deployments" || { log_fail "Failed to clone repository"; return 1; }
+    cd "${work_dir}/k8s-deployments" || { log_fail "Failed to change to repo directory"; return 1; }
     git fetch origin dev
     git checkout dev
     git checkout -b "${branch}"
@@ -262,6 +274,11 @@ test_L6_annotation() {
     # Using yq to modify CUE is tricky; we'll use sed for this specific case
     # Add annotation in the deployment section
     sed -i '/deployment: {/a\            annotations: { "test/validation-run": "true" }' env.cue
+    if ! grep -q '"test/validation-run": "true"' env.cue; then
+        log_fail "sed replacement failed - annotation not found in env.cue"
+        cleanup_test "${work_dir}" "${branch}"
+        return 1
+    fi
 
     # 3. Commit and push
     git add env.cue
@@ -298,19 +315,26 @@ test_L6_annotation() {
 
     # 10. Revert (remove annotation)
     log_step "Reverting change..."
-    git checkout dev
-    git pull origin dev
+    git checkout dev || log_info "Failed to checkout dev for revert"
+    git pull origin dev || log_info "Failed to pull dev for revert"
     local revert_branch="revert-${branch}"
-    git checkout -b "${revert_branch}"
+    git checkout -b "${revert_branch}" || log_info "Failed to create revert branch"
     sed -i '/annotations: { "test\/validation-run": "true" }/d' env.cue
+    if grep -q '"test/validation-run": "true"' env.cue; then
+        log_info "Revert sed replacement may have failed - annotation still present"
+    fi
     git add env.cue
-    git commit -m "revert: remove validation annotation from dev"
-    git push -u origin "${revert_branch}"
+    git commit -m "revert: remove validation annotation from dev" || log_info "Failed to commit revert"
+    git push -u origin "${revert_branch}" || log_info "Failed to push revert branch"
     local revert_mr_iid
     revert_mr_iid=$(create_gitlab_mr "${revert_branch}" "dev" "[REVERT] L6 Annotation" "Reverting test change")
-    wait_for_jenkins_validation
-    merge_gitlab_mr "${revert_mr_iid}"
-    wait_for_argocd_sync "example-app-dev"
+    if [[ -n "${revert_mr_iid}" ]]; then
+        wait_for_jenkins_validation || log_info "Jenkins validation failed for revert"
+        merge_gitlab_mr "${revert_mr_iid}" || log_info "Failed to merge revert MR"
+        wait_for_argocd_sync "example-app-dev" || log_info "ArgoCD sync failed for revert"
+    else
+        log_info "Failed to create revert MR"
+    fi
 
     cleanup_test "${work_dir}" "${branch}"
     log_pass "${test_name} PASSED"
@@ -331,14 +355,19 @@ test_L6_replica_promotion() {
     # 1. Clone k8s-deployments, create branch from dev
     local work_dir
     work_dir=$(mktemp -d)
-    git clone "${K8S_DEPLOYMENTS_REPO_URL}" "${work_dir}/k8s-deployments"
-    cd "${work_dir}/k8s-deployments"
+    git clone "${K8S_DEPLOYMENTS_REPO_URL}" "${work_dir}/k8s-deployments" || { log_fail "Failed to clone repository"; return 1; }
+    cd "${work_dir}/k8s-deployments" || { log_fail "Failed to change to repo directory"; return 1; }
     git fetch origin dev
     git checkout dev
     git checkout -b "${branch}"
 
     # 2. Change replicas in env.cue
     sed -i "s/replicas: ${original_replicas}/replicas: ${test_replicas}/" env.cue
+    if ! grep -q "replicas: ${test_replicas}" env.cue; then
+        log_fail "sed replacement failed - expected replicas value not found in env.cue"
+        cleanup_test "${work_dir}" "${branch}"
+        return 1
+    fi
 
     # 3. Commit and push
     git add env.cue
@@ -380,20 +409,27 @@ test_L6_replica_promotion() {
     # 8. Revert all environments
     log_step "Reverting changes..."
     for env in dev stage; do
-        git fetch origin "${env}"
-        git checkout "${env}"
-        git pull origin "${env}"
+        git fetch origin "${env}" || { log_info "Failed to fetch ${env} for revert"; continue; }
+        git checkout "${env}" || { log_info "Failed to checkout ${env} for revert"; continue; }
+        git pull origin "${env}" || { log_info "Failed to pull ${env} for revert"; continue; }
         local revert_branch="revert-${branch}-${env}"
-        git checkout -b "${revert_branch}"
+        git checkout -b "${revert_branch}" || { log_info "Failed to create revert branch for ${env}"; continue; }
         sed -i "s/replicas: ${test_replicas}/replicas: ${original_replicas}/" env.cue
+        if ! grep -q "replicas: ${original_replicas}" env.cue; then
+            log_info "Revert sed replacement may have failed for ${env}"
+        fi
         git add env.cue
-        git commit -m "revert: restore replicas to ${original_replicas} in ${env}"
-        git push -u origin "${revert_branch}"
+        git commit -m "revert: restore replicas to ${original_replicas} in ${env}" || { log_info "Failed to commit revert for ${env}"; continue; }
+        git push -u origin "${revert_branch}" || { log_info "Failed to push revert branch for ${env}"; continue; }
         local revert_mr_iid
         revert_mr_iid=$(create_gitlab_mr "${revert_branch}" "${env}" "[REVERT] Replicas in ${env}" "Reverting test")
-        wait_for_jenkins_validation
-        merge_gitlab_mr "${revert_mr_iid}"
-        wait_for_argocd_sync "example-app-${env}"
+        if [[ -n "${revert_mr_iid}" ]]; then
+            wait_for_jenkins_validation || log_info "Jenkins validation failed for ${env} revert"
+            merge_gitlab_mr "${revert_mr_iid}" || log_info "Failed to merge revert MR for ${env}"
+            wait_for_argocd_sync "example-app-${env}" || log_info "ArgoCD sync failed for ${env} revert"
+        else
+            log_info "Failed to create revert MR for ${env}"
+        fi
     done
 
     cleanup_test "${work_dir}" "${branch}"
@@ -410,13 +446,21 @@ cleanup_test() {
 
     log_step "Cleaning up test artifacts..."
 
+    # Delete remote branch if it exists (must do BEFORE removing work_dir)
+    # We need to be in the git repo context to push, or use the GitLab API
+    if [[ -d "${work_dir}/k8s-deployments" ]]; then
+        (cd "${work_dir}/k8s-deployments" && git push origin --delete "${branch}" 2>/dev/null) || true
+    else
+        # Fallback: use GitLab API to delete branch if work_dir already removed
+        curl -sf -X DELETE \
+            -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+            "${GITLAB_URL}/api/v4/projects/${K8S_DEPLOYMENTS_PROJECT_ID}/repository/branches/${branch}" 2>/dev/null || true
+    fi
+
     # Remove work directory
     if [[ -d "${work_dir}" ]]; then
         rm -rf "${work_dir}"
     fi
-
-    # Delete remote branch if it exists
-    git push origin --delete "${branch}" 2>/dev/null || true
 
     log_info "Cleanup complete"
 }
