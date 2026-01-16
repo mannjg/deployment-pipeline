@@ -7,6 +7,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
+# Load preflight library and local config
+source "${SCRIPT_DIR}/lib/preflight.sh"
+preflight_load_local_env "$SCRIPT_DIR"
+
+# Preflight checks
+preflight_check_required GITLAB_URL_INTERNAL GITLAB_GROUP GITLAB_TOKEN
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -33,28 +40,10 @@ TARGET_BRANCH=$2
 TITLE=$3
 DESCRIPTION=$4
 
-# GitLab configuration
-# Default to cluster-internal URL, override with GITLAB_URL env var if needed
-GITLAB_URL=${GITLAB_URL:-"http://gitlab.gitlab.svc.cluster.local"}
-GITLAB_TOKEN=${GITLAB_TOKEN:-""}
-
-# Project ID or path - use GITLAB_GROUP from environment
-# For API calls, we need the project ID or URL-encoded path
-GITLAB_GROUP=${GITLAB_GROUP:-""}
-if [ -z "$GITLAB_GROUP" ]; then
-    log_error "GITLAB_GROUP environment variable not set"
-    exit 1
-fi
+# GitLab configuration (from preflight-validated environment)
+GITLAB_URL=${GITLAB_URL_INTERNAL}
 PROJECT_PATH="${GITLAB_GROUP}/k8s-deployments"
 PROJECT_PATH_ENCODED=$(echo "$PROJECT_PATH" | sed 's/\//%2F/g')
-
-# Validate GitLab token
-if [ -z "$GITLAB_TOKEN" ]; then
-    log_error "GITLAB_TOKEN environment variable not set"
-    echo "Please set GITLAB_TOKEN before running this script:"
-    echo "  export GITLAB_TOKEN=your-gitlab-token"
-    exit 1
-fi
 
 # Debug: Show token length (not the actual token)
 TOKEN_LENGTH=${#GITLAB_TOKEN}
