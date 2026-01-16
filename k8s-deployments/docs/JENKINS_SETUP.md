@@ -13,6 +13,11 @@ This document provides step-by-step instructions for configuring Jenkins to use 
   - `kubectl` CLI tool
   - `jq` for JSON processing
 
+## Configuration
+
+Before proceeding, ensure you understand the configuration requirements.
+See [CONFIGURATION.md](CONFIGURATION.md) for required environment variables and credentials.
+
 ## Overview
 
 The k8s-deployments pipeline consists of three main workflows:
@@ -113,7 +118,7 @@ Optional filter:
 **Definition**: Pipeline script from SCM
 
 **SCM**: Git
-- Repository URL: `http://gitlab.gitlab.svc.cluster.local/example/k8s-deployments.git`
+- Repository URL: `http://gitlab.gitlab.svc.cluster.local/p2c/k8s-deployments.git`
 - Credentials: `gitlab-credentials`
 - Branch Specifier: `*/main` (or your default branch)
 - Script Path: `Jenkinsfile`
@@ -147,7 +152,7 @@ Add parameters:
 **Definition**: Pipeline script from SCM
 
 **SCM**: Git
-- Repository URL: `http://gitlab.gitlab.svc.cluster.local/example/k8s-deployments.git`
+- Repository URL: `http://gitlab.gitlab.svc.cluster.local/p2c/k8s-deployments.git`
 - Credentials: `gitlab-credentials`
 - Branch Specifier: `*/${BRANCH_NAME}`
 - Script Path: `jenkins/k8s-deployments-validation.Jenkinsfile`
@@ -205,8 +210,8 @@ Leave empty to trigger on all branches, or specify:
 
 2. Make a small change to a CUE file:
    ```bash
-   echo "# Pipeline test" >> envs/dev.cue
-   git add envs/dev.cue
+   echo "# Pipeline test" >> env.cue
+   git add env.cue
    git commit -m "test: Verify pipeline validation"
    git push -u origin test-pipeline-validation
    ```
@@ -456,5 +461,5 @@ For issues or questions:
 
 ---
 
-**Last Updated**: 2025-11-06
+**Last Updated**: 2026-01-16
 **Maintained By**: DevOps Team
