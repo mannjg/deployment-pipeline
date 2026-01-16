@@ -5,7 +5,7 @@
 set -e
 
 # Source centralized GitLab configuration
-source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/config.sh"
 
 JENKINS_URL="${JENKINS_URL:-http://jenkins.local}"
 JOB_NAME="k8s-deployments-validation"

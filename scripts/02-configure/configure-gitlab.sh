@@ -5,7 +5,7 @@ set -euo pipefail
 # Creates projects and access tokens via REST API
 
 # Source centralized GitLab configuration
-source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/config.sh"
 
 GITLAB_USER="root"
 GITLAB_PASS="changeme123"

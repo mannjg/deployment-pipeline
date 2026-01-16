@@ -2,7 +2,7 @@
 set -e
 
 # Source centralized GitLab configuration
-source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/config.sh"
 
 GITLAB_TOKEN="${GITLAB_TOKEN:-glpat-9m86y9YHyGf77Kr8bRjX}"
 

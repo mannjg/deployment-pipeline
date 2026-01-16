@@ -31,7 +31,7 @@ if [ -z "$GITLAB_TOKEN" ]; then
     exit 1
 fi
 
-source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/config.sh"
 GITLAB_USER="${GITLAB_USER:-root}"
 
 echo -e "${YELLOW}Using GitLab at: ${GITLAB_URL}${NC}"
