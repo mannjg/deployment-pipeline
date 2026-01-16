@@ -15,8 +15,9 @@
 #   ${ARGOCD_HOST}      - ArgoCD hostname (e.g., argocd.jmann.local)
 #   ${DOCKER_REGISTRY}  - Docker registry external (e.g., docker.jmann.local)
 #
-# All *_INTERNAL_URL values use Kubernetes service DNS names
-# All *_EXTERNAL_URL values use your ingress/external hostnames
+# Naming convention (matches config/infra.env):
+#   *_URL_INTERNAL  - Kubernetes service DNS names (pod-to-pod)
+#   *_URL_EXTERNAL  - Ingress/external hostnames (user-facing)
 
 apiVersion: v1
 kind: ConfigMap
@@ -30,8 +31,8 @@ data:
   # ==========================================================================
   # GitLab Configuration
   # ==========================================================================
-  GITLAB_EXTERNAL_URL: "https://${GITLAB_HOST}"
-  GITLAB_INTERNAL_URL: "http://gitlab.gitlab.svc.cluster.local"
+  GITLAB_URL_EXTERNAL: "https://${GITLAB_HOST}"
+  GITLAB_URL_INTERNAL: "http://gitlab.gitlab.svc.cluster.local"
   GITLAB_GROUP: "p2c"
 
   # Repository URLs (internal - for pod-to-pod communication)
@@ -41,23 +42,23 @@ data:
   # ==========================================================================
   # Jenkins Configuration
   # ==========================================================================
-  JENKINS_EXTERNAL_URL: "https://${JENKINS_HOST}"
-  JENKINS_INTERNAL_URL: "http://jenkins.jenkins.svc.cluster.local:8080"
+  JENKINS_URL_EXTERNAL: "https://${JENKINS_HOST}"
+  JENKINS_URL_INTERNAL: "http://jenkins.jenkins.svc.cluster.local:8080"
   JENKINS_AGENT_IMAGE: "${DOCKER_REGISTRY}/jenkins/agent-custom:latest"
 
   # ==========================================================================
   # Nexus / Docker Registry Configuration
   # ==========================================================================
-  NEXUS_EXTERNAL_URL: "https://${NEXUS_HOST}"
-  NEXUS_INTERNAL_URL: "http://nexus.nexus.svc.cluster.local:8081"
-  DOCKER_REGISTRY: "${DOCKER_REGISTRY}"
+  NEXUS_URL_EXTERNAL: "https://${NEXUS_HOST}"
+  NEXUS_URL_INTERNAL: "http://nexus.nexus.svc.cluster.local:8081"
+  DOCKER_REGISTRY_EXTERNAL: "${DOCKER_REGISTRY}"
   DOCKER_REGISTRY_INTERNAL: "nexus.nexus.svc.cluster.local:5000"
 
   # ==========================================================================
   # ArgoCD Configuration
   # ==========================================================================
-  ARGOCD_EXTERNAL_URL: "https://${ARGOCD_HOST}"
-  ARGOCD_INTERNAL_URL: "http://argocd-server.argocd.svc.cluster.local"
+  ARGOCD_URL_EXTERNAL: "https://${ARGOCD_HOST}"
+  ARGOCD_URL_INTERNAL: "http://argocd-server.argocd.svc.cluster.local"
   ARGOCD_SERVER: "argocd-server.argocd.svc.cluster.local:80"
   ARGOCD_OPTS: "--plaintext --grpc-web"
 
