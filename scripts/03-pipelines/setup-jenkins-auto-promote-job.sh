@@ -61,7 +61,7 @@ get_crumb() {
     log_step "Getting Jenkins CSRF crumb..."
 
     COOKIE_JAR=$(mktemp)
-    trap "rm -f $COOKIE_JAR" EXIT
+    trap "rm -f '$COOKIE_JAR'" EXIT
 
     local crumb_response
     crumb_response=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
@@ -207,7 +207,7 @@ update_job() {
         sed "s|GITLAB_REPO_URL_PLACEHOLDER|$GITLAB_REPO_URL|g" | \
         sed "s|WEBHOOK_TOKEN_PLACEHOLDER|$webhook_token|g")
 
-    local response http_code
+    local response http_code body
     response=$(curl -sk -X POST \
         -u "$JENKINS_USER:$JENKINS_TOKEN" \
         -b "$COOKIE_JAR" \
@@ -218,6 +218,7 @@ update_job() {
         "$JENKINS_URL/job/$JOB_NAME/config.xml")
 
     http_code=$(echo "$response" | tail -n1)
+    body=$(echo "$response" | sed '$d')
 
     if [[ "$http_code" == "200" ]]; then
         log_pass "Job '$JOB_NAME' updated successfully"
@@ -225,6 +226,7 @@ update_job() {
         return 0
     else
         log_fail "Failed to update job (HTTP $http_code)"
+        echo "$body" | head -10
         return 1
     fi
 }
