@@ -1,0 +1,49 @@
+# k8s-deployments Configuration Contract
+# =====================================
+#
+# Jenkins pipelines require these variables in pipeline-config ConfigMap.
+# Local scripts require these as environment variables or in config/local.env.
+
+required:
+  GITLAB_URL_INTERNAL:
+    description: "GitLab API URL (cluster-internal)"
+    example: "http://gitlab.gitlab.svc.cluster.local"
+
+  GITLAB_GROUP:
+    description: "GitLab group/namespace for repositories"
+    example: "p2c"
+
+  DEPLOYMENTS_REPO_URL:
+    description: "Full Git URL for k8s-deployments repo"
+    example: "http://gitlab.gitlab.svc.cluster.local/p2c/k8s-deployments.git"
+
+  DOCKER_REGISTRY_EXTERNAL:
+    description: "External Docker registry URL (what kubelet pulls from)"
+    example: "docker.jmann.local"
+
+  JENKINS_AGENT_IMAGE:
+    description: "Custom Jenkins agent image with CUE, kubectl, etc."
+    example: "localhost:30500/jenkins-agent-custom:latest"
+
+credentials:
+  gitlab-credentials:
+    type: "usernamePassword"
+    description: "GitLab username/password for git operations"
+
+  gitlab-api-token-secret:
+    type: "secretText"
+    description: "GitLab API token for MR creation"
+
+  argocd-credentials:
+    type: "usernamePassword"
+    description: "ArgoCD admin credentials"
+
+conventions:
+  branch_naming:
+    dev_update: "update-dev-{image_tag}"
+    promotion: "promote-{target_env}-{image_tag}"
+
+  manifest_paths:
+    pattern: "manifests/{app_cue_name}/{app_cue_name}.yaml"
+    example: "manifests/exampleApp/exampleApp.yaml"
+    note: "app_cue_name is camelCase CUE key (e.g., exampleApp not example-app)"
