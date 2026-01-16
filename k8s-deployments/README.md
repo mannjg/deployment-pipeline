@@ -10,6 +10,14 @@ This repository contains CUE-based Kubernetes deployment configurations for all 
 - Integrated with Jenkins CI/CD pipeline
 - Auto-deployment via ArgoCD
 
+## Configuration
+
+See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for:
+- Required environment variables
+- Jenkins ConfigMap setup
+- Local development configuration
+- Branch naming conventions
+
 ## Structure
 
 ```
