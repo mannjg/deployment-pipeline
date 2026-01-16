@@ -10,6 +10,9 @@
 #   - config/infra.env with infrastructure URLs and secret references
 #
 # Credentials are loaded from K8s secrets as configured in infra.env.
+#
+# Note: With auto-promotion enabled, promotion MRs may be created automatically
+# after merging. This script may create additional MRs which can be ignored/closed.
 
 set -euo pipefail
 
