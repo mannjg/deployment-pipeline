@@ -76,12 +76,12 @@ spec:
 
     environment {
         // Git repositories (from pipeline-config ConfigMap)
-        GITLAB_URL = System.getenv('GITLAB_INTERNAL_URL')
+        GITLAB_URL = System.getenv('GITLAB_URL_INTERNAL')
         GITLAB_GROUP = System.getenv('GITLAB_GROUP')
         DEPLOYMENT_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
 
         // External registry for deployment manifests (what kubelet uses to pull)
-        DEPLOY_REGISTRY = System.getenv('DOCKER_REGISTRY')
+        DEPLOY_REGISTRY = System.getenv('DOCKER_REGISTRY_EXTERNAL')
 
         // Application group (Docker registry path segment, matches GitLab group)
         APP_GROUP = 'p2c'
@@ -100,7 +100,7 @@ spec:
 
                         // Validate required environment variables
                         if (!env.GITLAB_URL) {
-                            error "GITLAB_INTERNAL_URL not set. Configure pipeline-config ConfigMap."
+                            error "GITLAB_URL_INTERNAL not set. Configure pipeline-config ConfigMap."
                         }
                         if (!env.GITLAB_GROUP) {
                             error "GITLAB_GROUP not set. Configure pipeline-config ConfigMap."
@@ -109,7 +109,7 @@ spec:
                             error "DEPLOYMENTS_REPO_URL not set. Configure pipeline-config ConfigMap."
                         }
                         if (!env.DEPLOY_REGISTRY) {
-                            error "DOCKER_REGISTRY not set. Configure pipeline-config ConfigMap."
+                            error "DOCKER_REGISTRY_EXTERNAL not set. Configure pipeline-config ConfigMap."
                         }
 
                         // Validate promotion path
