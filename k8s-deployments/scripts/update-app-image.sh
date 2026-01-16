@@ -12,6 +12,13 @@ NEW_IMAGE=${3:-}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
+# Load preflight library and local config
+source "${SCRIPT_DIR}/lib/preflight.sh"
+preflight_load_local_env "$SCRIPT_DIR"
+
+# Check required commands
+preflight_check_command "cue" "https://cuelang.org/docs/install/"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -50,12 +57,6 @@ case $ENVIRONMENT in
         exit 1
         ;;
 esac
-
-# Check for CUE
-if ! command -v cue &> /dev/null; then
-    log_error "CUE command not found. Please install CUE: https://cuelang.org/docs/install/"
-    exit 1
-fi
 
 # Convert app-name to camelCase for CUE field name
 # e.g., example-app -> exampleApp, my-service -> myService
