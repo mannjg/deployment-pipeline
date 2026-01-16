@@ -16,7 +16,7 @@ FAILED=0
 # Test GitLab token
 log_step "Testing GitLab token..."
 GITLAB_TOKEN=$(require_gitlab_token)
-GITLAB_USER=$(curl -sf -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+GITLAB_USER=$(curl -sfk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
     "${GITLAB_URL_EXTERNAL}/api/v4/user" 2>/dev/null | python3 -c "import sys, json; print(json.load(sys.stdin).get('username', ''))" 2>/dev/null) || true
 
 if [[ -n "$GITLAB_USER" ]]; then
@@ -29,7 +29,7 @@ fi
 # Test Jenkins credentials
 log_step "Testing Jenkins credentials..."
 JENKINS_CREDS=$(require_jenkins_credentials)
-JENKINS_RESPONSE=$(curl -sf -u "$JENKINS_CREDS" \
+JENKINS_RESPONSE=$(curl -sfk -u "$JENKINS_CREDS" \
     "${JENKINS_URL_EXTERNAL}/api/json" 2>/dev/null) || true
 
 if [[ -n "$JENKINS_RESPONSE" ]]; then
