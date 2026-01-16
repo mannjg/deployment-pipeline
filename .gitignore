@@ -50,7 +50,5 @@ tests/e2e/state/*
 # Git worktrees
 .worktrees/
 
-# Local environment configuration (contains secrets)
-env.local
-config/local.env
+# Pipeline validation overrides (may contain credentials)
 config/validate-pipeline.env
