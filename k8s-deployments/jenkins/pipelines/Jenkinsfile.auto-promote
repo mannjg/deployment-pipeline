@@ -49,7 +49,7 @@ spec:
     }
 
     environment {
-        GITLAB_URL = System.getenv('GITLAB_INTERNAL_URL')
+        GITLAB_URL = System.getenv('GITLAB_URL_INTERNAL')
         DEPLOYMENT_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
         GITLAB_CREDENTIALS = credentials('gitlab-credentials')
     }
@@ -63,7 +63,7 @@ spec:
 
                         // Validate required environment variables
                         if (!env.GITLAB_URL) {
-                            error "GITLAB_INTERNAL_URL not set. Configure pipeline-config ConfigMap."
+                            error "GITLAB_URL_INTERNAL not set. Configure pipeline-config ConfigMap."
                         }
                         if (!env.DEPLOYMENT_REPO) {
                             error "DEPLOYMENTS_REPO_URL not set. Configure pipeline-config ConfigMap."
