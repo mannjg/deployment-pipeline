@@ -4,8 +4,8 @@ set -euo pipefail
 # Jenkins Configuration Script
 # Documents manual configuration steps for Jenkins
 
-# Source centralized GitLab configuration
-source "$(dirname "${BASH_SOURCE[0]}")/../lib/config.sh"
+# Source infrastructure configuration
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/infra.sh"
 
 JENKINS_URL="http://jenkins.local"
 

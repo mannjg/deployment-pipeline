@@ -31,7 +31,10 @@ if [ -z "$GITLAB_TOKEN" ]; then
     exit 1
 fi
 
-source "$(dirname "${BASH_SOURCE[0]}")/../lib/config.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/infra.sh"
+
+# Alias for backward compatibility
+GITLAB_URL="${GITLAB_URL_INTERNAL}"
 GITLAB_USER="${GITLAB_USER:-root}"
 
 echo -e "${YELLOW}Using GitLab at: ${GITLAB_URL}${NC}"

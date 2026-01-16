@@ -4,8 +4,11 @@ set -euo pipefail
 # GitLab Configuration Script
 # Creates projects and access tokens via REST API
 
-# Source centralized GitLab configuration
-source "$(dirname "${BASH_SOURCE[0]}")/../lib/config.sh"
+# Source infrastructure configuration
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/infra.sh"
+
+# Alias variables for backward compatibility
+GITLAB_URL="${GITLAB_URL_INTERNAL}"
 
 GITLAB_USER="root"
 GITLAB_PASS="changeme123"

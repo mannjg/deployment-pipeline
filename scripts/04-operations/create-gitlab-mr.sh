@@ -12,7 +12,8 @@ MR_DESCRIPTION="${4:-}"
 
 # Source configuration if not already set
 if [[ -z "${GITLAB_URL:-}" ]]; then
-    source "$(dirname "${BASH_SOURCE[0]}")/../lib/config.sh"
+    source "$(dirname "${BASH_SOURCE[0]}")/../lib/infra.sh"
+    GITLAB_URL="${GITLAB_URL_INTERNAL}"
 fi
 
 # Environment variables (should be set by caller)
