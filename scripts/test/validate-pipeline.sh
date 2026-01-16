@@ -15,22 +15,23 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
 
 # Load infrastructure config (single source of truth)
-if [[ -f "$SCRIPT_DIR/config/infra.env" ]]; then
-    source "$SCRIPT_DIR/config/infra.env"
+if [[ -f "$REPO_ROOT/config/infra.env" ]]; then
+    source "$REPO_ROOT/config/infra.env"
 else
     echo "[✗] Infrastructure config not found: config/infra.env"
     exit 1
 fi
 
 # Load local overrides if present (for credentials, custom timeouts)
-if [[ -f "$SCRIPT_DIR/config/validate-pipeline.env" ]]; then
-    source "$SCRIPT_DIR/config/validate-pipeline.env"
+if [[ -f "$REPO_ROOT/config/validate-pipeline.env" ]]; then
+    source "$REPO_ROOT/config/validate-pipeline.env"
 fi
 
 # Fetch credentials from K8s secrets (if not already set)
@@ -181,7 +182,7 @@ preflight_checks() {
 bump_version() {
     log_step "Bumping version in example-app/pom.xml..."
 
-    local pom_file="$SCRIPT_DIR/example-app/pom.xml"
+    local pom_file="$REPO_ROOT/example-app/pom.xml"
 
     if [[ ! -f "$pom_file" ]]; then
         log_fail "pom.xml not found at $pom_file"
@@ -219,7 +220,7 @@ bump_version() {
 commit_and_push() {
     log_step "Committing and pushing to GitLab..."
 
-    cd "$SCRIPT_DIR"
+    cd "$REPO_ROOT"
 
     # Stage the pom.xml change
     git add example-app/pom.xml
