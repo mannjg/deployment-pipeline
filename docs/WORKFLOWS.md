@@ -1,5 +1,84 @@
 # Workflows
 
+## Design Philosophy
+
+### Multi-Application Architecture
+
+This pipeline is designed for **multiple independent applications**, each in its own repository:
+
+- **App repositories** (e.g., `example-app`, `user-service`, `order-api`) contain:
+  - Application source code
+  - Tests (unit and integration)
+  - `deployment/app.cue` — application-specific deployment configuration
+
+- **k8s-deployments repository** contains:
+  - Environment state for all applications (branches: dev, stage, prod)
+  - CUE schemas and templates
+  - Generated Kubernetes manifests
+
+This separation means:
+- Developers work in their app repo without touching deployment infrastructure
+- Platform team owns k8s-deployments and promotion logic
+- Adding a new app doesn't require changes to the CI/CD infrastructure
+
+### Separation of Concerns
+
+| Responsibility | Owner | Trigger |
+|----------------|-------|---------|
+| Build, test, publish artifacts | App CI (Jenkins) | Push to app repo |
+| Create initial deployment MR | App CI (Jenkins) | Merge to app main branch |
+| Validate manifests | k8s-deployments CI | MR created |
+| **Promotion MRs (dev→stage→prod)** | **k8s-deployments CI** | **Merge to environment branch** |
+| Deploy to cluster | ArgoCD | Change detected in branch |
+| Health checking | ArgoCD | After sync |
+
+**Key insight**: App CI pipelines do NOT know about promotion. They create the initial MR to dev, then they're done. The k8s-deployments repository owns all promotion logic, triggered by merge events.
+
+### Why MR-Gated Promotion?
+
+Each promotion (dev→stage, stage→prod) requires a merge request because:
+
+1. **Visibility**: Reviewers see both CUE config changes AND generated manifest diffs
+2. **Auditability**: Every promotion is a merge commit with full history
+3. **Control**: Human approval required before deployment
+4. **Rollback**: Easy to revert via Git
+
+The MR shows exactly what Kubernetes resources will change before they change.
+
+### Event-Driven Promotion
+
+Promotion MRs are created automatically via webhook:
+
+```
+MR merged to dev branch
+         │
+         │ GitLab webhook (push event)
+         ▼
+Jenkins auto-promote job
+         │
+         │ Detects which apps changed
+         ▼
+Creates MR: dev → stage
+         │
+         │ (Human reviews and merges)
+         ▼
+MR merged to stage branch
+         │
+         │ GitLab webhook (push event)
+         ▼
+Jenkins auto-promote job
+         │
+Creates MR: stage → prod
+```
+
+This pattern:
+- Requires no manual job triggering
+- Creates MRs immediately after merge
+- Works for any number of applications
+- Keeps promotion logic in the deployment repo
+
+---
+
 ## CI/CD Pipeline Workflows
 
 ### 1. Unit Test Workflow (Every Commit)
@@ -198,8 +277,17 @@ Application running in dev environment
 
 ### 5. Environment Promotion Workflow (Dev → Stage)
 
+**Trigger**: GitLab webhook fires when MR is merged to dev branch (push event).
+
 ```
-Jenkins: create-promotion-mr job
+MR merged to dev branch
+         │
+         ▼ (GitLab webhook: push event to dev)
+┌──────────────────────────────────────────┐
+│  Jenkins: k8s-deployments-auto-promote   │
+│  - Triggered by webhook                  │
+│  - Detects: dev branch updated           │
+└──────────────────────────────────────────┘
          │
          ▼
 ┌──────────────────────────────────────────┐
@@ -255,13 +343,17 @@ ArgoCD syncs example-app-stage
          ▼
 Application deployed to stage
          │
-         ▼
-Jenkins creates draft MR: stage → prod
+         ▼ (GitLab webhook: push event to stage)
+Jenkins auto-promote creates MR: stage → prod
 ```
 
 **Duration**: ~5 seconds (MR creation), manual review time varies
 **Purpose**: Controlled promotion with visibility
-**Failure Action**: Review diff, reject MR if issues found
+**Human verification**: Before merging stage→prod MR, reviewer checks:
+- Dev deployment is healthy (ArgoCD status)
+- Stage deployment is healthy (ArgoCD status)
+- Manifest diff is correct
+**Failure Action**: Close MR, fix issues in dev, re-promote
 
 ---
 
@@ -446,18 +538,29 @@ Issue detected in production
 
 ## Trigger Matrix
 
+### Application Repository Events (example-app, etc.)
+
 | Event | Branch | Jenkins Job | Actions | Duration |
 |-------|--------|-------------|---------|----------|
 | Push | feature/* | example-app-ci | Unit tests only | ~30s |
 | Push | main | - | None (wait for MR) | - |
 | MR Created | any → main | example-app-ci | Unit + Integration tests | ~2m |
 | MR Updated | any → main | example-app-ci | Unit + Integration tests | ~2m |
-| MR Merged | any → main | example-app-ci | Build + Publish + Update Deployment | ~5m |
-| Git Push | k8s-deployments:dev | - | ArgoCD sync dev | ~1m |
-| Git Push | k8s-deployments:stage | - | ArgoCD sync stage | ~1m |
-| Git Push | k8s-deployments:prod | - | ArgoCD sync prod | ~1m |
-| ArgoCD Sync | dev (success) | create-promotion-mr | Create dev→stage MR | ~10s |
-| ArgoCD Sync | stage (success) | create-promotion-mr | Create stage→prod MR | ~10s |
+| MR Merged | any → main | example-app-ci | Build + Publish + Create k8s-deployments MR | ~5m |
+
+### k8s-deployments Repository Events
+
+| Event | Branch | Triggered By | Actions | Duration |
+|-------|--------|--------------|---------|----------|
+| MR Created | any → dev/stage/prod | App CI or auto-promote | Validation pipeline runs | ~30s |
+| MR Merged | any → dev | Human approval | ArgoCD syncs dev | ~1m |
+| Push (post-merge) | dev | GitLab webhook | **auto-promote job → creates stage MR** | ~10s |
+| MR Merged | any → stage | Human approval | ArgoCD syncs stage | ~1m |
+| Push (post-merge) | stage | GitLab webhook | **auto-promote job → creates prod MR** | ~10s |
+| MR Merged | any → prod | Human approval | ArgoCD syncs prod | ~1m |
+| Push (post-merge) | prod | GitLab webhook | No further promotion | - |
+
+**Note**: The auto-promote job is triggered by GitLab webhook on push to dev/stage branches (which occurs after MR merge). It is NOT triggered by ArgoCD sync status — MR creation happens immediately, and humans verify deployment health before merging the next promotion MR.
 
 ---
 

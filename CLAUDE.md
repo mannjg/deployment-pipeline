@@ -152,11 +152,15 @@ kubectl get pods -n dev
 ```
 
 ### Environment Promotion
-Promotion is manual via GitLab merge requests:
-1. Jenkins creates draft MR: dev → stage after successful dev deployment
-2. Review and merge MR to promote to stage
-3. Jenkins creates draft MR: stage → prod after successful stage deployment
-4. Review and merge MR to promote to prod
+Promotion is **event-driven** via GitLab merge requests:
+1. App CI creates MR to k8s-deployments dev branch
+2. Human reviews and merges → ArgoCD deploys to dev
+3. **Auto-promote job** (webhook-triggered) creates MR: dev → stage
+4. Human reviews stage deployment health, merges → ArgoCD deploys to stage
+5. **Auto-promote job** creates MR: stage → prod
+6. Human reviews prod MR carefully, merges → ArgoCD deploys to prod
+
+**Key**: Promotion MRs are created automatically on merge. Humans verify deployment health before accepting the next promotion MR. See `docs/WORKFLOWS.md` for details.
 
 ### Access Application
 ```bash

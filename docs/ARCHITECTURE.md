@@ -1,5 +1,44 @@
 # Architecture
 
+## Design Intent
+
+This is a **reference implementation** for GitOps CI/CD in airgapped environments. While the demo uses a single example application, the architecture is designed for **multiple independent applications**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        MULTI-APPLICATION ARCHITECTURE                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  APPLICATION REPOS (many)          DEPLOYMENT REPO (one)       CLUSTERS     │
+│  ┌──────────────┐                  ┌──────────────────┐       ┌─────────┐  │
+│  │ example-app  │───┐              │ k8s-deployments  │       │   dev   │  │
+│  │ user-service │───┼──MRs────────▶│  branch: dev     │──────▶│  stage  │  │
+│  │ order-api    │───┘              │  branch: stage   │       │   prod  │  │
+│  │ payment-svc  │                  │  branch: prod    │       └─────────┘  │
+│  └──────────────┘                  └──────────────────┘                    │
+│                                                                             │
+│  Each app repo:                    Single source of truth:    ArgoCD:      │
+│  - Source code                     - All app CUE configs      - Watches    │
+│  - Tests                           - All env branches           branches   │
+│  - deployment/app.cue              - All manifests            - Syncs      │
+│  - App CI (Jenkins job)            - Promotion logic          - Health     │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Principles
+
+1. **App repos don't know about promotion** — App CI creates the initial MR to dev, then finishes. The k8s-deployments repo owns promotion logic.
+
+2. **Environment branches are deployment state** — The dev/stage/prod branches in k8s-deployments represent what IS deployed (or will be after ArgoCD syncs).
+
+3. **MRs are visibility gates** — Reviewers see CUE config diffs AND generated manifest diffs before any deployment.
+
+4. **Event-driven promotion** — Merging to dev automatically creates a stage MR; merging to stage automatically creates a prod MR. No manual job triggers.
+
+5. **ArgoCD owns health** — Jenkins doesn't wait for deployment health. ArgoCD syncs and reports health. Humans verify health before merging promotion MRs.
+
+---
+
 ## System Components
 
 ### Infrastructure Layer
@@ -55,9 +94,10 @@
   - Docker Pipeline
   - Credentials Binding
 - **Jobs**:
-  1. `example-app-ci`: Build and test application
-  2. `update-deployment`: Update k8s-deployments repo
-  3. `create-promotion-mr`: Auto-create environment promotion MRs
+  1. `example-app-ci`: Build, test, publish, create initial MR to k8s-deployments dev branch
+  2. `promote-environment`: Create promotion MR (dev→stage or stage→prod) — called by auto-promote
+  3. `k8s-deployments-auto-promote`: Webhook-triggered; detects which apps changed, triggers promote-environment
+  4. `k8s-deployments-validation`: Validates CUE and manifests on k8s-deployments MRs
 - **Deployment**: Helm chart with persistent storage for Jenkins home
 - **Security**: Service account with Docker-in-Docker privileges
 
