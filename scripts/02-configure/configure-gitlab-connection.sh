@@ -1,58 +1,59 @@
 #!/bin/bash
 # Configure GitLab connection in Jenkins
-# This adds the GitLab connection for status reporting
+# Documents the manual steps required for GitLab plugin setup
+set -euo pipefail
 
-set -e
+# Source shared libraries
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/logging.sh"
+source "$SCRIPT_DIR/../lib/infra.sh"
+source "$SCRIPT_DIR/../lib/credentials.sh"
 
-# Source centralized GitLab configuration
-source "$(dirname "${BASH_SOURCE[0]}")/../lib/config.sh"
+# Get credentials (fail-fast if not available)
+GITLAB_TOKEN=$(require_gitlab_token)
+JENKINS_CREDS=$(require_jenkins_credentials)
+JENKINS_USER="${JENKINS_CREDS%%:*}"
+JENKINS_PASS="${JENKINS_CREDS#*:}"
 
-JENKINS_URL="http://jenkins.local"
-GITLAB_TOKEN="${GITLAB_TOKEN:-glpat-9m86y9YHyGf77Kr8bRjX}"
 CONNECTION_NAME="gitlab-local"
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Configuring GitLab connection in Jenkins"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Jenkins: $JENKINS_URL"
-echo "GitLab: ${GITLAB_URL_EXTERNAL}"
-echo "Connection: $CONNECTION_NAME"
+log_header "GitLab Connection Setup for Jenkins"
+log_info "Jenkins: ${JENKINS_URL_EXTERNAL}"
+log_info "GitLab: ${GITLAB_URL_EXTERNAL}"
+log_info "Connection: $CONNECTION_NAME"
 echo ""
-
-JENKINS_PASSWORD=$(microk8s kubectl get secret jenkins -n jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
 
 COOKIE_JAR="/tmp/jenkins-cookies-$$.txt"
 CRUMB_FILE="/tmp/jenkins-crumb-$$.json"
+trap 'rm -f "$COOKIE_JAR" "$CRUMB_FILE"' EXIT
 
 # Get CSRF crumb
-echo "Getting CSRF crumb..."
-curl -c "$COOKIE_JAR" -b "$COOKIE_JAR" -s "${JENKINS_URL}/crumbIssuer/api/json" \
-  -u "admin:${JENKINS_PASSWORD}" \
-  > "$CRUMB_FILE"
-
-CRUMB=$(jq -r '.crumb' "$CRUMB_FILE")
-
-# Note: Configuring GitLab connection via API is complex
-# The plugin uses Jenkins credentials and system configuration
+log_step "Getting CSRF crumb..."
+if curl -sf -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+    "${JENKINS_URL_EXTERNAL}/crumbIssuer/api/json" \
+    -u "${JENKINS_USER}:${JENKINS_PASS}" \
+    > "$CRUMB_FILE"; then
+    log_pass "CSRF crumb obtained"
+else
+    log_warn "Could not get CSRF crumb (Jenkins may have CSRF disabled)"
+fi
 
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Manual Configuration Required"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+log_header "Manual Configuration Required"
 echo ""
 echo "The GitLab plugin requires manual configuration in Jenkins UI:"
 echo ""
 echo "Step 1: Add GitLab API Token Credential"
-echo "  URL: ${JENKINS_URL}/manage/credentials/store/system/domain/_/"
+echo "  URL: ${JENKINS_URL_EXTERNAL}/manage/credentials/store/system/domain/_/"
 echo "  1. Click 'Add Credentials'"
 echo "  2. Kind: GitLab API token"
-echo "  3. API token: ${GITLAB_TOKEN}"
+echo "  3. API token: (use token from K8s secret or GITLAB_TOKEN env)"
 echo "  4. ID: gitlab-api-token"
 echo "  5. Description: GitLab API Token for status reporting"
 echo "  6. Click 'Create'"
 echo ""
 echo "Step 2: Configure GitLab Connection"
-echo "  URL: ${JENKINS_URL}/manage/configure"
+echo "  URL: ${JENKINS_URL_EXTERNAL}/manage/configure"
 echo "  1. Scroll to 'GitLab' section"
 echo "  2. Click 'Add GitLab Server'"
 echo "  3. Connection name: ${CONNECTION_NAME}"
@@ -61,15 +62,4 @@ echo "  5. Credentials: Select 'gitlab-api-token'"
 echo "  6. Click 'Test Connection' - should show 'Success'"
 echo "  7. Click 'Save'"
 echo ""
-echo "Step 3: Update Jenkinsfile (if needed)"
-echo "  The updateGitlabCommitStatus step should reference the connection:"
-echo "  updateGitlabCommitStatus(name: 'validation', state: 'success', connection: '${CONNECTION_NAME}')"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "Alternative: Test without explicit connection"
-echo "  The plugin may auto-discover the GitLab instance from webhook"
-echo "  Try running a build first to see if it works"
-
-# Cleanup
-rm -f "$COOKIE_JAR" "$CRUMB_FILE"
+log_header "Setup Instructions Complete"

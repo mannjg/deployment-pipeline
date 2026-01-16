@@ -1,25 +1,34 @@
 #!/bin/bash
-# Script to configure GitLab merge requirements for k8s-deployments
-# Requires Jenkins validation to pass before merge is allowed
+# Configure GitLab merge requirements for k8s-deployments
+# Sets up project settings for merge request workflow
+set -euo pipefail
 
-set -e
+# Source shared libraries
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/logging.sh"
+source "$SCRIPT_DIR/../lib/infra.sh"
+source "$SCRIPT_DIR/../lib/credentials.sh"
 
-# Source centralized GitLab configuration
-source "$(dirname "${BASH_SOURCE[0]}")/../lib/config.sh"
+# Get credentials (fail-fast if not available)
+GITLAB_TOKEN=$(require_gitlab_token)
 
-GITLAB_TOKEN="${GITLAB_TOKEN:-glpat-9m86y9YHyGf77Kr8bRjX}"
-PROJECT_ID="2"  # k8s-deployments project ID
+# Get project ID for k8s-deployments
+PROJECT_PATH="${DEPLOYMENTS_REPO_PATH//\//%2F}"
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Configuring merge requirements"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "GitLab URL: ${GITLAB_URL_EXTERNAL}"
-echo "Project ID: $PROJECT_ID"
+log_header "Configuring Merge Requirements"
+log_info "GitLab: ${GITLAB_URL_EXTERNAL}"
+log_info "Project: ${DEPLOYMENTS_REPO_PATH}"
 echo ""
 
-# Configure project settings to require external status checks
-echo "Updating project settings..."
-HTTP_STATUS=$(curl -X PUT "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}" \
+# Get project ID
+log_step "Fetching project ID..."
+PROJECT_ID=$(curl -sf "${GITLAB_URL_EXTERNAL}/api/v4/projects/${PROJECT_PATH}" \
+  --header "PRIVATE-TOKEN: $GITLAB_TOKEN" | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
+log_pass "Project ID: $PROJECT_ID"
+
+# Configure project settings
+log_step "Updating project settings..."
+HTTP_STATUS=$(curl -sf -X PUT "${GITLAB_URL_EXTERNAL}/api/v4/projects/${PROJECT_ID}" \
   -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
   -H "Content-Type: application/json" \
   -w "%{http_code}" \
@@ -31,33 +40,22 @@ HTTP_STATUS=$(curl -X PUT "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}" \
     "remove_source_branch_after_merge": true
   }')
 
-if [ "$HTTP_STATUS" = "200" ]; then
-    echo "✓ Project settings updated"
+if [[ "$HTTP_STATUS" == "200" ]]; then
+    log_pass "Project settings updated"
 else
-    echo "⚠ Warning: Could not update project settings (HTTP $HTTP_STATUS)"
-    cat /tmp/gitlab-project-$$.json
+    log_warn "Could not update project settings (HTTP $HTTP_STATUS)"
+    cat /tmp/gitlab-project-$$.json >&2
 fi
-
 rm -f /tmp/gitlab-project-$$.json
 
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "✓ Configuration complete"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+log_header "Configuration Complete"
 echo ""
 echo "How it works:"
 echo "  1. Jenkins webhook triggers on MR creation/update"
 echo "  2. Jenkins runs validation pipeline"
 echo "  3. Jenkins reports status back to GitLab commit"
 echo "  4. GitLab shows status check in MR"
-echo "  5. Developers can see if validation passed/failed"
 echo ""
-echo "Manual verification:"
-echo "  - Create a test MR in k8s-deployments"
-echo "  - Check that Jenkins job is triggered"
-echo "  - Verify status appears in GitLab MR"
-echo ""
-echo "Note: GitLab CE doesn't support enforced external status checks"
-echo "      (requires GitLab Premium). Status will be shown but not"
-echo "      enforced. Team must manually verify Jenkins passed."
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Note: GitLab CE doesn't enforce external status checks"
+echo "      (requires Premium). Status shown but not enforced."
