@@ -257,12 +257,12 @@ spec:
         NEXUS_URL = 'http://nexus.nexus.svc.cluster.local:8081'
 
         // Git repositories (from pipeline-config ConfigMap)
-        GITLAB_URL = System.getenv('GITLAB_INTERNAL_URL')
+        GITLAB_URL = System.getenv('GITLAB_URL_INTERNAL')
         GITLAB_GROUP = System.getenv('GITLAB_GROUP')
         DEPLOYMENT_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
 
         // External registry for deployment manifests (what kubelet uses to pull)
-        DEPLOY_REGISTRY = System.getenv('DOCKER_REGISTRY')
+        DEPLOY_REGISTRY = System.getenv('DOCKER_REGISTRY_EXTERNAL')
 
         // Credentials
         NEXUS_CREDENTIALS = credentials('nexus-credentials')
@@ -284,13 +284,13 @@ spec:
 
                         // Validate required environment variables
                         if (!env.GITLAB_URL) {
-                            error "GITLAB_INTERNAL_URL not set. Configure pipeline-config ConfigMap."
+                            error "GITLAB_URL_INTERNAL not set. Configure pipeline-config ConfigMap."
                         }
                         if (!env.DEPLOYMENT_REPO) {
                             error "DEPLOYMENTS_REPO_URL not set. Configure pipeline-config ConfigMap."
                         }
                         if (!env.DEPLOY_REGISTRY) {
-                            error "DOCKER_REGISTRY not set. Configure pipeline-config ConfigMap."
+                            error "DOCKER_REGISTRY_EXTERNAL not set. Configure pipeline-config ConfigMap."
                         }
 
                         // Extract version from pom.xml
