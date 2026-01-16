@@ -2,6 +2,12 @@
 // Validates CUE configuration, manifest generation, and YAML syntax
 // Triggered by: GitLab webhook on k8s-deployments changes
 
+// Agent image from environment (ConfigMap) - REQUIRED, no default
+def agentImage = System.getenv('JENKINS_AGENT_IMAGE')
+if (!agentImage) {
+    error "JENKINS_AGENT_IMAGE environment variable is required but not set. Configure it in the pipeline-config ConfigMap."
+}
+
 pipeline {
     agent {
         kubernetes {
@@ -11,7 +17,7 @@ kind: Pod
 spec:
   containers:
   - name: validator
-    image: localhost:30500/jenkins-agent-custom:latest
+    image: ${agentImage}
     command:
     - cat
     tty: true
@@ -46,9 +52,10 @@ spec:
     }
 
     environment {
-        // Git repository
-        GITLAB_URL = 'http://gitlab.gitlab.svc.cluster.local'
-        DEPLOYMENTS_REPO = "${GITLAB_URL}/example/k8s-deployments.git"
+        // Git repository (from pipeline-config ConfigMap)
+        GITLAB_URL = System.getenv('GITLAB_URL_INTERNAL')
+        GITLAB_GROUP = System.getenv('GITLAB_GROUP')
+        DEPLOYMENTS_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
 
         // Credentials
         GITLAB_CREDENTIALS = credentials('gitlab-credentials')
@@ -84,6 +91,32 @@ spec:
 
                         echo "✓ Commit: ${env.GIT_COMMIT_SHORT}"
                         echo "✓ Message: ${env.GIT_COMMIT_MSG}"
+                    }
+                }
+            }
+        }
+
+        stage('Preflight') {
+            steps {
+                container('validator') {
+                    script {
+                        echo "=== Preflight Checks ==="
+
+                        def missing = []
+                        if (!env.GITLAB_URL) missing.add('GITLAB_URL_INTERNAL')
+                        if (!env.GITLAB_GROUP) missing.add('GITLAB_GROUP')
+                        if (!env.DEPLOYMENTS_REPO) missing.add('DEPLOYMENTS_REPO_URL')
+
+                        if (missing) {
+                            error """Missing required configuration: ${missing.join(', ')}
+
+Configure pipeline-config ConfigMap with these variables.
+See: k8s-deployments/docs/CONFIGURATION.md"""
+                        }
+
+                        echo "✓ Preflight checks passed"
+                        echo "  GITLAB_URL: ${env.GITLAB_URL}"
+                        echo "  GITLAB_GROUP: ${env.GITLAB_GROUP}"
                     }
                 }
             }
@@ -249,7 +282,7 @@ Safe to merge this change.
                 container('validator') {
                     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
-                            curl -X POST "http://gitlab.gitlab.svc.cluster.local/api/v4/projects/2/statuses/${env.GIT_COMMIT}" \
+                            curl -X POST "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP}%2Fk8s-deployments/statuses/${env.GIT_COMMIT}" \
                               -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
                               -d "state=success" \
                               -d "name=k8s-deployments-validation" \
@@ -279,7 +312,7 @@ Build URL: ${env.BUILD_URL}
                 container('validator') {
                     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
-                            curl -X POST "http://gitlab.gitlab.svc.cluster.local/api/v4/projects/2/statuses/${env.GIT_COMMIT}" \
+                            curl -X POST "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP}%2Fk8s-deployments/statuses/${env.GIT_COMMIT}" \
                               -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
                               -d "state=failed" \
                               -d "name=k8s-deployments-validation" \
