@@ -1,0 +1,190 @@
+/**
+ * Jenkins Pipeline: Auto-Promote on Merge
+ *
+ * Triggered by GitLab webhook on push to dev or stage branches.
+ * Detects which apps changed and triggers promote-environment job for each.
+ *
+ * Flow:
+ *   - Push to dev → creates stage MR(s)
+ *   - Push to stage → creates prod MR(s)
+ *   - Push to prod → no action
+ */
+
+def agentImage = System.getenv('JENKINS_AGENT_IMAGE')
+if (!agentImage) {
+    error "JENKINS_AGENT_IMAGE not set in pipeline-config ConfigMap."
+}
+
+def promotionPaths = [
+    'dev': 'stage',
+    'stage': 'prod'
+]
+
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: maven
+    image: ${agentImage}
+    command: [cat]
+    tty: true
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+"""
+        }
+    }
+
+    options {
+        timeout(time: 10, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '30', daysToKeepStr: '14'))
+    }
+
+    environment {
+        GITLAB_URL = System.getenv('GITLAB_INTERNAL_URL')
+        DEPLOYMENT_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
+        GITLAB_CREDENTIALS = credentials('gitlab-credentials')
+    }
+
+    stages {
+        stage('Determine Branch') {
+            steps {
+                container('maven') {
+                    script {
+                        // Webhook provides branch via environment or we detect it
+                        def sourceBranch = env.gitlabBranch ?:
+                                           env.GIT_BRANCH?.replace('origin/', '') ?:
+                                           sh(script: "git rev-parse --abbrev-ref HEAD 2>/dev/null || echo ''", returnStdout: true).trim()
+
+                        if (!sourceBranch || sourceBranch == 'HEAD') {
+                            echo "Could not determine branch. Skipping."
+                            currentBuild.result = 'NOT_BUILT'
+                            return
+                        }
+
+                        env.SOURCE_ENV = sourceBranch
+                        env.TARGET_ENV = promotionPaths[sourceBranch] ?: ''
+
+                        if (!env.TARGET_ENV) {
+                            echo "Branch '${sourceBranch}' has no promotion target. Skipping."
+                            currentBuild.result = 'NOT_BUILT'
+                            currentBuild.description = "No promotion for ${sourceBranch}"
+                            return
+                        }
+
+                        echo "Auto-promotion: ${env.SOURCE_ENV} → ${env.TARGET_ENV}"
+                        currentBuild.description = "${env.SOURCE_ENV} → ${env.TARGET_ENV}"
+                    }
+                }
+            }
+        }
+
+        stage('Detect Changed Apps') {
+            when {
+                expression { env.TARGET_ENV?.trim() }
+            }
+            steps {
+                container('maven') {
+                    script {
+                        withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
+                                                          usernameVariable: 'GIT_USER',
+                                                          passwordVariable: 'GIT_PASS')]) {
+                            sh '''
+                                git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USER}" "${GIT_PASS}"; }; f'
+                                rm -rf k8s-deployments-check
+                                git clone --depth 10 ${DEPLOYMENT_REPO} k8s-deployments-check
+                                cd k8s-deployments-check && git checkout ${SOURCE_ENV}
+                            '''
+
+                            def changedApps = sh(
+                                script: '''
+                                    cd k8s-deployments-check
+                                    git diff --name-only HEAD~1 HEAD -- manifests/ 2>/dev/null | \
+                                        grep -oP 'manifests/\\K[^/]+' | sort -u || echo ""
+                                ''',
+                                returnStdout: true
+                            ).trim()
+
+                            sh 'git config --global --unset credential.helper || true'
+
+                            if (!changedApps) {
+                                echo "No app manifests changed. Skipping."
+                                currentBuild.result = 'NOT_BUILT'
+                                currentBuild.description = "${env.SOURCE_ENV} → ${env.TARGET_ENV} (no changes)"
+                                return
+                            }
+
+                            env.APPS_TO_PROMOTE = changedApps.split('\n').findAll { it.trim() }.join(',')
+                            echo "Apps to promote: ${env.APPS_TO_PROMOTE}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Trigger Promotions') {
+            when {
+                expression { env.TARGET_ENV?.trim() && env.APPS_TO_PROMOTE?.trim() }
+            }
+            steps {
+                container('maven') {
+                    script {
+                        def apps = env.APPS_TO_PROMOTE.split(',')
+                        def triggered = []
+
+                        apps.each { appName ->
+                            appName = appName.trim()
+                            if (!appName) return
+
+                            echo "Triggering promotion: ${appName} ${env.SOURCE_ENV} → ${env.TARGET_ENV}"
+                            try {
+                                build job: 'promote-environment',
+                                      parameters: [
+                                          string(name: 'APP_NAME', value: appName),
+                                          string(name: 'SOURCE_ENV', value: env.SOURCE_ENV),
+                                          string(name: 'TARGET_ENV', value: env.TARGET_ENV),
+                                          string(name: 'IMAGE_TAG', value: '')
+                                      ],
+                                      wait: false,
+                                      propagate: false
+                                triggered.add(appName)
+                            } catch (Exception e) {
+                                echo "Warning: Failed to trigger for ${appName}: ${e.message}"
+                            }
+                        }
+
+                        if (triggered) {
+                            currentBuild.description = "${env.SOURCE_ENV} → ${env.TARGET_ENV}: ${triggered.join(', ')}"
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            container('maven') {
+                sh '''
+                    git config --global --unset credential.helper || true
+                    rm -rf k8s-deployments-check || true
+                '''
+            }
+        }
+        success {
+            script {
+                if (env.APPS_TO_PROMOTE?.trim()) {
+                    echo "Promotion jobs triggered for: ${env.APPS_TO_PROMOTE}"
+                }
+            }
+        }
+    }
+}
