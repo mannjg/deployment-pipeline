@@ -24,10 +24,11 @@ Instead of git merge, perform a **semantic merge**:
 4. Human reviews MR, reverts any unwanted changes
 
 ### What Gets Promoted (App-Specific)
-- `deployment.image` - CI/CD managed images
-- `deployment.additionalEnv` - app environment variables
-- `configMap.data` - app configuration values
-- Any other app-level config not in the "preserve" list
+- `deployment.image` - CI/CD managed images (implemented)
+- `deployment.additionalEnv` - app environment variables (future enhancement)
+- `configMap.data` - app configuration values (future enhancement)
+
+**Note:** Initial implementation promotes images only. additionalEnv and configMap.data promotion requires more complex CUE manipulation and is deferred to a future enhancement. Human reviewers can manually add these values to the MR if needed.
 
 ### What's Preserved (Environment-Specific)
 - `namespace` - environment namespace
@@ -239,24 +240,15 @@ for APP in $APPS; do
         }
     fi
 
-    # 2. Update additionalEnv - merge source env vars into target
-    # This is complex because we need to:
-    # - Add env vars from source that don't exist in target
-    # - Update env vars that exist in both (source wins for app-specific)
-    # - Preserve env vars in target that are truly env-specific
-
-    # For now, we'll handle this by updating the entire additionalEnv block
-    # if source has different values. Human can revert in MR review.
-
+    # TODO: Future enhancement - promote additionalEnv and configMap.data
+    # This requires complex CUE manipulation to update arrays/objects.
+    # For now, only images are promoted. Human reviewers can manually
+    # add additionalEnv/configMap changes to the MR if needed.
     if [[ "$SOURCE_ADDITIONAL_ENV" != "[]" ]]; then
-        log_info "  Source has additionalEnv entries - will be included in promotion"
-        # The additionalEnv promotion is handled by regenerating manifests
-        # The env vars flow through the CUE schema merge
+        log_debug "  Source has additionalEnv entries (not auto-promoted, see MR diff)"
     fi
-
-    # 3. ConfigMap data follows same pattern
     if [[ "$SOURCE_CONFIGMAP_DATA" != "{}" ]]; then
-        log_info "  Source has configMap.data entries - will be included in promotion"
+        log_debug "  Source has configMap.data entries (not auto-promoted, see MR diff)"
     fi
 
     ((PROMOTED_COUNT++))
