@@ -115,10 +115,20 @@ log_info "=== Promoting App Config: $SOURCE_ENV -> $TARGET_ENV ==="
 log_info "Fetching source branch: origin/$SOURCE_ENV"
 git fetch origin "$SOURCE_ENV" --quiet
 
-# Extract source env.cue to temp file
-SOURCE_ENV_FILE=$(mktemp)
-trap "rm -f $SOURCE_ENV_FILE" EXIT
-git show "origin/${SOURCE_ENV}:env.cue" > "$SOURCE_ENV_FILE"
+# Create temp directory for source branch checkout (needed for CUE module context)
+SOURCE_DIR=$(mktemp -d)
+cleanup() {
+    git worktree remove "$SOURCE_DIR" 2>/dev/null || rm -rf "$SOURCE_DIR"
+}
+trap cleanup EXIT
+log_debug "Created temp directory: $SOURCE_DIR"
+
+# Clone source branch to temp directory (shallow for speed)
+git worktree add --detach "$SOURCE_DIR" "origin/${SOURCE_ENV}" 2>/dev/null || {
+    # Fallback: copy files if worktree fails
+    log_debug "Worktree failed, using file copy fallback"
+    git archive "origin/${SOURCE_ENV}" | tar -x -C "$SOURCE_DIR"
+}
 
 # Backup target env.cue
 BACKUP_FILE="env.cue.backup.$(date +%s)"
@@ -127,7 +137,7 @@ log_debug "Created backup: $BACKUP_FILE"
 
 # Discover apps in source environment
 log_info "Discovering apps in $SOURCE_ENV environment..."
-APPS=$(cue export "$SOURCE_ENV_FILE" -e "$SOURCE_ENV" --out json 2>/dev/null | jq -r 'keys[]') || {
+APPS=$(cd "$SOURCE_DIR" && cue export ./env.cue -e "$SOURCE_ENV" --out json 2>/dev/null | jq -r 'keys[]') || {
     log_error "Failed to parse source env.cue"
     exit 1
 }
@@ -149,7 +159,7 @@ for APP in $APPS; do
     fi
 
     # Extract source app config as JSON
-    SOURCE_CONFIG=$(cue export "$SOURCE_ENV_FILE" -e "${SOURCE_ENV}.${APP}.appConfig" --out json 2>/dev/null) || {
+    SOURCE_CONFIG=$(cd "$SOURCE_DIR" && cue export ./env.cue -e "${SOURCE_ENV}.${APP}.appConfig" --out json 2>/dev/null) || {
         log_warn "Could not extract appConfig for $APP from source - skipping"
         ((SKIPPED_COUNT++))
         continue
