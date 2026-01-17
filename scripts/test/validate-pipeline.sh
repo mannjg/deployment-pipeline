@@ -881,12 +881,20 @@ main() {
     commit_and_push
     wait_for_jenkins_build
     merge_dev_mr
+
+    # Wait for k8s-deployments dev branch build (this creates the promotion MR)
+    wait_for_k8s_deployments_ci "dev"
+
     wait_for_argocd_sync
     verify_deployment
 
     # Stage promotion (MR auto-created by k8s-deployments CI after dev deployment)
     wait_for_promotion_mr "stage"
     merge_env_mr "stage"
+
+    # Wait for k8s-deployments stage branch build (this creates the prod promotion MR)
+    wait_for_k8s_deployments_ci "stage"
+
     wait_for_env_sync "stage"
     verify_env_deployment "stage"
 
