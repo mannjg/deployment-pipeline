@@ -154,14 +154,14 @@ for APP in $APPS; do
     # Check if app exists in target
     if ! cue export ./env.cue -e "${TARGET_ENV}.${APP}" --out json &>/dev/null; then
         log_warn "App $APP not found in $TARGET_ENV - skipping"
-        ((SKIPPED_COUNT++))
+        : $((SKIPPED_COUNT++))
         continue
     fi
 
     # Extract source app config as JSON
     SOURCE_CONFIG=$(cd "$SOURCE_DIR" && cue export ./env.cue -e "${SOURCE_ENV}.${APP}.appConfig" --out json 2>/dev/null) || {
         log_warn "Could not extract appConfig for $APP from source - skipping"
-        ((SKIPPED_COUNT++))
+        : $((SKIPPED_COUNT++))
         continue
     }
 
@@ -205,7 +205,7 @@ for APP in $APPS; do
         log_debug "  Source has configMap.data entries (not auto-promoted, see MR diff)"
     fi
 
-    ((PROMOTED_COUNT++))
+    : $((PROMOTED_COUNT++))
 done
 
 # Validate updated CUE
