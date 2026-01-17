@@ -66,6 +66,9 @@ JENKINS_PROMOTE_JOB_NAME="${JENKINS_PROMOTE_JOB_NAME:-promote-environment}"
 APP_LABEL="app=${APP_REPO_NAME}"
 
 # Timeouts (sensible defaults)
+# BUILD_START_TIMEOUT: Time to wait for Jenkins to detect webhook and start build
+# BUILD_TIMEOUT: Time for the build itself to complete (after it starts)
+JENKINS_BUILD_START_TIMEOUT="${JENKINS_BUILD_START_TIMEOUT:-300}"
 JENKINS_BUILD_TIMEOUT="${JENKINS_BUILD_TIMEOUT:-600}"
 ARGOCD_SYNC_TIMEOUT="${ARGOCD_SYNC_TIMEOUT:-300}"
 
@@ -251,7 +254,8 @@ commit_and_push() {
 wait_for_jenkins_build() {
     log_step "Waiting for Jenkins build..."
 
-    local timeout="${JENKINS_BUILD_TIMEOUT:-600}"
+    local start_timeout="${JENKINS_BUILD_START_TIMEOUT:-300}"
+    local build_timeout="${JENKINS_BUILD_TIMEOUT:-600}"
     local poll_interval=10
     local elapsed=0
     local build_number=""
@@ -261,17 +265,17 @@ wait_for_jenkins_build() {
     local last_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
         "$JENKINS_URL/job/$JENKINS_JOB_NAME/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
 
-    # Wait for a new build to start
-    log_info "Waiting for new build (last was #$last_build)..."
+    # Wait for a new build to start (separate timeout for webhook/scan delay)
+    log_info "Waiting for new build (last was #$last_build, timeout ${start_timeout}s)..."
 
-    while [[ $elapsed -lt $timeout ]]; do
+    while [[ $elapsed -lt $start_timeout ]]; do
         local current_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
             "$JENKINS_URL/job/$JENKINS_JOB_NAME/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
 
         if [[ "$current_build" -gt "$last_build" ]]; then
             build_number="$current_build"
             build_url="$JENKINS_URL/job/$JENKINS_JOB_NAME/$build_number"
-            log_info "Build #$build_number started"
+            log_info "Build #$build_number started (after ${elapsed}s)"
             break
         fi
 
@@ -280,12 +284,17 @@ wait_for_jenkins_build() {
     done
 
     if [[ -z "$build_number" ]]; then
-        log_fail "Timeout waiting for build to start"
+        log_fail "Timeout waiting for build to start (${start_timeout}s)"
+        log_info "This may indicate webhook issues or Jenkins not scanning the branch"
+        log_info "Check: $JENKINS_URL/job/$JENKINS_JOB_NAME/"
         exit 1
     fi
 
-    # Wait for build to complete
-    while [[ $elapsed -lt $timeout ]]; do
+    # Wait for build to complete (separate timeout, resets elapsed)
+    elapsed=0
+    log_info "Waiting for build to complete (timeout ${build_timeout}s)..."
+
+    while [[ $elapsed -lt $build_timeout ]]; do
         local build_info=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
             "$build_url/api/json")
 
@@ -316,7 +325,7 @@ wait_for_jenkins_build() {
         elapsed=$((elapsed + poll_interval))
     done
 
-    log_fail "Timeout waiting for build to complete"
+    log_fail "Timeout waiting for build to complete (${build_timeout}s)"
     exit 1
 }
 
@@ -332,7 +341,8 @@ wait_for_k8s_deployments_ci() {
     local job_name="${DEPLOYMENTS_REPO_NAME:-k8s-deployments}"
     local job_path="job/${job_name}/job/${branch}"
 
-    local timeout="${K8S_DEPLOYMENTS_VALIDATION_TIMEOUT:-300}"
+    local start_timeout="${JENKINS_BUILD_START_TIMEOUT:-300}"
+    local build_timeout="${K8S_DEPLOYMENTS_VALIDATION_TIMEOUT:-300}"
     local poll_interval=10
     local elapsed=0
     local build_number=""
@@ -342,16 +352,16 @@ wait_for_k8s_deployments_ci() {
     local last_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
         "$JENKINS_URL/${job_path}/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
 
-    log_info "Waiting for new build on branch $branch (last was #$last_build)..."
+    log_info "Waiting for new build on branch $branch (last was #$last_build, timeout ${start_timeout}s)..."
 
-    while [[ $elapsed -lt $timeout ]]; do
+    while [[ $elapsed -lt $start_timeout ]]; do
         local current_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
             "$JENKINS_URL/${job_path}/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
 
         if [[ "$current_build" -gt "$last_build" ]]; then
             build_number="$current_build"
             build_url="$JENKINS_URL/${job_path}/$build_number"
-            log_info "Build #$build_number started"
+            log_info "Build #$build_number started (after ${elapsed}s)"
             break
         fi
 
@@ -360,12 +370,15 @@ wait_for_k8s_deployments_ci() {
     done
 
     if [[ -z "$build_number" ]]; then
-        log_fail "Timeout waiting for k8s-deployments CI build to start"
+        log_fail "Timeout waiting for k8s-deployments CI build to start (${start_timeout}s)"
         exit 1
     fi
 
-    # Wait for build to complete
-    while [[ $elapsed -lt $timeout ]]; do
+    # Wait for build to complete (separate timeout, resets elapsed)
+    elapsed=0
+    log_info "Waiting for build to complete (timeout ${build_timeout}s)..."
+
+    while [[ $elapsed -lt $build_timeout ]]; do
         local build_info=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
             "$build_url/api/json" 2>/dev/null)
 
@@ -394,7 +407,7 @@ wait_for_k8s_deployments_ci() {
         elapsed=$((elapsed + poll_interval))
     done
 
-    log_fail "Timeout waiting for k8s-deployments CI build to complete"
+    log_fail "Timeout waiting for k8s-deployments CI build to complete (${build_timeout}s)"
     exit 1
 }
 
@@ -673,7 +686,8 @@ trigger_promotion_job() {
 wait_for_promotion_job() {
     log_step "Waiting for promotion job to complete..."
 
-    local timeout="${JENKINS_BUILD_TIMEOUT:-600}"
+    local start_timeout="${JENKINS_BUILD_START_TIMEOUT:-300}"
+    local build_timeout="${JENKINS_BUILD_TIMEOUT:-600}"
     local poll_interval=10
     local elapsed=0
     local build_number=""
@@ -682,16 +696,16 @@ wait_for_promotion_job() {
     local last_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
         "$JENKINS_URL/job/$JENKINS_PROMOTE_JOB_NAME/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
 
-    log_info "Waiting for new build (last was #$last_build)..."
+    log_info "Waiting for new build (last was #$last_build, timeout ${start_timeout}s)..."
 
-    while [[ $elapsed -lt $timeout ]]; do
+    while [[ $elapsed -lt $start_timeout ]]; do
         local current_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
             "$JENKINS_URL/job/$JENKINS_PROMOTE_JOB_NAME/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
 
         if [[ "$current_build" -gt "$last_build" ]]; then
             build_number="$current_build"
             build_url="$JENKINS_URL/job/$JENKINS_PROMOTE_JOB_NAME/$build_number"
-            log_info "Build #$build_number started"
+            log_info "Build #$build_number started (after ${elapsed}s)"
             break
         fi
 
@@ -700,11 +714,15 @@ wait_for_promotion_job() {
     done
 
     if [[ -z "$build_number" ]]; then
-        log_fail "Timeout waiting for promotion build to start"
+        log_fail "Timeout waiting for promotion build to start (${start_timeout}s)"
         exit 1
     fi
 
-    while [[ $elapsed -lt $timeout ]]; do
+    # Wait for build to complete (separate timeout, resets elapsed)
+    elapsed=0
+    log_info "Waiting for build to complete (timeout ${build_timeout}s)..."
+
+    while [[ $elapsed -lt $build_timeout ]]; do
         local build_info=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" "$build_url/api/json")
         local building=$(echo "$build_info" | jq -r '.building')
         local result=$(echo "$build_info" | jq -r '.result // "null"')
@@ -731,7 +749,7 @@ wait_for_promotion_job() {
         elapsed=$((elapsed + poll_interval))
     done
 
-    log_fail "Timeout waiting for promotion build to complete"
+    log_fail "Timeout waiting for promotion build to complete (${build_timeout}s)"
     exit 1
 }
 
