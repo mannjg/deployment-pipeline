@@ -95,7 +95,7 @@ def createPromotionMR(String sourceEnv) {
                     }
 
                     # Regenerate manifests with promoted config
-                    ./scripts/generate-manifests.sh || {
+                    ./scripts/generate-manifests.sh ${targetEnv} || {
                         echo "ERROR: Manifest generation failed"
                         exit 1
                     }
