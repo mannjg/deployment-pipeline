@@ -1,11 +1,23 @@
 #!/bin/bash
 # Ensure GitLab Webhook for Jenkins MultiBranch Pipeline
 #
-# Usage: ./scripts/ensure-gitlab-webhook.sh <gitlab-project-path>
-#   e.g.: ./scripts/ensure-gitlab-webhook.sh p2c/example-app
+# Usage:
+#   ./scripts/03-pipelines/ensure-webhook.sh <gitlab-project-path>
+#   ./scripts/03-pipelines/ensure-webhook.sh --all
 #
-# This script ensures a GitLab project has the correct webhook configured
+# Examples:
+#   ./scripts/03-pipelines/ensure-webhook.sh p2c/example-app
+#   ./scripts/03-pipelines/ensure-webhook.sh p2c/k8s-deployments
+#   ./scripts/03-pipelines/ensure-webhook.sh --all  # Configure all known projects
+#
+# This script ensures GitLab projects have the correct webhook configured
 # to trigger Jenkins MultiBranch Pipeline builds on push events.
+#
+# Features:
+#   - Idempotent: safe to run multiple times
+#   - Updates misconfigured webhooks to correct URL
+#   - Cleans up duplicate/obsolete webhooks
+#   - Uses token-based trigger URL (bypasses CSRF)
 #
 # Prerequisites:
 #   - kubectl configured with access to cluster
@@ -94,6 +106,37 @@ url_encode() {
 # -----------------------------------------------------------------------------
 # Main Logic
 # -----------------------------------------------------------------------------
+
+# Clean up duplicate/obsolete Jenkins webhooks
+# Only removes webhooks that use the old /job/.../build pattern (CSRF-protected)
+# Preserves other webhooks like auto-promote (/project/...) and multibranch-webhook-trigger
+cleanup_old_webhooks() {
+    local project_path="$1"
+    local expected_webhook_url="$2"
+    local encoded_path
+    encoded_path=$(url_encode "$project_path")
+
+    # Get all webhooks
+    local existing_hooks
+    existing_hooks=$(gitlab_api GET "/projects/${encoded_path}/hooks")
+
+    # Find obsolete webhooks: match /job/.../build pattern (old CSRF-protected URLs)
+    # Exclude: multibranch-webhook-trigger (correct), /project/ (other jobs like auto-promote)
+    local old_hook_ids
+    old_hook_ids=$(echo "$existing_hooks" | jq -r \
+        '.[] | select(.url | contains("/job/")) | select(.url | endswith("/build")) | .id')
+
+    # Delete each obsolete webhook
+    for hook_id in $old_hook_ids; do
+        if [[ -n "$hook_id" ]] && [[ "$hook_id" != "null" ]]; then
+            local old_url
+            old_url=$(echo "$existing_hooks" | jq -r --arg id "$hook_id" '.[] | select(.id == ($id | tonumber)) | .url')
+            log_info "Removing obsolete webhook (id: $hook_id): $old_url"
+            gitlab_api DELETE "/projects/${encoded_path}/hooks/${hook_id}" >/dev/null 2>&1 || true
+        fi
+    done
+}
+
 ensure_webhook() {
     local project_path="$1"
     local job_name="${project_path##*/}"  # Extract last segment (e.g., "example-app")
@@ -127,6 +170,8 @@ ensure_webhook() {
 
     if [[ -n "$correct_hook_id" ]]; then
         log_pass "Correct webhook already exists (id: $correct_hook_id)"
+        # Still cleanup any obsolete duplicates
+        cleanup_old_webhooks "$project_path" "$expected_webhook_url"
         return 0
     fi
 
@@ -147,6 +192,8 @@ ensure_webhook() {
 
         if echo "$update_result" | jq -e '.id' &>/dev/null; then
             log_pass "Webhook updated successfully"
+            # Cleanup any other obsolete webhooks
+            cleanup_old_webhooks "$project_path" "$expected_webhook_url"
         else
             log_fail "Failed to update webhook"
             echo "$update_result" | jq '.' 2>/dev/null || echo "$update_result"
@@ -173,16 +220,33 @@ ensure_webhook() {
 }
 
 # -----------------------------------------------------------------------------
+# Known Projects (for --all flag)
+# -----------------------------------------------------------------------------
+# These are the standard projects that need MultiBranch webhooks
+KNOWN_PROJECTS=(
+    "p2c/example-app"
+    "p2c/k8s-deployments"
+)
+
+# -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 main() {
     if [[ $# -lt 1 ]]; then
-        echo "Usage: $0 <gitlab-project-path>"
-        echo "  e.g.: $0 p2c/example-app"
+        echo "Usage: $0 <gitlab-project-path> | --all"
+        echo ""
+        echo "Options:"
+        echo "  <project-path>  Configure webhook for a single project"
+        echo "  --all           Configure webhooks for all known projects:"
+        for proj in "${KNOWN_PROJECTS[@]}"; do
+            echo "                    - $proj"
+        done
+        echo ""
+        echo "Examples:"
+        echo "  $0 p2c/example-app"
+        echo "  $0 --all"
         exit 1
     fi
-
-    local project_path="$1"
 
     validate_config
 
@@ -192,7 +256,16 @@ main() {
     log_info "Jenkins (internal): $JENKINS_URL_INTERNAL"
     echo ""
 
-    ensure_webhook "$project_path"
+    if [[ "$1" == "--all" ]]; then
+        log_step "Configuring webhooks for all known projects..."
+        for project_path in "${KNOWN_PROJECTS[@]}"; do
+            ensure_webhook "$project_path"
+            echo ""
+        done
+        log_pass "All webhooks configured"
+    else
+        ensure_webhook "$1"
+    fi
 }
 
 main "$@"
