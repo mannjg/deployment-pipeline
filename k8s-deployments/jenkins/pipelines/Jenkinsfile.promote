@@ -296,7 +296,7 @@ ${params.TARGET_ENV == 'prod' ? '> **Production Deployment** - Please review car
 
                                     # Create MR using GitLab API
                                     export GITLAB_TOKEN="${GITLAB_API_TOKEN}"
-                                    export GITLAB_URL="${GITLAB_URL}"
+                                    export GITLAB_URL_INTERNAL="${GITLAB_URL}"
                                     export GITLAB_GROUP="${GITLAB_GROUP}"
 
                                     ./scripts/create-gitlab-mr.sh \\
