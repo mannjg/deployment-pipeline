@@ -355,19 +355,20 @@ This build was triggered by Jenkins branch indexing.
                             echo "✓ CUE configuration is valid"
                         '''
 
-                        // Generate manifests for all environments
+                        // Generate manifests for the environment defined in env.cue
+                        // Branch-per-environment: env.cue is at root, script auto-detects environment
                         echo "Generating manifests..."
                         sh '''
-                            for env in dev stage prod; do
-                                if [ -f "envs/${env}.cue" ]; then
-                                    echo "Generating manifests for ${env}..."
-                                    ./scripts/generate-manifests.sh ${env} || {
-                                        echo "✗ Manifest generation failed for ${env}"
-                                        exit 1
-                                    }
-                                fi
-                            done
-                            echo "✓ Manifest generation completed"
+                            if [ -f "env.cue" ]; then
+                                echo "Generating manifests from env.cue..."
+                                ./scripts/generate-manifests.sh || {
+                                    echo "✗ Manifest generation failed"
+                                    exit 1
+                                }
+                                echo "✓ Manifest generation completed"
+                            else
+                                echo "⚠ No env.cue found - skipping manifest generation"
+                            fi
                         '''
 
                         // Commit and push generated manifests back to branch
