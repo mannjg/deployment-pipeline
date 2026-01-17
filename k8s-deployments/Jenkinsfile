@@ -125,7 +125,7 @@ Build: ${env.BUILD_URL}"
                     git push -u origin "\${PROMOTION_BRANCH}"
 
                     # Create MR using GitLab API
-                    export GITLAB_URL="${env.GITLAB_URL}"
+                    export GITLAB_URL_INTERNAL="${env.GITLAB_URL}"
 
                     ./scripts/create-gitlab-mr.sh \\
                         "\${PROMOTION_BRANCH}" \\
