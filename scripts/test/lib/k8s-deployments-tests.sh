@@ -70,37 +70,95 @@ verify_cluster_state() {
     fi
 }
 
-# Wait for Jenkins job to complete
-wait_for_jenkins_validation() {
-    local timeout="${1:-${K8S_DEPLOYMENTS_VALIDATION_TIMEOUT}}"
+# Wait for k8s-deployments branch build to complete
+# The simplified pipeline is a MultiBranch Pipeline - we query the branch job directly
+wait_for_branch_build() {
+    local branch="$1"
+    local timeout="${2:-${K8S_DEPLOYMENTS_BUILD_TIMEOUT:-300}}"
+    local start_timeout="${K8S_DEPLOYMENTS_BUILD_START_TIMEOUT:-120}"
     local poll_interval=10
     local elapsed=0
+    local build_number=""
 
-    log_step "Waiting for Jenkins validation (timeout: ${timeout}s)..."
+    # MultiBranch Pipeline job path: job/k8s-deployments/job/{branch}
+    local job_name="${K8S_DEPLOYMENTS_JOB:-k8s-deployments}"
+    local job_path="job/${job_name}/job/${branch}"
 
-    while [[ $elapsed -lt $timeout ]]; do
-        # Check for recent successful build
-        local result
-        result=$(curl -sfk -u "${JENKINS_USER}:${JENKINS_TOKEN}" \
-            "${JENKINS_URL}/job/${K8S_DEPLOYMENTS_VALIDATION_JOB}/lastBuild/api/json" | jq -r '.result // "BUILDING"')
+    log_step "Waiting for k8s-deployments CI build on branch '${branch}' (start timeout: ${start_timeout}s, build timeout: ${timeout}s)..."
 
-        case "${result}" in
-            SUCCESS)
-                log_pass "Jenkins validation passed"
-                return 0
-                ;;
-            FAILURE|ABORTED)
-                log_fail "Jenkins validation failed: ${result}"
-                return 1
-                ;;
-            BUILDING|null)
-                sleep "${poll_interval}"
-                elapsed=$((elapsed + poll_interval))
-                ;;
-        esac
+    # Get the last build number before we started (if job branch exists)
+    # Handle case where job doesn't exist yet (API returns HTML 404 instead of JSON)
+    local last_build=0
+    local response
+    response=$(curl -sfk -u "${JENKINS_USER}:${JENKINS_TOKEN}" \
+        "${JENKINS_URL}/${job_path}/lastBuild/api/json" 2>/dev/null) || true
+    if echo "$response" | jq empty 2>/dev/null; then
+        last_build=$(echo "$response" | jq -r '.number // 0')
+    fi
+
+    log_info "Last build was #${last_build}"
+
+    # Wait for a new build to start
+    while [[ $elapsed -lt $start_timeout ]]; do
+        local current_build=0
+        response=$(curl -sfk -u "${JENKINS_USER}:${JENKINS_TOKEN}" \
+            "${JENKINS_URL}/${job_path}/lastBuild/api/json" 2>/dev/null) || true
+        if echo "$response" | jq empty 2>/dev/null; then
+            current_build=$(echo "$response" | jq -r '.number // 0')
+        fi
+
+        if [[ "$current_build" -gt "$last_build" ]]; then
+            build_number="$current_build"
+            log_info "Build #${build_number} started (after ${elapsed}s)"
+            break
+        fi
+
+        sleep "${poll_interval}"
+        elapsed=$((elapsed + poll_interval))
     done
 
-    log_fail "Jenkins validation timed out after ${timeout}s"
+    if [[ -z "$build_number" ]]; then
+        log_fail "Timeout waiting for build to start (${start_timeout}s)"
+        log_info "Job URL: ${JENKINS_URL}/${job_path}"
+        return 1
+    fi
+
+    # Wait for build to complete
+    local build_url="${JENKINS_URL}/${job_path}/${build_number}"
+    elapsed=0
+
+    while [[ $elapsed -lt $timeout ]]; do
+        local build_info
+        build_info=$(curl -sfk -u "${JENKINS_USER}:${JENKINS_TOKEN}" \
+            "${build_url}/api/json" 2>/dev/null)
+
+        local building result
+        building=$(echo "${build_info}" | jq -r '.building')
+        result=$(echo "${build_info}" | jq -r '.result // "BUILDING"')
+
+        if [[ "${building}" == "false" ]]; then
+            local duration duration_sec
+            duration=$(echo "${build_info}" | jq -r '.duration')
+            duration_sec=$((duration / 1000))
+
+            case "${result}" in
+                SUCCESS)
+                    log_pass "Build #${build_number} completed successfully (${duration_sec}s)"
+                    return 0
+                    ;;
+                FAILURE|ABORTED)
+                    log_fail "Build #${build_number} ${result}"
+                    log_info "Build URL: ${build_url}"
+                    return 1
+                    ;;
+            esac
+        fi
+
+        sleep "${poll_interval}"
+        elapsed=$((elapsed + poll_interval))
+    done
+
+    log_fail "Timeout waiting for build #${build_number} to complete (${timeout}s)"
     return 1
 }
 
@@ -225,8 +283,8 @@ test_L2_default_resource_limit() {
     local mr_iid
     mr_iid=$(create_gitlab_mr "${branch}" "dev" "[TEST] L2 Resource Limit" "Automated test - will revert")
 
-    # 5. Wait for Jenkins validation
-    wait_for_jenkins_validation || { cleanup_test "${work_dir}" "${branch}"; return 1; }
+    # 5. Wait for Jenkins branch build
+    wait_for_branch_build "${branch}" || { cleanup_test "${work_dir}" "${branch}"; return 1; }
 
     # 6. Verify manifest has new value
     verify_manifest_value "dev" "exampleApp" '.spec.template.spec.containers[0].resources.limits.memory' "${test_value}" \
@@ -258,7 +316,7 @@ test_L2_default_resource_limit() {
     local revert_mr_iid
     revert_mr_iid=$(create_gitlab_mr "${revert_branch}" "dev" "[REVERT] L2 Resource Limit" "Reverting test change")
     if [[ -n "${revert_mr_iid}" ]]; then
-        wait_for_jenkins_validation || log_info "Jenkins validation failed for revert"
+        wait_for_branch_build "${revert_branch}" || log_info "Jenkins build failed for revert"
         merge_gitlab_mr "${revert_mr_iid}" || log_info "Failed to merge revert MR"
         wait_for_argocd_sync "example-app-dev" || log_info "ArgoCD sync failed for revert"
     else
@@ -309,8 +367,8 @@ test_L6_annotation() {
     local mr_iid
     mr_iid=$(create_gitlab_mr "${branch}" "dev" "[TEST] L6 Annotation" "Automated test - will revert")
 
-    # 5. Wait for Jenkins validation
-    wait_for_jenkins_validation || { cleanup_test "${work_dir}" "${branch}"; return 1; }
+    # 5. Wait for Jenkins branch build
+    wait_for_branch_build "${branch}" || { cleanup_test "${work_dir}" "${branch}"; return 1; }
 
     # 6. Merge MR
     merge_gitlab_mr "${mr_iid}" || { cleanup_test "${work_dir}" "${branch}"; return 1; }
@@ -349,7 +407,7 @@ test_L6_annotation() {
     local revert_mr_iid
     revert_mr_iid=$(create_gitlab_mr "${revert_branch}" "dev" "[REVERT] L6 Annotation" "Reverting test change")
     if [[ -n "${revert_mr_iid}" ]]; then
-        wait_for_jenkins_validation || log_info "Jenkins validation failed for revert"
+        wait_for_branch_build "${revert_branch}" || log_info "Jenkins build failed for revert"
         merge_gitlab_mr "${revert_mr_iid}" || log_info "Failed to merge revert MR"
         wait_for_argocd_sync "example-app-dev" || log_info "ArgoCD sync failed for revert"
     else
@@ -397,7 +455,7 @@ test_L6_replica_promotion() {
     # 4. Create and merge MR to dev
     local mr_iid
     mr_iid=$(create_gitlab_mr "${branch}" "dev" "[TEST] L6 Replicas" "Automated test - will revert")
-    wait_for_jenkins_validation || { cleanup_test "${work_dir}" "${branch}"; return 1; }
+    wait_for_branch_build "${branch}" || { cleanup_test "${work_dir}" "${branch}"; return 1; }
     merge_gitlab_mr "${mr_iid}" || { cleanup_test "${work_dir}" "${branch}"; return 1; }
     wait_for_argocd_sync "example-app-dev" || { cleanup_test "${work_dir}" "${branch}"; return 1; }
 
@@ -406,16 +464,16 @@ test_L6_replica_promotion() {
         || { cleanup_test "${work_dir}" "${branch}"; return 1; }
 
     # 6. Find and merge promotion MR (dev -> stage)
-    log_step "Looking for promotion MR..."
-    sleep 10  # Give auto-promote time to create MR
+    # Note: With simplified pipeline, promotion MR is auto-created after successful dev deployment
+    log_step "Looking for auto-created promotion MR..."
+    sleep 30  # Give k8s-deployments CI time to deploy and create promotion MR
     local promote_mr_iid
     promote_mr_iid=$(curl -sfk -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
         "${GITLAB_URL}/api/v4/projects/${K8S_DEPLOYMENTS_PROJECT_ID}/merge_requests?state=opened&target_branch=stage" \
-        | jq -r '.[0].iid // empty')
+        | jq -r 'first(.[] | select(.source_branch | startswith("promote-stage-"))) | .iid // empty')
 
     if [[ -n "${promote_mr_iid}" ]]; then
         log_pass "Found promotion MR !${promote_mr_iid}"
-        wait_for_jenkins_validation
         merge_gitlab_mr "${promote_mr_iid}"
         wait_for_argocd_sync "example-app-stage"
 
@@ -423,7 +481,7 @@ test_L6_replica_promotion() {
         verify_cluster_state "stage" "deployment" "example-app" '{.spec.replicas}' "${test_replicas}" \
             || { cleanup_test "${work_dir}" "${branch}"; return 1; }
     else
-        log_info "No promotion MR found - auto-promote may be disabled"
+        log_info "No promotion MR found - auto-promote may be disabled or still running"
     fi
 
     # 8. Revert all environments
@@ -444,7 +502,7 @@ test_L6_replica_promotion() {
         local revert_mr_iid
         revert_mr_iid=$(create_gitlab_mr "${revert_branch}" "${env}" "[REVERT] Replicas in ${env}" "Reverting test")
         if [[ -n "${revert_mr_iid}" ]]; then
-            wait_for_jenkins_validation || log_info "Jenkins validation failed for ${env} revert"
+            wait_for_branch_build "${revert_branch}" || log_info "Jenkins build failed for ${env} revert"
             merge_gitlab_mr "${revert_mr_iid}" || log_info "Failed to merge revert MR for ${env}"
             wait_for_argocd_sync "example-app-${env}" || log_info "ArgoCD sync failed for ${env} revert"
         else
@@ -489,12 +547,12 @@ test_L5_app_env_var() {
     git commit -m "test: add ${env_var_name} to example-app"
     git push -u origin "${branch}"
 
-    # 4. Create MR: branch → dev
+    # 4. Create MR: branch -> dev
     local mr_iid
     mr_iid=$(create_gitlab_mr "${branch}" "dev" "[TEST] L5 Env Var" "Automated test - will revert")
 
-    # 5. Wait for Jenkins validation
-    wait_for_jenkins_validation || { cleanup_test "${work_dir}" "${branch}"; return 1; }
+    # 5. Wait for Jenkins branch build
+    wait_for_branch_build "${branch}" || { cleanup_test "${work_dir}" "${branch}"; return 1; }
 
     # 6. Verify manifest has the env var
     local manifest_url="${GITLAB_URL}/api/v4/projects/${K8S_DEPLOYMENTS_PROJECT_ID}/repository/files/manifests%2FexampleApp%2FexampleApp.yaml/raw?ref=${branch}"
@@ -543,7 +601,7 @@ test_L5_app_env_var() {
     local revert_mr_iid
     revert_mr_iid=$(create_gitlab_mr "${revert_branch}" "dev" "[REVERT] L5 Env Var" "Reverting test")
     if [[ -n "${revert_mr_iid}" ]]; then
-        wait_for_jenkins_validation || log_info "Jenkins validation failed for revert"
+        wait_for_branch_build "${revert_branch}" || log_info "Jenkins build failed for revert"
         merge_gitlab_mr "${revert_mr_iid}" || log_info "Failed to merge revert MR"
         wait_for_argocd_sync "example-app-dev" || log_info "ArgoCD sync failed for revert"
     else
@@ -588,12 +646,12 @@ test_L6_configmap_value() {
     git commit -m "test: add ${key} to dev configMap"
     git push -u origin "${branch}"
 
-    # 4. Create MR: branch → dev
+    # 4. Create MR: branch -> dev
     local mr_iid
     mr_iid=$(create_gitlab_mr "${branch}" "dev" "[TEST] L6 ConfigMap" "Automated test - will revert")
 
-    # 5. Wait for Jenkins validation
-    wait_for_jenkins_validation || { cleanup_test "${work_dir}" "${branch}"; return 1; }
+    # 5. Wait for Jenkins branch build
+    wait_for_branch_build "${branch}" || { cleanup_test "${work_dir}" "${branch}"; return 1; }
 
     # 6. Merge MR
     merge_gitlab_mr "${mr_iid}" || { cleanup_test "${work_dir}" "${branch}"; return 1; }
@@ -629,7 +687,7 @@ test_L6_configmap_value() {
     local revert_mr_iid
     revert_mr_iid=$(create_gitlab_mr "${revert_branch}" "dev" "[REVERT] L6 ConfigMap" "Reverting test")
     if [[ -n "${revert_mr_iid}" ]]; then
-        wait_for_jenkins_validation || log_info "Jenkins validation failed for revert"
+        wait_for_branch_build "${revert_branch}" || log_info "Jenkins build failed for revert"
         merge_gitlab_mr "${revert_mr_iid}" || log_info "Failed to merge revert MR"
         wait_for_argocd_sync "example-app-dev" || log_info "ArgoCD sync failed for revert"
     else

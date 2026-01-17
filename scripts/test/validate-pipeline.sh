@@ -1,6 +1,6 @@
 #!/bin/bash
 # Pipeline Validation Script
-# Proves the CI/CD pipeline works: commit → build → deploy to dev
+# Proves the CI/CD pipeline works: commit → build → deploy to dev → stage → prod
 #
 # Usage: ./validate-pipeline.sh
 #
@@ -11,8 +11,8 @@
 #
 # Credentials are loaded from K8s secrets as configured in infra.env.
 #
-# Note: With auto-promotion enabled, promotion MRs may be created automatically
-# after merging. This script may create additional MRs which can be ignored/closed.
+# Note: With the simplified pipeline, promotion MRs are auto-created by
+# k8s-deployments CI after successful deployment to dev/stage.
 
 set -euo pipefail
 
@@ -27,7 +27,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 if [[ -f "$REPO_ROOT/config/infra.env" ]]; then
     source "$REPO_ROOT/config/infra.env"
 else
-    echo "[✗] Infrastructure config not found: config/infra.env"
+    echo "[x] Infrastructure config not found: config/infra.env"
     exit 1
 fi
 
@@ -62,7 +62,6 @@ DEV_NAMESPACE="${DEV_NAMESPACE:?DEV_NAMESPACE not set in infra.env}"
 # Derived values (from required infra.env variables)
 APP_REPO_NAME="${APP_REPO_NAME:?APP_REPO_NAME not set in infra.env}"
 ARGOCD_APP_NAME="${APP_REPO_NAME}-dev"
-JENKINS_PROMOTE_JOB_NAME="${JENKINS_PROMOTE_JOB_NAME:-promote-environment}"
 APP_LABEL="app=${APP_REPO_NAME}"
 
 # Timeouts (sensible defaults)
@@ -71,13 +70,14 @@ APP_LABEL="app=${APP_REPO_NAME}"
 JENKINS_BUILD_START_TIMEOUT="${JENKINS_BUILD_START_TIMEOUT:-300}"
 JENKINS_BUILD_TIMEOUT="${JENKINS_BUILD_TIMEOUT:-600}"
 ARGOCD_SYNC_TIMEOUT="${ARGOCD_SYNC_TIMEOUT:-300}"
+PROMOTION_MR_TIMEOUT="${PROMOTION_MR_TIMEOUT:-180}"
 
 # -----------------------------------------------------------------------------
 # Output Helpers
 # -----------------------------------------------------------------------------
-log_step()  { echo "[→] $*"; }
-log_pass()  { echo "[✓] $*"; }
-log_fail()  { echo "[✗] $*"; }
+log_step()  { echo "[->] $*"; }
+log_pass()  { echo "[ok] $*"; }
+log_fail()  { echo "[x] $*"; }
 log_info()  { echo "    $*"; }
 
 # -----------------------------------------------------------------------------
@@ -204,7 +204,7 @@ bump_version() {
     patch=$((patch + 1))
     local new_version="${major}.${minor}.${patch}${suffix}"
 
-    log_info "Version: $current_version → $new_version"
+    log_info "Version: $current_version -> $new_version"
 
     # Update pom.xml (first <version> tag after <artifactId>example-app</artifactId>)
     sed -i "0,/<version>$current_version<\/version>/s//<version>$new_version<\/version>/" "$pom_file"
@@ -349,14 +349,24 @@ wait_for_k8s_deployments_ci() {
     local build_url=""
 
     # Get the last build number before we started (if job branch exists)
-    local last_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
-        "$JENKINS_URL/${job_path}/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
+    # Handle case where job doesn't exist yet (API returns HTML 404 instead of JSON)
+    local last_build=0
+    local response
+    response=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        "$JENKINS_URL/${job_path}/lastBuild/api/json" 2>/dev/null) || true
+    if echo "$response" | jq empty 2>/dev/null; then
+        last_build=$(echo "$response" | jq -r '.number // 0')
+    fi
 
     log_info "Waiting for new build on branch $branch (last was #$last_build, timeout ${start_timeout}s)..."
 
     while [[ $elapsed -lt $start_timeout ]]; do
-        local current_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
-            "$JENKINS_URL/${job_path}/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
+        local current_build=0
+        response=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+            "$JENKINS_URL/${job_path}/lastBuild/api/json" 2>/dev/null) || true
+        if echo "$response" | jq empty 2>/dev/null; then
+            current_build=$(echo "$response" | jq -r '.number // 0')
+        fi
 
         if [[ "$current_build" -gt "$last_build" ]]; then
             build_number="$current_build"
@@ -488,16 +498,72 @@ merge_dev_mr() {
     fi
 }
 
+# -----------------------------------------------------------------------------
+# Wait for Auto-Created Promotion MR
+# -----------------------------------------------------------------------------
+wait_for_promotion_mr() {
+    local target_env="$1"
+    local timeout="${PROMOTION_MR_TIMEOUT:-180}"
+
+    log_step "Waiting for auto-created promotion MR to $target_env..."
+
+    local deployments_project="${DEPLOYMENTS_REPO_PATH:?DEPLOYMENTS_REPO_PATH not set}"
+    local encoded_project=$(echo "$deployments_project" | sed 's/\//%2F/g')
+
+    # Promotion branches created by k8s-deployments CI: promote-{targetEnv}-{timestamp}
+    local branch_prefix="promote-${target_env}-"
+
+    # Record start time (ISO 8601) - only consider MRs created after this
+    local start_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    local poll_interval=10
+    local elapsed=0
+    local mr_iid=""
+
+    log_info "Looking for MR with branch: ${branch_prefix}* created after $start_time (timeout ${timeout}s)"
+
+    while [[ $elapsed -lt $timeout ]]; do
+        # GitLab API: created_after filter for MRs created since we started waiting
+        local mrs=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests?state=opened&target_branch=$target_env&created_after=$start_time" 2>/dev/null)
+
+        # Find any MR with promotion branch pattern
+        local match=$(echo "$mrs" | jq -r --arg prefix "$branch_prefix" \
+            'first(.[] | select(.source_branch | startswith($prefix))) // empty')
+
+        if [[ -n "$match" ]]; then
+            mr_iid=$(echo "$match" | jq -r '.iid')
+            local source_branch=$(echo "$match" | jq -r '.source_branch')
+            log_info "Found promotion MR !$mr_iid (branch: $source_branch)"
+            return 0
+        fi
+
+        log_info "Waiting for promotion MR... (${elapsed}s elapsed)"
+        sleep $poll_interval
+        elapsed=$((elapsed + poll_interval))
+    done
+
+    log_fail "Timeout waiting for promotion MR to $target_env (${timeout}s)"
+    log_info "Open MRs targeting $target_env (all, including stale):"
+    curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests?state=opened&target_branch=$target_env" | \
+        jq -r '.[] | "  !\(.iid): \(.source_branch) (created: \(.created_at))"' 2>/dev/null || echo "  (none)"
+    exit 1
+}
+
+# -----------------------------------------------------------------------------
+# Merge Environment MR
+# -----------------------------------------------------------------------------
 merge_env_mr() {
     local target_env="$1"
-    local branch_prefix="promote-${target_env}"
 
     log_step "Finding and merging $target_env MR..."
 
     local deployments_project="${DEPLOYMENTS_REPO_PATH:?DEPLOYMENTS_REPO_PATH not set}"
     local encoded_project=$(echo "$deployments_project" | sed 's/\//%2F/g')
 
-    local branch_pattern="${branch_prefix}-${NEW_VERSION}-"
+    # Promotion branches created by k8s-deployments CI: promote-{targetEnv}-{timestamp}
+    local branch_prefix="promote-${target_env}-"
 
     local timeout=60
     local poll_interval=5
@@ -505,13 +571,13 @@ merge_env_mr() {
     local mr_iid=""
     local source_branch=""
 
-    log_info "Looking for MR with branch: ${branch_pattern}*"
+    log_info "Looking for MR with branch: ${branch_prefix}*"
 
     while [[ $elapsed -lt $timeout ]]; do
         local mrs=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
             "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests?state=opened&target_branch=$target_env" 2>/dev/null)
 
-        local match=$(echo "$mrs" | jq -r --arg prefix "$branch_pattern" \
+        local match=$(echo "$mrs" | jq -r --arg prefix "$branch_prefix" \
             'first(.[] | select(.source_branch | startswith($prefix))) // empty')
 
         if [[ -n "$match" ]]; then
@@ -627,130 +693,6 @@ except Exception as e:
     fi
 
     log_info "Image validated: $mr_image"
-}
-
-# -----------------------------------------------------------------------------
-# Promotion Job
-# -----------------------------------------------------------------------------
-get_jenkins_crumb() {
-    # Get CSRF crumb for Jenkins API calls
-    local cookie_jar=$(mktemp)
-    local crumb_response=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
-        -c "$cookie_jar" \
-        "$JENKINS_URL/crumbIssuer/api/json" 2>/dev/null)
-
-    JENKINS_CRUMB_FIELD=$(echo "$crumb_response" | jq -r '.crumbRequestField // empty')
-    JENKINS_CRUMB_VALUE=$(echo "$crumb_response" | jq -r '.crumb // empty')
-    JENKINS_COOKIE_JAR="$cookie_jar"
-
-    if [[ -z "$JENKINS_CRUMB_FIELD" || -z "$JENKINS_CRUMB_VALUE" ]]; then
-        log_fail "Could not get Jenkins CSRF crumb"
-        rm -f "$cookie_jar"
-        exit 1
-    fi
-}
-
-trigger_promotion_job() {
-    local source_env="$1"
-    local target_env="$2"
-
-    log_step "Triggering promotion: $source_env → $target_env..."
-
-    # Get CSRF crumb
-    get_jenkins_crumb
-
-    local trigger_url="$JENKINS_URL/job/$JENKINS_PROMOTE_JOB_NAME/buildWithParameters"
-
-    local response=$(curl -sk -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" \
-        -b "$JENKINS_COOKIE_JAR" \
-        -H "$JENKINS_CRUMB_FIELD: $JENKINS_CRUMB_VALUE" \
-        --data-urlencode "APP_NAME=$APP_REPO_NAME" \
-        --data-urlencode "SOURCE_ENV=$source_env" \
-        --data-urlencode "TARGET_ENV=$target_env" \
-        -w "\n%{http_code}" \
-        "$trigger_url" 2>/dev/null)
-
-    rm -f "$JENKINS_COOKIE_JAR"
-
-    local http_code=$(echo "$response" | tail -n1)
-
-    if [[ "$http_code" != "201" && "$http_code" != "200" ]]; then
-        log_fail "Failed to trigger promotion job (HTTP $http_code)"
-        log_info "URL: $trigger_url"
-        exit 1
-    fi
-
-    log_info "Promotion job triggered"
-}
-
-wait_for_promotion_job() {
-    log_step "Waiting for promotion job to complete..."
-
-    local start_timeout="${JENKINS_BUILD_START_TIMEOUT:-300}"
-    local build_timeout="${JENKINS_BUILD_TIMEOUT:-600}"
-    local poll_interval=10
-    local elapsed=0
-    local build_number=""
-    local build_url=""
-
-    local last_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
-        "$JENKINS_URL/job/$JENKINS_PROMOTE_JOB_NAME/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
-
-    log_info "Waiting for new build (last was #$last_build, timeout ${start_timeout}s)..."
-
-    while [[ $elapsed -lt $start_timeout ]]; do
-        local current_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
-            "$JENKINS_URL/job/$JENKINS_PROMOTE_JOB_NAME/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
-
-        if [[ "$current_build" -gt "$last_build" ]]; then
-            build_number="$current_build"
-            build_url="$JENKINS_URL/job/$JENKINS_PROMOTE_JOB_NAME/$build_number"
-            log_info "Build #$build_number started (after ${elapsed}s)"
-            break
-        fi
-
-        sleep $poll_interval
-        elapsed=$((elapsed + poll_interval))
-    done
-
-    if [[ -z "$build_number" ]]; then
-        log_fail "Timeout waiting for promotion build to start (${start_timeout}s)"
-        exit 1
-    fi
-
-    # Wait for build to complete (separate timeout, resets elapsed)
-    elapsed=0
-    log_info "Waiting for build to complete (timeout ${build_timeout}s)..."
-
-    while [[ $elapsed -lt $build_timeout ]]; do
-        local build_info=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" "$build_url/api/json")
-        local building=$(echo "$build_info" | jq -r '.building')
-        local result=$(echo "$build_info" | jq -r '.result // "null"')
-
-        if [[ "$building" == "false" ]]; then
-            local duration=$(echo "$build_info" | jq -r '.duration')
-            local duration_sec=$((duration / 1000))
-
-            if [[ "$result" == "SUCCESS" ]]; then
-                log_pass "Promotion build #$build_number completed (${duration_sec}s)"
-                echo ""
-                return 0
-            else
-                log_fail "Promotion build #$build_number $result"
-                echo ""
-                echo "--- Build Console (last 50 lines) ---"
-                curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" "$build_url/consoleText" | tail -50
-                echo "--- End Console ---"
-                exit 1
-            fi
-        fi
-
-        sleep $poll_interval
-        elapsed=$((elapsed + poll_interval))
-    done
-
-    log_fail "Timeout waiting for promotion build to complete (${build_timeout}s)"
-    exit 1
 }
 
 # -----------------------------------------------------------------------------
@@ -942,16 +884,14 @@ main() {
     wait_for_argocd_sync
     verify_deployment
 
-    # Stage promotion
-    trigger_promotion_job "dev" "stage"
-    wait_for_promotion_job
+    # Stage promotion (MR auto-created by k8s-deployments CI after dev deployment)
+    wait_for_promotion_mr "stage"
     merge_env_mr "stage"
     wait_for_env_sync "stage"
     verify_env_deployment "stage"
 
-    # Prod promotion
-    trigger_promotion_job "stage" "prod"
-    wait_for_promotion_job
+    # Prod promotion (MR auto-created by k8s-deployments CI after stage deployment)
+    wait_for_promotion_mr "prod"
     merge_env_mr "prod"
     wait_for_env_sync "prod"
     verify_env_deployment "prod"

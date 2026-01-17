@@ -1,101 +1,42 @@
-// Root Jenkinsfile for k8s-deployments Repository
-// Orchestrates MR validation, deployment, and promotion workflows
-// Triggered by: GitLab webhook on MR events and environment branch merges
+// Simplified k8s-deployments Pipeline
+// Single workflow that handles all branches:
+// - Feature branches: validate CUE, generate manifests, commit back
+// - Environment branches (dev/stage/prod): + deploy via ArgoCD + auto-promote
+//
+// Pre-merge validation works via GitLab commit status - MRs are blocked
+// until the source branch build passes.
 
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
 /**
- * Refreshes ArgoCD applications for a given environment
- * @param environment Target environment (dev/stage/prod)
- */
-def refreshArgoCDApps(String environment) {
-    container('pipeline') {
-        script {
-            echo "=== Refreshing ArgoCD Applications for ${environment} ==="
-
-            // Discover all apps in the environment
-            def appsJson = sh(
-                script: "cue export ./envs/${environment}.cue -e ${environment} --out json",
-                returnStdout: true
-            ).trim()
-
-            def apps = sh(
-                script: "echo '${appsJson}' | jq -r 'keys[]'",
-                returnStdout: true
-            ).trim().split('\n')
-
-            echo "Found apps in ${environment}: ${apps.join(', ')}"
-
-            // Refresh each app
-            for (app in apps) {
-                def appName = app.trim()
-                def argoCDAppName = "${appName}-${environment}"
-
-                echo "Refreshing ArgoCD app: ${argoCDAppName}"
-
-                sh """
-                    # Refresh the app (force reload from Git)
-                    argocd app refresh ${argoCDAppName} --hard || {
-                        echo "⚠ WARNING: Failed to refresh ${argoCDAppName}"
-                        exit 1
-                    }
-
-                    echo "✓ Refreshed ${argoCDAppName}"
-                """
-            }
-        }
-    }
-}
-
-/**
- * Waits for ArgoCD applications to sync and become healthy
- * @param environment Target environment (dev/stage/prod)
+ * Waits for ArgoCD application to sync and become healthy
+ * @param appName ArgoCD application name
  * @param timeoutSeconds Maximum time to wait (default: 300)
+ * @return true if sync successful and healthy, false otherwise
  */
-def waitForArgoCDSync(String environment, int timeoutSeconds = 300) {
+def waitForArgoCDSync(String appName, int timeoutSeconds = 300) {
     container('pipeline') {
         script {
-            echo "=== Waiting for ArgoCD Sync Completion ==="
+            echo "Waiting for ${appName} to sync and become healthy..."
 
-            // Discover all apps in the environment
-            def appsJson = sh(
-                script: "cue export ./envs/${environment}.cue -e ${environment} --out json",
-                returnStdout: true
-            ).trim()
+            sh """
+                # Wait for sync with timeout
+                argocd app wait ${appName} \
+                    --timeout ${timeoutSeconds} \
+                    --health \
+                    --sync || {
+                    echo "ERROR: ${appName} failed to sync or become healthy"
 
-            def apps = sh(
-                script: "echo '${appsJson}' | jq -r 'keys[]'",
-                returnStdout: true
-            ).trim().split('\n')
+                    # Show app status for debugging
+                    argocd app get ${appName}
 
-            // Wait for each app to sync
-            for (app in apps) {
-                def appName = app.trim()
-                def argoCDAppName = "${appName}-${environment}"
+                    exit 1
+                }
 
-                echo "Waiting for ${argoCDAppName} to sync..."
-
-                sh """
-                    # Wait for sync with timeout
-                    argocd app wait ${argoCDAppName} \
-                        --timeout ${timeoutSeconds} \
-                        --health \
-                        --sync || {
-                        echo "✗ ERROR: ${argoCDAppName} failed to sync or become healthy"
-
-                        # Show app status for debugging
-                        argocd app get ${argoCDAppName}
-
-                        exit 1
-                    }
-
-                    echo "✓ ${argoCDAppName} synced and healthy"
-                """
-            }
-
-            echo "✓ All apps synced successfully in ${environment}"
+                echo "${appName} synced and healthy"
+            """
         }
     }
 }
@@ -114,11 +55,11 @@ def createPromotionMR(String sourceEnv) {
             } else if (sourceEnv == 'stage') {
                 targetEnv = 'prod'
             } else {
-                echo "⚠ No promotion needed from ${sourceEnv}"
+                echo "No promotion needed from ${sourceEnv}"
                 return
             }
 
-            echo "=== Creating Promotion MR: ${sourceEnv} → ${targetEnv} ==="
+            echo "=== Creating Promotion MR: ${sourceEnv} -> ${targetEnv} ==="
 
             withCredentials([
                 usernamePassword(credentialsId: 'gitlab-credentials',
@@ -140,15 +81,15 @@ def createPromotionMR(String sourceEnv) {
 
                     # Create promotion branch
                     TIMESTAMP=\$(date +%Y%m%d-%H%M%S)
-                    PROMOTION_BRANCH="promote-${sourceEnv}-to-${targetEnv}-\${TIMESTAMP}"
+                    PROMOTION_BRANCH="promote-${targetEnv}-\${TIMESTAMP}"
 
                     git checkout ${targetEnv}
                     git checkout -b "\${PROMOTION_BRANCH}"
 
                     # Merge source environment
                     git merge origin/${sourceEnv} --no-ff --no-commit || {
-                        echo "✗ ERROR: Merge conflict detected"
-                        echo "Manual resolution required for ${sourceEnv} → ${targetEnv}"
+                        echo "ERROR: Merge conflict detected"
+                        echo "Manual resolution required for ${sourceEnv} -> ${targetEnv}"
                         exit 1
                     }
 
@@ -159,9 +100,7 @@ Automated promotion after successful ${sourceEnv} deployment.
 
 Source: ${sourceEnv} (latest)
 Target: ${targetEnv}
-Build: \${BUILD_URL}
-
-All ${sourceEnv} apps have been validated, synced, and are healthy."
+Build: ${env.BUILD_URL}"
 
                     # Push promotion branch
                     git push -u origin "\${PROMOTION_BRANCH}"
@@ -170,22 +109,22 @@ All ${sourceEnv} apps have been validated, synced, and are healthy."
                     export GITLAB_URL="${env.GITLAB_URL}"
 
                     ./scripts/create-gitlab-mr.sh \
-                        "\${PROMOTION_BRANCH}" \
-                        "${targetEnv}" \
-                        "Promote ${sourceEnv} to ${targetEnv}" \
-                        "Automated promotion MR created after successful ${sourceEnv} deployment.
+                        --source "\${PROMOTION_BRANCH}" \
+                        --target "${targetEnv}" \
+                        --title "Promote ${sourceEnv} to ${targetEnv}" \
+                        --description "Automated promotion MR created after successful ${sourceEnv} deployment.
 
 **Source Environment:** ${sourceEnv}
 **Target Environment:** ${targetEnv}
 
 All applications in ${sourceEnv} have been deployed and verified as healthy.
 
-**Jenkins Build:** \${BUILD_URL}
+**Jenkins Build:** ${env.BUILD_URL}
 
 ---
-🤖 Auto-generated by k8s-deployments CI/CD pipeline"
+Auto-generated by k8s-deployments CI/CD pipeline"
 
-                    echo "✓ Created promotion MR: \${PROMOTION_BRANCH} → ${targetEnv}"
+                    echo "Created promotion MR: \${PROMOTION_BRANCH} -> ${targetEnv}"
                 """
 
                 // Cleanup git credentials
@@ -230,37 +169,9 @@ spec:
     }
 
     options {
-        timeout(time: 45, unit: 'MINUTES')
+        timeout(time: 30, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '30', daysToKeepStr: '60'))
         disableConcurrentBuilds()
-    }
-
-    parameters {
-        string(
-            name: 'MR_IID',
-            defaultValue: '',
-            description: 'GitLab Merge Request IID (Internal ID)'
-        )
-        string(
-            name: 'MR_EVENT',
-            defaultValue: '',
-            description: 'MR Event type: open, update, merge, or close'
-        )
-        string(
-            name: 'SOURCE_BRANCH',
-            defaultValue: '',
-            description: 'Source branch of the MR'
-        )
-        string(
-            name: 'TARGET_BRANCH',
-            defaultValue: '',
-            description: 'Target branch of the MR (dev/stage/prod)'
-        )
-        booleanParam(
-            name: 'CREATE_PROMOTION_MR',
-            defaultValue: true,
-            description: 'Automatically create promotion MR after successful deployment'
-        )
     }
 
     environment {
@@ -272,10 +183,14 @@ spec:
         // ArgoCD configuration
         ARGOCD_SERVER = 'argocd-server.argocd.svc.cluster.local:80'
         ARGOCD_OPTS = '--plaintext --grpc-web'
+
+        // Environment branches
+        ENV_BRANCHES = 'dev,stage,prod'
+        PROMOTE_BRANCHES = 'dev,stage'
     }
 
     stages {
-        stage('Detect Workflow') {
+        stage('Validate & Generate Manifests') {
             steps {
                 container('pipeline') {
                     script {
@@ -283,10 +198,8 @@ spec:
 =======================================================
 k8s-deployments CI/CD Pipeline
 =======================================================
-MR IID: ${params.MR_IID}
-Event: ${params.MR_EVENT}
-Source Branch: ${params.SOURCE_BRANCH}
-Target Branch: ${params.TARGET_BRANCH}
+Branch: ${env.BRANCH_NAME}
+Build: ${env.BUILD_URL}
 =======================================================
 """
 
@@ -294,81 +207,44 @@ Target Branch: ${params.TARGET_BRANCH}
                         if (!env.GITLAB_URL) {
                             error "GITLAB_URL_INTERNAL not set. Configure pipeline-config ConfigMap."
                         }
-                        if (!env.DEPLOYMENTS_REPO) {
-                            error "DEPLOYMENTS_REPO_URL not set. Configure pipeline-config ConfigMap."
+
+                        // Check if env.cue exists (environment branches have it)
+                        def hasEnvCue = fileExists('env.cue')
+                        if (!hasEnvCue) {
+                            echo "No env.cue found - this is main or a feature branch without environment context"
+                            echo "Skipping manifest generation"
+                            env.HAS_ENV_CUE = 'false'
+                            return
                         }
 
-                        if (!params.MR_EVENT || params.MR_EVENT == '') {
-                            // Branch indexing or manual trigger without MR context
-                            // Just run basic validation on the branch
-                            env.WORKFLOW = 'BRANCH_INDEX'
-                            echo "▸ Workflow: BRANCH INDEXING (no MR event)"
-                            echo "  Running basic CUE validation only"
-                        } else if (params.MR_EVENT in ['open', 'update', 'reopen']) {
-                            env.WORKFLOW = 'VALIDATE'
-                            echo "▸ Workflow: VALIDATION (MR ${params.MR_EVENT})"
-                        } else if (params.MR_EVENT == 'merge') {
-                            env.WORKFLOW = 'DEPLOY'
-                            echo "▸ Workflow: DEPLOYMENT (MR merged)"
-                        } else if (params.MR_EVENT == 'close') {
-                            env.WORKFLOW = 'CLEANUP'
-                            echo "▸ Workflow: CLEANUP (MR closed)"
-                        } else {
-                            error("Unknown or unsupported MR event: ${params.MR_EVENT}")
-                        }
-                    }
-                }
-            }
-        }
+                        env.HAS_ENV_CUE = 'true'
 
-        stage('Branch Indexing Workflow') {
-            when {
-                expression { env.WORKFLOW == 'BRANCH_INDEX' }
-            }
-            steps {
-                container('pipeline') {
-                    script {
-                        echo """
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BRANCH INDEXING WORKFLOW
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Running basic CUE validation and manifest generation.
-This build was triggered by Jenkins branch indexing.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
-                        // Validate CUE configuration using the project's validation script
-                        // This handles incomplete base schemas correctly (uses -c=false for templates)
+                        // Validate CUE configuration
                         echo "Validating CUE configuration..."
                         sh '''
                             if [ -x "./scripts/validate-cue-config.sh" ]; then
                                 ./scripts/validate-cue-config.sh || {
-                                    echo "✗ CUE validation failed"
+                                    echo "CUE validation failed"
                                     exit 1
                                 }
                             else
-                                # Fallback: validate env.cue only (base schemas are intentionally incomplete)
+                                # Fallback: validate env.cue only
                                 cue vet ./env.cue || {
-                                    echo "✗ CUE validation failed"
+                                    echo "CUE validation failed"
                                     exit 1
                                 }
                             fi
-                            echo "✓ CUE configuration is valid"
+                            echo "CUE configuration is valid"
                         '''
 
-                        // Generate manifests for the environment defined in env.cue
-                        // Branch-per-environment: env.cue is at root, script auto-detects environment
+                        // Generate manifests
                         echo "Generating manifests..."
                         sh '''
-                            if [ -f "env.cue" ]; then
-                                echo "Generating manifests from env.cue..."
-                                ./scripts/generate-manifests.sh || {
-                                    echo "✗ Manifest generation failed"
-                                    exit 1
-                                }
-                                echo "✓ Manifest generation completed"
-                            else
-                                echo "⚠ No env.cue found - skipping manifest generation"
-                            fi
+                            ./scripts/generate-manifests.sh || {
+                                echo "Manifest generation failed"
+                                exit 1
+                            }
+                            echo "Manifest generation completed"
                         '''
 
                         // Commit and push generated manifests back to branch
@@ -386,16 +262,16 @@ This build was triggered by Jenkins branch indexing.
                             sh """
                                 # Check if manifests changed
                                 if git diff --quiet manifests/; then
-                                    echo "✓ No manifest changes to commit"
+                                    echo "No manifest changes to commit"
                                 else
                                     echo "Committing generated manifests..."
                                     git add manifests/
                                     git commit -m "chore: regenerate manifests [jenkins-ci]
 
-Generated by Jenkins CI branch indexing.
+Generated by Jenkins CI.
 Build: ${env.BUILD_URL}"
                                     git push origin HEAD:\${GIT_BRANCH#origin/}
-                                    echo "✓ Manifests committed and pushed"
+                                    echo "Manifests committed and pushed"
                                 fi
 
                                 # Cleanup credentials
@@ -403,113 +279,20 @@ Build: ${env.BUILD_URL}"
                             """
                         }
 
-                        echo "✓ Branch indexing validation complete"
+                        echo "Validation and manifest generation complete"
                     }
                 }
             }
         }
 
-        stage('Validation Workflow') {
+        stage('Deploy to Environment') {
             when {
-                expression { env.WORKFLOW == 'VALIDATE' }
-            }
-            steps {
-                container('pipeline') {
-                    script {
-                        echo """
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-VALIDATION WORKFLOW
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
-
-                        // Checkout MR source branch
-                        checkout([
-                            $class: 'GitSCM',
-                            branches: [[name: "*/${params.SOURCE_BRANCH}"]],
-                            userRemoteConfigs: [[
-                                url: env.DEPLOYMENTS_REPO,
-                                credentialsId: 'gitlab-credentials'
-                            ]]
-                        ])
-
-                        // Run validation pipeline
-                        echo "Running validation checks..."
-                        build job: 'k8s-deployments-validation',
-                              parameters: [
-                                  string(name: 'BRANCH_NAME', value: params.SOURCE_BRANCH),
-                                  booleanParam(name: 'VALIDATE_ALL_ENVS', value: true)
-                              ],
-                              wait: true,
-                              propagate: true
-
-                        echo "✓ Validation completed successfully"
-
-                        // Post comment to MR
-                        withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
-                            sh """
-                                curl -X POST "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/merge_requests/${params.MR_IID}/notes" \
-                                  -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                                  -d "body=✓ **Validation Passed**
-
-All CUE configurations, manifest generation, and YAML validation checks completed successfully.
-
-**Jenkins Build:** ${env.BUILD_URL}
-
-Safe to merge when ready. 🚀" \
-                                  || echo "⚠ Could not post MR comment (non-blocking)"
-                            """
-                        }
-                    }
+                expression {
+                    env.BRANCH_NAME in env.ENV_BRANCHES.split(',') && env.HAS_ENV_CUE == 'true'
                 }
-            }
-        }
-
-        stage('Deployment Workflow') {
-            when {
-                expression { env.WORKFLOW == 'DEPLOY' }
             }
             stages {
-                stage('Checkout Target Branch') {
-                    steps {
-                        container('pipeline') {
-                            script {
-                                echo """
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DEPLOYMENT WORKFLOW
-Target Environment: ${params.TARGET_BRANCH}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
-
-                                // Validate target branch is a known environment
-                                if (!(params.TARGET_BRANCH in ['dev', 'stage', 'prod'])) {
-                                    echo "⚠ Target branch '${params.TARGET_BRANCH}' is not an environment branch"
-                                    echo "Skipping deployment workflow"
-                                    env.SKIP_DEPLOYMENT = 'true'
-                                    return
-                                }
-
-                                env.SKIP_DEPLOYMENT = 'false'
-
-                                // Checkout target branch (post-merge)
-                                checkout([
-                                    $class: 'GitSCM',
-                                    branches: [[name: "*/${params.TARGET_BRANCH}"]],
-                                    userRemoteConfigs: [[
-                                        url: env.DEPLOYMENTS_REPO,
-                                        credentialsId: 'gitlab-credentials'
-                                    ]]
-                                ])
-
-                                echo "✓ Checked out ${params.TARGET_BRANCH} (post-merge)"
-                            }
-                        }
-                    }
-                }
-
                 stage('Login to ArgoCD') {
-                    when {
-                        expression { env.SKIP_DEPLOYMENT != 'true' }
-                    }
                     steps {
                         container('pipeline') {
                             script {
@@ -526,7 +309,7 @@ Target Environment: ${params.TARGET_BRANCH}
                                             --password \${ARGOCD_PASSWORD} \
                                             ${env.ARGOCD_OPTS}
 
-                                        echo "✓ Logged into ArgoCD"
+                                        echo "Logged into ArgoCD"
                                     """
                                 }
                             }
@@ -534,91 +317,74 @@ Target Environment: ${params.TARGET_BRANCH}
                     }
                 }
 
-                stage('Refresh ArgoCD Apps') {
-                    when {
-                        expression { env.SKIP_DEPLOYMENT != 'true' }
-                    }
+                stage('Refresh & Sync ArgoCD') {
                     steps {
-                        script {
-                            refreshArgoCDApps(params.TARGET_BRANCH)
+                        container('pipeline') {
+                            script {
+                                def environment = env.BRANCH_NAME
+                                def appName = "example-app-${environment}"
+
+                                echo "=== Refreshing ArgoCD Application: ${appName} ==="
+
+                                sh """
+                                    # Refresh the app (force reload from Git)
+                                    argocd app refresh ${appName} --hard || {
+                                        echo "WARNING: Failed to refresh ${appName}"
+                                        exit 1
+                                    }
+
+                                    echo "Refreshed ${appName}"
+                                """
+                            }
                         }
                     }
                 }
 
-                stage('Wait for Sync') {
-                    when {
-                        expression { env.SKIP_DEPLOYMENT != 'true' }
-                    }
+                stage('Wait for Sync & Health') {
                     steps {
                         script {
-                            waitForArgoCDSync(params.TARGET_BRANCH, 300)
+                            def environment = env.BRANCH_NAME
+                            def appName = "example-app-${environment}"
+
+                            waitForArgoCDSync(appName, 300)
                         }
                     }
                 }
 
                 stage('Deployment Summary') {
-                    when {
-                        expression { env.SKIP_DEPLOYMENT != 'true' }
-                    }
                     steps {
                         container('pipeline') {
                             script {
                                 echo """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✓ DEPLOYMENT SUCCESSFUL
+DEPLOYMENT SUCCESSFUL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Environment: ${params.TARGET_BRANCH}
-Source MR: ${params.MR_IID}
+Environment: ${env.BRANCH_NAME}
 
-All applications have been:
-  ✓ Refreshed in ArgoCD
-  ✓ Synced to latest Git state
-  ✓ Verified as healthy
+Application has been:
+  - Refreshed in ArgoCD
+  - Synced to latest Git state
+  - Verified as healthy
 
 Build: ${env.BUILD_URL}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-
-                                // Post comment to MR
-                                withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
-                                    sh """
-                                        curl -X POST "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/merge_requests/${params.MR_IID}/notes" \
-                                          -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                                          -d "body=✓ **Deployment Successful**%0A%0AEnvironment ${params.TARGET_BRANCH} has been successfully deployed.%0A%0AAll ArgoCD applications are synced and healthy.%0A%0A**Jenkins Build:** ${env.BUILD_URL}" \
-                                          || echo "⚠ Could not post MR comment (non-blocking)"
-                                    """
-                                }
                             }
-                        }
-                    }
-                }
-
-                stage('Create Promotion MR') {
-                    when {
-                        allOf {
-                            expression { env.SKIP_DEPLOYMENT != 'true' }
-                            expression { params.CREATE_PROMOTION_MR == true }
-                            expression { params.TARGET_BRANCH in ['dev', 'stage'] }
-                        }
-                    }
-                    steps {
-                        script {
-                            createPromotionMR(params.TARGET_BRANCH)
                         }
                     }
                 }
             }
         }
 
-        stage('Cleanup Workflow') {
+        stage('Create Promotion MR') {
             when {
-                expression { env.WORKFLOW == 'CLEANUP' }
+                expression {
+                    env.BRANCH_NAME in env.PROMOTE_BRANCHES.split(',') && env.HAS_ENV_CUE == 'true'
+                }
             }
             steps {
-                container('pipeline') {
-                    script {
-                        echo "MR ${params.MR_IID} was closed - no action needed"
-                    }
+                script {
+                    createPromotionMR(env.BRANCH_NAME)
                 }
             }
         }
@@ -629,12 +395,31 @@ Build: ${env.BUILD_URL}
             script {
                 echo """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✓ PIPELINE COMPLETED SUCCESSFULLY
+PIPELINE COMPLETED SUCCESSFULLY
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Workflow: ${env.WORKFLOW}
+Branch: ${env.BRANCH_NAME}
 Build: ${env.BUILD_URL}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
+
+                // Update GitLab commit status
+                container('pipeline') {
+                    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+                        sh """
+                            curl -s -X POST \
+                                -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                                -H "Content-Type: application/json" \
+                                -d '{
+                                    "state": "success",
+                                    "description": "Pipeline passed",
+                                    "context": "jenkins/k8s-deployments",
+                                    "target_url": "${env.BUILD_URL}"
+                                }' \
+                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/statuses/\$(git rev-parse HEAD)" \
+                                || echo "Could not update commit status"
+                        """
+                    }
+                }
             }
         }
 
@@ -642,33 +427,37 @@ Build: ${env.BUILD_URL}
             script {
                 echo """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✗ PIPELINE FAILED
+PIPELINE FAILED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Workflow: ${env.WORKFLOW}
+Branch: ${env.BRANCH_NAME}
 Build: ${env.BUILD_URL}
 
 Check logs above for error details.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
-                // Post failure comment to MR
-                if (params.MR_IID) {
-                    container('pipeline') {
-                        withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
-                            sh """
-                                curl -X POST "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/merge_requests/${params.MR_IID}/notes" \
-                                  -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                                  -d "body=✗ **Pipeline Failed**%0A%0AWorkflow: ${env.WORKFLOW}%0A%0ACheck Jenkins logs for details: ${env.BUILD_URL}" \
-                                  || echo "⚠ Could not post MR comment"
-                            """
-                        }
+                // Update GitLab commit status
+                container('pipeline') {
+                    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+                        sh """
+                            curl -s -X POST \
+                                -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                                -H "Content-Type: application/json" \
+                                -d '{
+                                    "state": "failed",
+                                    "description": "Pipeline failed",
+                                    "context": "jenkins/k8s-deployments",
+                                    "target_url": "${env.BUILD_URL}"
+                                }' \
+                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/statuses/\$(git rev-parse HEAD)" \
+                                || echo "Could not update commit status"
+                        """
                     }
                 }
             }
         }
 
         always {
-            // Cleanup
             sh 'echo "Pipeline cleanup completed"'
         }
     }
