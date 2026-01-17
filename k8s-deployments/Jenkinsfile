@@ -327,8 +327,8 @@ Build: ${env.BUILD_URL}"
                                 echo "=== Refreshing ArgoCD Application: ${appName} ==="
 
                                 sh """
-                                    # Refresh the app (force reload from Git)
-                                    argocd app refresh ${appName} --hard || {
+                                    # Refresh the app (reload from Git)
+                                    argocd app get ${appName} --refresh || {
                                         echo "WARNING: Failed to refresh ${appName}"
                                         exit 1
                                     }
