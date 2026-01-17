@@ -140,7 +140,7 @@ Build: ${env.BUILD_URL}"
 - Other app-level configuration
 
 ## What's Preserved (Environment-Specific)
-- Namespace: \\\`${targetEnv}\\\`
+- Namespace: ${targetEnv}
 - Replicas, resources, debug flags
 
 ## Review Instructions
