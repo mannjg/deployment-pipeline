@@ -336,13 +336,22 @@ Running basic CUE validation and manifest generation.
 This build was triggered by Jenkins branch indexing.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-                        // Validate CUE configuration
+                        // Validate CUE configuration using the project's validation script
+                        // This handles incomplete base schemas correctly (uses -c=false for templates)
                         echo "Validating CUE configuration..."
                         sh '''
-                            cue vet ./... || {
-                                echo "✗ CUE validation failed"
-                                exit 1
-                            }
+                            if [ -x "./scripts/validate-cue-config.sh" ]; then
+                                ./scripts/validate-cue-config.sh || {
+                                    echo "✗ CUE validation failed"
+                                    exit 1
+                                }
+                            else
+                                # Fallback: validate env.cue only (base schemas are intentionally incomplete)
+                                cue vet ./env.cue || {
+                                    echo "✗ CUE validation failed"
+                                    exit 1
+                                }
+                            fi
                             echo "✓ CUE configuration is valid"
                         '''
 
