@@ -333,6 +333,32 @@ wait_for_jenkins_build() {
 }
 
 # -----------------------------------------------------------------------------
+# Trigger MultiBranch Pipeline scan
+# -----------------------------------------------------------------------------
+# MultiBranch Pipelines only detect new branches on periodic scans (default 5min).
+# This function triggers an immediate scan so new branches are discovered quickly.
+# TODO: Replace with webhook-triggered Pipeline to eliminate this workaround.
+trigger_multibranch_scan() {
+    local job_name="${DEPLOYMENTS_REPO_NAME:-k8s-deployments}"
+    log_info "Triggering MultiBranch scan for $job_name..."
+
+    # Trigger branch indexing - this makes Jenkins discover new branches immediately
+    local response
+    response=$(curl -sk -w "%{http_code}" -o /dev/null -X POST \
+        -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        "$JENKINS_URL/job/${job_name}/build?delay=0sec" 2>/dev/null) || true
+
+    if [[ "$response" == "201" || "$response" == "200" ]]; then
+        log_info "Branch scan triggered successfully"
+    else
+        log_info "Branch scan trigger returned $response (may already be scanning)"
+    fi
+
+    # Give Jenkins a moment to start scanning
+    sleep 3
+}
+
+# -----------------------------------------------------------------------------
 # Wait for k8s-deployments CI
 # -----------------------------------------------------------------------------
 wait_for_k8s_deployments_ci() {
@@ -340,6 +366,9 @@ wait_for_k8s_deployments_ci() {
     local baseline_build="${2:-}"  # Optional: baseline build number passed by caller
 
     log_step "Waiting for k8s-deployments CI to generate manifests..."
+
+    # Trigger immediate branch scan (MultiBranch Pipelines are slow to detect new branches)
+    trigger_multibranch_scan
 
     # k8s-deployments is a MultiBranch Pipeline - the job is named after the repo
     local job_name="${DEPLOYMENTS_REPO_NAME:-k8s-deployments}"
@@ -352,9 +381,8 @@ wait_for_k8s_deployments_ci() {
     local build_number=""
     local build_url=""
 
-    # Give Jenkins a moment to process the webhook and start the build
-    # This helps avoid race conditions where we check before Jenkins registers the build
-    sleep 5
+    # Give Jenkins a moment to process the scan and start the build
+    sleep 2
 
     # Get the last build number to use as baseline
     # If caller provided a baseline, use that (helps with race conditions)
