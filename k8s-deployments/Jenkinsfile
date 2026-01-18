@@ -11,6 +11,36 @@
 // ============================================================================
 
 /**
+ * Determines the target environment from a branch name.
+ * - Environment branches (dev, stage, prod) return themselves
+ * - Feature branches return their target environment based on naming convention:
+ *   - update-dev-* → dev
+ *   - promote-stage-* → stage
+ *   - promote-prod-* → prod
+ * @param branchName The branch name to analyze
+ * @return The target environment (dev, stage, or prod) or null if unknown
+ */
+def getTargetEnvironment(String branchName) {
+    // Direct environment branches
+    if (branchName in ['dev', 'stage', 'prod']) {
+        return branchName
+    }
+    // Feature branches targeting dev (from app CI)
+    if (branchName.startsWith('update-dev-')) {
+        return 'dev'
+    }
+    // Promotion branches
+    if (branchName.startsWith('promote-stage-')) {
+        return 'stage'
+    }
+    if (branchName.startsWith('promote-prod-')) {
+        return 'prod'
+    }
+    // Unknown branch pattern
+    return null
+}
+
+/**
  * Waits for ArgoCD application to sync and become healthy
  * @param appName ArgoCD application name
  * @param timeoutSeconds Maximum time to wait (default: 300)
@@ -269,9 +299,17 @@ Build: ${env.BUILD_URL}
                         '''
 
                         // Generate manifests
-                        echo "Generating manifests..."
+                        // Determine target environment from branch name
+                        def targetEnv = getTargetEnvironment(env.BRANCH_NAME)
+                        if (!targetEnv) {
+                            echo "WARNING: Could not determine target environment for branch ${env.BRANCH_NAME}"
+                            echo "Skipping manifest generation"
+                            return
+                        }
+
+                        echo "Generating manifests for environment: ${targetEnv}..."
                         sh """
-                            ./scripts/generate-manifests.sh ${env.BRANCH_NAME} || {
+                            ./scripts/generate-manifests.sh ${targetEnv} || {
                                 echo "Manifest generation failed"
                                 exit 1
                             }
