@@ -514,6 +514,7 @@ merge_dev_mr() {
 # -----------------------------------------------------------------------------
 wait_for_promotion_mr() {
     local target_env="$1"
+    local baseline_time="${2:-}"  # Optional: baseline timestamp from before MR creation
     local timeout="${PROMOTION_MR_TIMEOUT:-180}"
 
     log_step "Waiting for auto-created promotion MR to $target_env..."
@@ -524,8 +525,13 @@ wait_for_promotion_mr() {
     # Promotion branches created by k8s-deployments CI: promote-{targetEnv}-{timestamp}
     local branch_prefix="promote-${target_env}-"
 
-    # Record start time (ISO 8601) - only consider MRs created after this
-    local start_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    # Use provided baseline or current time (ISO 8601)
+    local start_time
+    if [[ -n "$baseline_time" ]]; then
+        start_time="$baseline_time"
+    else
+        start_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    fi
 
     local poll_interval=10
     local elapsed=0
@@ -937,20 +943,24 @@ main() {
     # Capture baselines BEFORE merging (to avoid race conditions)
     local dev_baseline=$(get_jenkins_baseline "dev")
     local dev_argocd_baseline=$(get_argocd_baseline)
+    # Capture promotion MR baseline before dev build creates it
+    local stage_mr_baseline=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     merge_dev_mr
 
-    # Wait for k8s-deployments dev branch build (this creates the promotion MR)
+    # Wait for k8s-deployments dev branch build (this creates the promotion MR to stage)
     wait_for_k8s_deployments_ci "dev" "$dev_baseline"
 
     wait_for_argocd_sync "$dev_argocd_baseline"
     verify_deployment
 
     # Stage promotion (MR auto-created by k8s-deployments CI after dev deployment)
-    wait_for_promotion_mr "stage"
+    wait_for_promotion_mr "stage" "$stage_mr_baseline"
 
     # Capture baselines BEFORE merging stage MR
     local stage_baseline=$(get_jenkins_baseline "stage")
     local stage_argocd_baseline=$(get_argocd_baseline "${APP_REPO_NAME}-stage")
+    # Capture promotion MR baseline before stage build creates it
+    local prod_mr_baseline=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     merge_env_mr "stage"
 
     # Wait for k8s-deployments stage branch build (this creates the prod promotion MR)
@@ -960,7 +970,7 @@ main() {
     verify_env_deployment "stage"
 
     # Prod promotion (MR auto-created by k8s-deployments CI after stage deployment)
-    wait_for_promotion_mr "prod"
+    wait_for_promotion_mr "prod" "$prod_mr_baseline"
     local prod_argocd_baseline=$(get_argocd_baseline "${APP_REPO_NAME}-prod")
     merge_env_mr "prod"
     wait_for_env_sync "prod" "$prod_argocd_baseline"
