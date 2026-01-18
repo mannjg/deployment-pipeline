@@ -334,6 +334,7 @@ wait_for_jenkins_build() {
 # -----------------------------------------------------------------------------
 wait_for_k8s_deployments_ci() {
     local branch="$1"
+    local baseline_build="${2:-}"  # Optional: baseline build number passed by caller
 
     log_step "Waiting for k8s-deployments CI to generate manifests..."
 
@@ -348,30 +349,40 @@ wait_for_k8s_deployments_ci() {
     local build_number=""
     local build_url=""
 
-    # Get the last build number before we started (if job branch exists)
-    # Handle case where job doesn't exist yet (API returns HTML 404 instead of JSON)
+    # Give Jenkins a moment to process the webhook and start the build
+    # This helps avoid race conditions where we check before Jenkins registers the build
+    sleep 5
+
+    # Get the last build number to use as baseline
+    # If caller provided a baseline, use that (helps with race conditions)
     local last_build=0
     local response
-    response=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
-        "$JENKINS_URL/${job_path}/lastBuild/api/json" 2>/dev/null) || true
-    if echo "$response" | jq empty 2>/dev/null; then
-        last_build=$(echo "$response" | jq -r '.number // 0')
+    if [[ -n "$baseline_build" ]]; then
+        last_build="$baseline_build"
+    else
+        response=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+            "$JENKINS_URL/${job_path}/lastBuild/api/json" 2>/dev/null) || true
+        if echo "$response" | jq empty 2>/dev/null; then
+            last_build=$(echo "$response" | jq -r '.number // 0')
+        fi
     fi
 
-    log_info "Waiting for new build on branch $branch (last was #$last_build, timeout ${start_timeout}s)..."
+    log_info "Waiting for new build on branch $branch (baseline #$last_build, timeout ${start_timeout}s)..."
 
     while [[ $elapsed -lt $start_timeout ]]; do
         local current_build=0
+        local is_building="false"
         response=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
             "$JENKINS_URL/${job_path}/lastBuild/api/json" 2>/dev/null) || true
         if echo "$response" | jq empty 2>/dev/null; then
             current_build=$(echo "$response" | jq -r '.number // 0')
+            is_building=$(echo "$response" | jq -r '.building // false')
         fi
 
         if [[ "$current_build" -gt "$last_build" ]]; then
             build_number="$current_build"
             build_url="$JENKINS_URL/${job_path}/$build_number"
-            log_info "Build #$build_number started (after ${elapsed}s)"
+            log_info "Build #$build_number detected (after ${elapsed}s, building=$is_building)"
             break
         fi
 
@@ -871,6 +882,25 @@ verify_env_deployment() {
 }
 
 # -----------------------------------------------------------------------------
+# Get Jenkins Build Baseline
+# Helper to capture build number BEFORE triggering an action
+# -----------------------------------------------------------------------------
+get_jenkins_baseline() {
+    local branch="$1"
+    local job_name="${DEPLOYMENTS_REPO_NAME:-k8s-deployments}"
+    local job_path="job/${job_name}/job/${branch}"
+
+    local response
+    response=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        "$JENKINS_URL/${job_path}/lastBuild/api/json" 2>/dev/null) || true
+    if echo "$response" | jq empty 2>/dev/null; then
+        echo "$response" | jq -r '.number // 0'
+    else
+        echo "0"
+    fi
+}
+
+# -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 main() {
@@ -880,20 +910,26 @@ main() {
     bump_version
     commit_and_push
     wait_for_jenkins_build
+
+    # Capture baseline BEFORE merging (to avoid race condition with webhook)
+    local dev_baseline=$(get_jenkins_baseline "dev")
     merge_dev_mr
 
     # Wait for k8s-deployments dev branch build (this creates the promotion MR)
-    wait_for_k8s_deployments_ci "dev"
+    wait_for_k8s_deployments_ci "dev" "$dev_baseline"
 
     wait_for_argocd_sync
     verify_deployment
 
     # Stage promotion (MR auto-created by k8s-deployments CI after dev deployment)
     wait_for_promotion_mr "stage"
+
+    # Capture baseline BEFORE merging stage MR
+    local stage_baseline=$(get_jenkins_baseline "stage")
     merge_env_mr "stage"
 
     # Wait for k8s-deployments stage branch build (this creates the prod promotion MR)
-    wait_for_k8s_deployments_ci "stage"
+    wait_for_k8s_deployments_ci "stage" "$stage_baseline"
 
     wait_for_env_sync "stage"
     verify_env_deployment "stage"
