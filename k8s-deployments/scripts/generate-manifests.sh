@@ -21,10 +21,8 @@ preflight_check_command "cue" "https://cuelang.org/docs/install/"
 
 MANIFEST_DIR="${PROJECT_ROOT}/manifests"
 
-# Auto-detect environment from env.cue if not specified
-if [ -f "${PROJECT_ROOT}/env.cue" ]; then
-    DETECTED_ENV=$(grep -m1 'env:' "${PROJECT_ROOT}/env.cue" 2>/dev/null | grep -oP '"\K[^"]+' || echo "")
-fi
+# Auto-detect environment from git branch
+DETECTED_ENV=$(git -C "${PROJECT_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 ENVIRONMENT=${1:-${DETECTED_ENV:-dev}}
 
 # Colors

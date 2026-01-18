@@ -67,10 +67,13 @@ APP_LABEL="app=${APP_REPO_NAME}"
 # Timeouts (sensible defaults)
 # BUILD_START_TIMEOUT: Time to wait for Jenkins to detect webhook and start build
 # BUILD_TIMEOUT: Time for the build itself to complete (after it starts)
-JENKINS_BUILD_START_TIMEOUT="${JENKINS_BUILD_START_TIMEOUT:-300}"
-JENKINS_BUILD_TIMEOUT="${JENKINS_BUILD_TIMEOUT:-600}"
-ARGOCD_SYNC_TIMEOUT="${ARGOCD_SYNC_TIMEOUT:-300}"
-PROMOTION_MR_TIMEOUT="${PROMOTION_MR_TIMEOUT:-180}"
+# Timeouts are intentionally short - if webhooks work, builds start within seconds
+JENKINS_BUILD_START_TIMEOUT="${JENKINS_BUILD_START_TIMEOUT:-60}"
+JENKINS_BUILD_TIMEOUT="${JENKINS_BUILD_TIMEOUT:-180}"
+ARGOCD_SYNC_TIMEOUT="${ARGOCD_SYNC_TIMEOUT:-60}"
+PROMOTION_MR_TIMEOUT="${PROMOTION_MR_TIMEOUT:-60}"
+K8S_DEPLOYMENTS_BUILD_START_TIMEOUT="${K8S_DEPLOYMENTS_BUILD_START_TIMEOUT:-60}"
+K8S_DEPLOYMENTS_BUILD_TIMEOUT="${K8S_DEPLOYMENTS_BUILD_TIMEOUT:-60}"
 
 # -----------------------------------------------------------------------------
 # Output Helpers
@@ -342,8 +345,8 @@ wait_for_k8s_deployments_ci() {
     local job_name="${DEPLOYMENTS_REPO_NAME:-k8s-deployments}"
     local job_path="job/${job_name}/job/${branch}"
 
-    local start_timeout="${JENKINS_BUILD_START_TIMEOUT:-300}"
-    local build_timeout="${K8S_DEPLOYMENTS_VALIDATION_TIMEOUT:-300}"
+    local start_timeout="${K8S_DEPLOYMENTS_BUILD_START_TIMEOUT:-60}"
+    local build_timeout="${K8S_DEPLOYMENTS_BUILD_TIMEOUT:-60}"
     local poll_interval=10
     local elapsed=0
     local build_number=""
