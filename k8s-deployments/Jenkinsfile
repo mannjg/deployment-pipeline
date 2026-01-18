@@ -270,13 +270,13 @@ Build: ${env.BUILD_URL}
 
                         // Generate manifests
                         echo "Generating manifests..."
-                        sh '''
-                            ./scripts/generate-manifests.sh || {
+                        sh """
+                            ./scripts/generate-manifests.sh ${env.BRANCH_NAME} || {
                                 echo "Manifest generation failed"
                                 exit 1
                             }
                             echo "Manifest generation completed"
-                        '''
+                        """
 
                         // Commit and push generated manifests back to branch
                         withCredentials([
