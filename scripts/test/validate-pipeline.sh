@@ -710,11 +710,18 @@ except Exception as e:
 # ArgoCD Sync
 # -----------------------------------------------------------------------------
 wait_for_argocd_sync() {
+    local baseline_rev="${1:-}"  # Optional: baseline revision passed by caller
+
     log_step "Waiting for ArgoCD sync..."
 
-    # Get the current sync revision before waiting (to detect change)
-    local prev_revision=$(kubectl get application "$ARGOCD_APP_NAME" -n "$ARGOCD_NAMESPACE" \
-        -o jsonpath='{.status.sync.revision}' 2>/dev/null)
+    # Use provided baseline or get current revision
+    local prev_revision
+    if [[ -n "$baseline_rev" ]]; then
+        prev_revision="$baseline_rev"
+    else
+        prev_revision=$(kubectl get application "$ARGOCD_APP_NAME" -n "$ARGOCD_NAMESPACE" \
+            -o jsonpath='{.status.sync.revision}' 2>/dev/null)
+    fi
 
     # Trigger ArgoCD to refresh by annotating the application
     kubectl annotate application "$ARGOCD_APP_NAME" -n "$ARGOCD_NAMESPACE" \
@@ -754,13 +761,19 @@ wait_for_argocd_sync() {
 
 wait_for_env_sync() {
     local env_name="$1"
+    local baseline_rev="${2:-}"  # Optional: baseline revision passed by caller
     local app_name="${APP_REPO_NAME}-${env_name}"
 
     log_step "Waiting for ArgoCD sync ($env_name)..."
 
-    # Get the current sync revision before waiting (to detect change)
-    local prev_revision=$(kubectl get application "$app_name" -n "$ARGOCD_NAMESPACE" \
-        -o jsonpath='{.status.sync.revision}' 2>/dev/null)
+    # Use provided baseline or get current revision
+    local prev_revision
+    if [[ -n "$baseline_rev" ]]; then
+        prev_revision="$baseline_rev"
+    else
+        prev_revision=$(kubectl get application "$app_name" -n "$ARGOCD_NAMESPACE" \
+            -o jsonpath='{.status.sync.revision}' 2>/dev/null)
+    fi
 
     # Trigger ArgoCD to refresh
     kubectl annotate application "$app_name" -n "$ARGOCD_NAMESPACE" \
@@ -901,6 +914,16 @@ get_jenkins_baseline() {
 }
 
 # -----------------------------------------------------------------------------
+# Get ArgoCD Revision Baseline
+# Helper to capture revision BEFORE triggering an action
+# -----------------------------------------------------------------------------
+get_argocd_baseline() {
+    local app_name="${1:-$ARGOCD_APP_NAME}"
+    kubectl get application "$app_name" -n "$ARGOCD_NAMESPACE" \
+        -o jsonpath='{.status.sync.revision}' 2>/dev/null || echo ""
+}
+
+# -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 main() {
@@ -911,33 +934,36 @@ main() {
     commit_and_push
     wait_for_jenkins_build
 
-    # Capture baseline BEFORE merging (to avoid race condition with webhook)
+    # Capture baselines BEFORE merging (to avoid race conditions)
     local dev_baseline=$(get_jenkins_baseline "dev")
+    local dev_argocd_baseline=$(get_argocd_baseline)
     merge_dev_mr
 
     # Wait for k8s-deployments dev branch build (this creates the promotion MR)
     wait_for_k8s_deployments_ci "dev" "$dev_baseline"
 
-    wait_for_argocd_sync
+    wait_for_argocd_sync "$dev_argocd_baseline"
     verify_deployment
 
     # Stage promotion (MR auto-created by k8s-deployments CI after dev deployment)
     wait_for_promotion_mr "stage"
 
-    # Capture baseline BEFORE merging stage MR
+    # Capture baselines BEFORE merging stage MR
     local stage_baseline=$(get_jenkins_baseline "stage")
+    local stage_argocd_baseline=$(get_argocd_baseline "${APP_REPO_NAME}-stage")
     merge_env_mr "stage"
 
     # Wait for k8s-deployments stage branch build (this creates the prod promotion MR)
     wait_for_k8s_deployments_ci "stage" "$stage_baseline"
 
-    wait_for_env_sync "stage"
+    wait_for_env_sync "stage" "$stage_argocd_baseline"
     verify_env_deployment "stage"
 
     # Prod promotion (MR auto-created by k8s-deployments CI after stage deployment)
     wait_for_promotion_mr "prod"
+    local prod_argocd_baseline=$(get_argocd_baseline "${APP_REPO_NAME}-prod")
     merge_env_mr "prod"
-    wait_for_env_sync "prod"
+    wait_for_env_sync "prod" "$prod_argocd_baseline"
     verify_env_deployment "prod"
 
     # Calculate duration
