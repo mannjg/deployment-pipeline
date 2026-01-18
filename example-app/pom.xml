@@ -6,7 +6,7 @@
 
   <groupId>com.example</groupId>
   <artifactId>example-app</artifactId>
-  <version>1.0.57-SNAPSHOT</version>
+  <version>1.0.58-SNAPSHOT</version>
 
   <properties>
     <compiler-plugin.version>3.13.0</compiler-plugin.version>
