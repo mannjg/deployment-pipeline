@@ -342,10 +342,25 @@ trigger_multibranch_scan() {
     local job_name="${DEPLOYMENTS_REPO_NAME:-k8s-deployments}"
     log_info "Triggering MultiBranch scan for $job_name..."
 
+    # Get CSRF crumb (required for Jenkins POST requests)
+    local crumb_response
+    crumb_response=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        "$JENKINS_URL/crumbIssuer/api/json" 2>/dev/null) || true
+
+    local crumb_header=""
+    if echo "$crumb_response" | jq empty 2>/dev/null; then
+        local crumb_field=$(echo "$crumb_response" | jq -r '.crumbRequestField // empty')
+        local crumb_value=$(echo "$crumb_response" | jq -r '.crumb // empty')
+        if [[ -n "$crumb_field" && -n "$crumb_value" ]]; then
+            crumb_header="-H ${crumb_field}:${crumb_value}"
+        fi
+    fi
+
     # Trigger branch indexing - this makes Jenkins discover new branches immediately
     local response
     response=$(curl -sk -w "%{http_code}" -o /dev/null -X POST \
         -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        $crumb_header \
         "$JENKINS_URL/job/${job_name}/build?delay=0sec" 2>/dev/null) || true
 
     if [[ "$response" == "201" || "$response" == "200" ]]; then
