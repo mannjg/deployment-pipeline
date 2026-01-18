@@ -1,10 +1,15 @@
 #!/bin/bash
 #
 # setup-gitlab-env-branches.sh
-# Create and populate environment branches in GitLab k8s-deployments repo
+# Initial Bootstrap: Create environment branches in GitLab k8s-deployments repo
 #
-# This script creates dev, stage, and prod branches from main,
-# transforming example-env.cue into env.cue with environment-specific values.
+# This script creates dev, stage, and prod branches from main ONLY if they
+# don't exist or have empty env.cue files. It transforms example-env.cue into
+# env.cue with environment-specific placeholder values.
+#
+# IMPORTANT: This is for INITIAL BOOTSTRAP only. Once branches have valid
+# CI/CD-managed images (from Jenkins builds), do NOT use this script.
+# Use reset-demo-state.sh instead to clean up MRs for fresh validation runs.
 #
 # Prerequisites:
 # 1. GitLab k8s-deployments repo exists with main branch
@@ -12,8 +17,10 @@
 # 3. GITLAB_TOKEN env var set, or gitlab-api-token K8s secret exists
 #
 # Usage:
-#   ./scripts/setup-gitlab-env-branches.sh          # Create branches if missing
-#   ./scripts/setup-gitlab-env-branches.sh --reset  # Recreate all branches
+#   ./scripts/03-pipelines/setup-gitlab-env-branches.sh  # Initial bootstrap only
+#
+# For demo reset (preserves valid images):
+#   ./scripts/03-pipelines/reset-demo-state.sh
 #
 
 set -euo pipefail
@@ -41,12 +48,9 @@ else
     exit 1
 fi
 
-# Parse arguments
-RESET_MODE=false
-if [[ "${1:-}" == "--reset" ]]; then
-    RESET_MODE=true
-    log_warn "Reset mode enabled - will recreate all environment branches"
-fi
+# Note: --reset flag has been removed. Use reset-demo-state.sh instead.
+# This script ONLY does initial bootstrap (creates branches if they don't exist
+# or have empty env.cue files).
 
 # =============================================================================
 # Preflight Checks - Validate all required parameters before starting
@@ -237,20 +241,15 @@ setup_env_branch() {
     fi
 
     if $branch_exists; then
-        if $RESET_MODE; then
-            log_warn "Deleting existing ${env} branch..."
-            GIT_SSL_NO_VERIFY=true git push origin --delete "$env" 2>/dev/null || true
-            branch_exists=false
-        else
-            # Check if env.cue already has content
-            GIT_SSL_NO_VERIFY=true git fetch origin "$env" 2>/dev/null || true
-            local env_cue_size=$(git cat-file -s "origin/${env}:env.cue" 2>/dev/null || echo "0")
-            if [[ "$env_cue_size" -gt 100 ]]; then
-                log_info "${env} branch already has populated env.cue (${env_cue_size} bytes), skipping"
-                return 0
-            fi
-            log_warn "${env} branch exists but env.cue is empty/small, will update"
+        # Check if env.cue already has content - if so, skip (preserve CI/CD-managed images)
+        GIT_SSL_NO_VERIFY=true git fetch origin "$env" 2>/dev/null || true
+        local env_cue_size=$(git cat-file -s "origin/${env}:env.cue" 2>/dev/null || echo "0")
+        if [[ "$env_cue_size" -gt 100 ]]; then
+            log_info "${env} branch already has populated env.cue (${env_cue_size} bytes), skipping"
+            log_info "  (Use reset-demo-state.sh to clean up MRs without destroying branches)"
+            return 0
         fi
+        log_warn "${env} branch exists but env.cue is empty/small, will populate"
     fi
 
     # Checkout parent and create/checkout env branch
@@ -323,17 +322,17 @@ setup_env_branch "stage" "main"
 setup_env_branch "prod" "main"
 
 echo ""
-echo "=== Setup Complete ==="
+echo "=== Bootstrap Complete ==="
 echo ""
-log_info "Environment branches created in GitLab:"
+log_info "Environment branches in GitLab:"
 log_info "  - dev:   ${GITLAB_URL_EXTERNAL}/${DEPLOYMENTS_REPO_PATH}/-/tree/dev"
 log_info "  - stage: ${GITLAB_URL_EXTERNAL}/${DEPLOYMENTS_REPO_PATH}/-/tree/stage"
 log_info "  - prod:  ${GITLAB_URL_EXTERNAL}/${DEPLOYMENTS_REPO_PATH}/-/tree/prod"
 echo ""
-log_info "Verify with:"
-echo "  git fetch gitlab-deployments --all"
-echo "  git show gitlab-deployments/dev:env.cue | head -20"
+log_info "Next steps:"
+echo "  1. Run pipeline validation: ./scripts/test/validate-pipeline.sh"
+echo "  2. After validation succeeds, branches will have valid CI/CD-managed images"
 echo ""
-log_info "Run the pipeline validation:"
-echo "  ./validate-pipeline.sh"
+log_warn "For future demo resets (preserves valid images):"
+echo "  ./scripts/03-pipelines/reset-demo-state.sh"
 echo ""

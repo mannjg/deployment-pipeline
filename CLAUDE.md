@@ -46,25 +46,26 @@ This script:
 3. Transforms `example-env.cue` into `env.cue` with environment-specific values
 4. Pushes all branches to GitLab
 
-**Reset Demo State:**
+**Reset Demo State (preserves valid images):**
 ```bash
-./scripts/03-pipelines/setup-gitlab-env-branches.sh --reset
+./scripts/03-pipelines/reset-demo-state.sh
 ```
+
+This script cleans up MRs and resets app version WITHOUT destroying environment branches.
+The branches retain their valid CI/CD-managed images from previous builds.
 
 **Seed Template Maintenance:**
 - `k8s-deployments/example-env.cue` is the seed template (persisted to GitHub)
-- If you fix an issue in any branch's `env.cue`, also update `example-env.cue`
-- This ensures future demo resets start with correct configuration
+- Only used during INITIAL bootstrap (when branches don't exist)
+- Once branches have valid CI/CD images, they are managed by the pipeline
 
 **Workflow Order (Critical):**
 
-The setup script reads `example-env.cue` from GitLab's main branch, not local files.
-This means changes must be synced to GitLab before running setup.
-
 | Scenario | Commands |
 |----------|----------|
-| Full reset (or after k8s-deployments changes) | `git push origin main` → `./scripts/04-operations/sync-to-gitlab.sh` → `./scripts/03-pipelines/setup-gitlab-env-branches.sh --reset` |
-| Validation only (no k8s-deployments changes) | `./scripts/test/validate-pipeline.sh` |
+| Initial bootstrap (first time) | `git push origin main` → `./scripts/04-operations/sync-to-gitlab.sh` → `./scripts/03-pipelines/setup-gitlab-env-branches.sh` |
+| Demo reset (preserves images) | `./scripts/03-pipelines/reset-demo-state.sh` → `./scripts/test/validate-pipeline.sh` |
+| Validation only | `./scripts/test/validate-pipeline.sh` |
 | After example-app changes only | `git push origin main` → `./scripts/test/validate-pipeline.sh` (script syncs example-app internally) |
 
 ## Repository Layout
