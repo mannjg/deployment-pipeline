@@ -165,8 +165,13 @@ sync_file_to_env_branches() {
 }
 
 # =============================================================================
-# Remove demo labels from manifests on env branches
+# Remove demo labels from manifests on ONLY the dev branch
 # =============================================================================
+# NOTE: We only clean dev manifests because:
+# 1. Jenkins regenerates manifests during MR processing
+# 2. Modifying stage/prod manifests creates merge conflicts when
+#    the same feature branch is promoted through environments
+# 3. Dev is the first target, so it needs to show the diff properly
 remove_demo_labels_from_manifests() {
     local label_pattern="$1"  # e.g., "cost-center"
 
@@ -178,49 +183,56 @@ remove_demo_labels_from_manifests() {
         "manifests/postgres/postgres.yaml"
     )
 
-    for branch in dev stage prod; do
-        log_info "Cleaning manifests on $branch branch..."
+    # Only clean dev branch - stage/prod will be handled by Jenkins during MR
+    local branch="dev"
+    log_info "Cleaning manifests on $branch branch..."
 
-        for manifest_path in "${manifest_files[@]}"; do
-            local encoded_file=$(echo "$manifest_path" | sed 's/\//%2F/g')
+    for manifest_path in "${manifest_files[@]}"; do
+        local encoded_file=$(echo "$manifest_path" | sed 's/\//%2F/g')
 
-            # Get current manifest
-            local file_info=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-                "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file?ref=$branch" 2>/dev/null)
+        # Get current manifest
+        local file_info=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file?ref=$branch" 2>/dev/null)
 
-            if [[ -z "$file_info" ]] || ! echo "$file_info" | jq -e '.content' > /dev/null 2>&1; then
-                continue
-            fi
+        if [[ -z "$file_info" ]] || ! echo "$file_info" | jq -e '.content' > /dev/null 2>&1; then
+            continue
+        fi
 
-            local content=$(echo "$file_info" | jq -r '.content' | base64 -d)
+        local content=$(echo "$file_info" | jq -r '.content' | base64 -d)
 
-            # Check if label exists in manifest
-            if ! echo "$content" | grep -q "$label_pattern"; then
-                continue
-            fi
+        # Check if label exists in manifest
+        if ! echo "$content" | grep -q "$label_pattern"; then
+            continue
+        fi
 
-            # Remove lines containing the label pattern
-            local cleaned_content=$(echo "$content" | grep -v "$label_pattern")
-            local cleaned_b64=$(echo "$cleaned_content" | base64 -w0)
+        # Remove lines containing the label pattern
+        local cleaned_content=$(echo "$content" | grep -v "$label_pattern")
+        local cleaned_b64=$(echo "$cleaned_content" | base64 -w0)
 
-            # Update the manifest
-            local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-                -H "Content-Type: application/json" \
-                -d "{\"branch\": \"$branch\", \"encoding\": \"base64\", \"content\": \"$cleaned_b64\", \"commit_message\": \"chore: remove $label_pattern labels for demo reset\"}" \
-                "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
+        # Update the manifest
+        local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"branch\": \"$branch\", \"encoding\": \"base64\", \"content\": \"$cleaned_b64\", \"commit_message\": \"chore: remove $label_pattern labels for demo reset\"}" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
 
-            if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
-                log_info "  $branch/$manifest_path: cleaned"
-            fi
-        done
+        if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
+            log_info "  $branch/$manifest_path: cleaned"
+        fi
     done
 }
 
 # =============================================================================
-# Reset CUE configuration on environment branches
+# Reset CUE configuration on the dev branch only
 # =============================================================================
+# NOTE: We only reset dev because:
+# 1. The demo workflow promotes changes from dev → stage → prod via MRs
+# 2. Resetting stage/prod would create merge conflicts when the feature
+#    branch (which has the changes) tries to merge to those environments
+# 3. Stage/prod will naturally get the changes when MRs are merged
 reset_cue_config() {
-    log_step "Resetting CUE configuration on environment branches..."
+    log_step "Resetting CUE configuration on dev branch..."
+
+    local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
 
     # Files that demos might modify
     local cue_files=(
@@ -228,12 +240,36 @@ reset_cue_config() {
         "services/resources/deployment.cue"
     )
 
-    for file in "${cue_files[@]}"; do
-        log_info "Syncing $file from main..."
-        sync_file_to_env_branches "$file" "chore: reset $file from main for demo"
+    for file_path in "${cue_files[@]}"; do
+        local encoded_file=$(echo "$file_path" | sed 's/\//%2F/g')
+
+        # Get file content from main branch
+        local main_content=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file?ref=main" 2>/dev/null)
+
+        if [[ -z "$main_content" ]] || ! echo "$main_content" | jq -e '.content' > /dev/null 2>&1; then
+            log_warn "Could not get $file_path from main branch"
+            continue
+        fi
+
+        local content_b64=$(echo "$main_content" | jq -r '.content')
+
+        # Only update dev branch
+        log_info "Syncing $file_path to dev..."
+        local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"branch\": \"dev\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset $file_path from main for demo\"}" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
+
+        if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
+            log_info "  dev: synced"
+        else
+            local error=$(echo "$result" | jq -r '.message // "unknown error"' 2>/dev/null)
+            log_warn "  dev: $error"
+        fi
     done
 
-    # Remove demo-specific labels from manifests
+    # Remove demo-specific labels from manifests (dev only)
     log_step "Removing demo labels from manifests..."
     remove_demo_labels_from_manifests "cost-center"
 }

@@ -56,24 +56,36 @@ assert_resource_absent() {
 # ============================================================================
 
 # Assert that a field equals an expected value
-# Usage: assert_field_equals <namespace> <kind> <name> <jsonpath> <expected>
+# Usage: assert_field_equals <namespace> <kind> <name> <jsonpath> <expected> [max_retries]
+# Will retry up to max_retries times with 2s delay between retries
 assert_field_equals() {
     local namespace="$1"
     local kind="$2"
     local name="$3"
     local jsonpath="$4"
     local expected="$5"
+    local max_retries="${6:-5}"  # Default 5 retries (10s total)
 
     local actual
-    actual=$(kubectl get "$kind" "$name" -n "$namespace" -o jsonpath="$jsonpath" 2>/dev/null)
+    local retry=0
 
-    if [[ "$actual" == "$expected" ]]; then
-        demo_verify "Field $jsonpath = '$expected'"
-        return 0
-    else
-        demo_fail "Field $jsonpath: expected '$expected', got '$actual'"
-        return 1
-    fi
+    while [[ $retry -lt $max_retries ]]; do
+        actual=$(kubectl get "$kind" "$name" -n "$namespace" -o jsonpath="$jsonpath" 2>/dev/null)
+
+        if [[ "$actual" == "$expected" ]]; then
+            demo_verify "Field $jsonpath = '$expected'"
+            return 0
+        fi
+
+        # Only retry if we haven't reached the limit
+        retry=$((retry + 1))
+        if [[ $retry -lt $max_retries ]]; then
+            sleep 2
+        fi
+    done
+
+    demo_fail "Field $jsonpath: expected '$expected', got '$actual'"
+    return 1
 }
 
 # Assert that a field contains a substring

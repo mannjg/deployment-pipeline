@@ -41,9 +41,14 @@ def getTargetEnvironment(String branchName) {
 }
 
 /**
- * Queries GitLab API to find open MRs for a feature branch and returns the target environment.
- * This enables MR-preview manifest generation: feature branches can generate manifests
+ * Queries GitLab API to find open MRs for a branch and returns the target environment.
+ * This enables MR-preview manifest generation: branches can generate manifests
  * using the target environment's env.cue when an MR exists.
+ *
+ * Supports two scenarios:
+ * 1. Feature branch → environment (feature → dev/stage/prod)
+ * 2. Environment → environment promotion (dev → stage, stage → prod)
+ *
  * @param branchName The source branch name
  * @param gitlabToken GitLab API token
  * @param gitlabUrl GitLab server URL
@@ -51,10 +56,12 @@ def getTargetEnvironment(String branchName) {
  * @return The target environment (dev, stage, or prod) if MR exists, null otherwise
  */
 def getMRTargetEnvironment(String branchName, String gitlabToken, String gitlabUrl, String projectPath) {
-    // Skip if already an environment branch
-    if (branchName in ['dev', 'stage', 'prod', 'main', 'master']) {
+    // Skip main/master - these are source of truth branches
+    if (branchName in ['main', 'master']) {
         return null
     }
+
+    def isEnvBranch = branchName in ['dev', 'stage', 'prod']
 
     try {
         // URL-encode the project path
@@ -72,7 +79,13 @@ def getMRTargetEnvironment(String branchName, String gitlabToken, String gitlabU
 
         // Only return if target is an environment branch
         if (targetBranch in ['dev', 'stage', 'prod']) {
-            echo "Found open MR targeting ${targetBranch} for branch ${branchName}"
+            // For env-to-env MRs, only process if target is DIFFERENT from source
+            if (isEnvBranch && targetBranch == branchName) {
+                echo "Skipping self-referential MR for ${branchName}"
+                return null
+            }
+            def mrType = isEnvBranch ? "env-to-env promotion" : "feature branch"
+            echo "Found open MR (${mrType}) targeting ${targetBranch} for branch ${branchName}"
             return targetBranch
         }
     } catch (Exception e) {
@@ -383,44 +396,49 @@ Build: ${env.BUILD_URL}
                         def hasEnvCue = fileExists('env.cue')
                         def mrTargetEnv = null
                         def isMRPreview = false
+                        def isEnvBranch = env.BRANCH_NAME in ['dev', 'stage', 'prod']
 
-                        if (!hasEnvCue) {
-                            echo "No env.cue found - checking for open MR to enable preview manifest generation..."
+                        // First, always check for open MRs (for both feature and environment branches)
+                        echo "Checking for open MRs..."
+                        withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+                            def projectPath = env.GITLAB_GROUP ? "${env.GITLAB_GROUP}/k8s-deployments" : "p2c/k8s-deployments"
+                            mrTargetEnv = getMRTargetEnvironment(env.BRANCH_NAME, GITLAB_TOKEN, env.GITLAB_URL, projectPath)
+                        }
 
-                            // Check if there's an open MR targeting an environment branch
-                            withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
-                                def projectPath = env.GITLAB_GROUP ? "${env.GITLAB_GROUP}/k8s-deployments" : "p2c/k8s-deployments"
-                                mrTargetEnv = getMRTargetEnvironment(env.BRANCH_NAME, GITLAB_TOKEN, env.GITLAB_URL, projectPath)
-                            }
+                        // Handle different scenarios
+                        if (mrTargetEnv) {
+                            // Found an MR - need to use target environment's env.cue
+                            echo "MR-Preview Mode: Found MR targeting ${mrTargetEnv}"
+                            isMRPreview = true
 
-                            if (mrTargetEnv) {
-                                echo "MR-Preview Mode: Fetching env.cue from ${mrTargetEnv} for manifest preview"
-                                isMRPreview = true
-
-                                withCredentials([
-                                    usernamePassword(credentialsId: 'gitlab-credentials',
-                                                    usernameVariable: 'GIT_USERNAME',
-                                                    passwordVariable: 'GIT_PASSWORD')
-                                ]) {
-                                    sh '''
-                                        git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
-                                    '''
-                                    // Merge target branch into feature branch for clean MR
-                                    if (!mergeTargetBranchForPreview(mrTargetEnv)) {
-                                        echo "Could not merge ${mrTargetEnv} into feature branch - skipping manifest generation"
-                                        env.HAS_ENV_CUE = 'false'
-                                        sh 'git config --global --unset credential.helper || true'
-                                        return
-                                    }
+                            withCredentials([
+                                usernamePassword(credentialsId: 'gitlab-credentials',
+                                                usernameVariable: 'GIT_USERNAME',
+                                                passwordVariable: 'GIT_PASSWORD')
+                            ]) {
+                                sh '''
+                                    git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
+                                '''
+                                // Merge target branch into current branch for clean MR
+                                // This brings in target's env.cue for manifest generation
+                                if (!mergeTargetBranchForPreview(mrTargetEnv)) {
+                                    echo "Could not merge ${mrTargetEnv} into current branch - skipping manifest generation"
+                                    env.HAS_ENV_CUE = 'false'
                                     sh 'git config --global --unset credential.helper || true'
+                                    return
                                 }
-                                hasEnvCue = true
-                            } else {
-                                echo "No open MR found targeting an environment branch"
-                                echo "Skipping manifest generation (this is expected for main or branches without MRs)"
-                                env.HAS_ENV_CUE = 'false'
-                                return
+                                sh 'git config --global --unset credential.helper || true'
                             }
+                            hasEnvCue = true
+                        } else if (!hasEnvCue) {
+                            // No MR and no env.cue - can't generate manifests
+                            echo "No open MR found and no env.cue present"
+                            echo "Skipping manifest generation (this is expected for main or branches without MRs)"
+                            env.HAS_ENV_CUE = 'false'
+                            return
+                        } else {
+                            // No MR but has env.cue - normal environment branch build
+                            echo "Building environment branch ${env.BRANCH_NAME} with its own env.cue"
                         }
 
                         env.HAS_ENV_CUE = 'true'

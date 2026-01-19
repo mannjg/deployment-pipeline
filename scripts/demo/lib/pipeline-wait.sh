@@ -146,6 +146,9 @@ get_commit_statuses() {
 # commit statuses directly. This handles the case where Jenkins pushes
 # new commits (manifest regeneration) which changes the MR's HEAD SHA.
 # GitLab's head_pipeline tracks the pipeline for the current HEAD automatically.
+#
+# IMPORTANT: We also verify that the pipeline was created AFTER the MR was
+# created, not reusing a stale pipeline from a previous MR to a different target.
 wait_for_mr_pipeline() {
     local mr_iid="$1"
     local timeout="${2:-$MR_PIPELINE_TIMEOUT}"
@@ -158,6 +161,12 @@ wait_for_mr_pipeline() {
 
     local poll_interval=10
     local elapsed=0
+
+    # Get MR creation timestamp for comparison
+    local mr_info_initial
+    mr_info_initial=$(get_mr "$mr_iid")
+    local mr_created_at
+    mr_created_at=$(echo "$mr_info_initial" | jq -r '.created_at // empty')
 
     while [[ $elapsed -lt $timeout ]]; do
         # Fetch MR info which includes head_pipeline status
@@ -173,6 +182,38 @@ wait_for_mr_pipeline() {
         # when Jenkins posts commit status via the API
         local pipeline_status
         pipeline_status=$(echo "$mr_info" | jq -r '.head_pipeline.status // empty')
+
+        # Get pipeline created_at to verify it's for THIS MR, not a stale one
+        local pipeline_created_at
+        pipeline_created_at=$(echo "$mr_info" | jq -r '.head_pipeline.created_at // empty')
+
+        # Check if this pipeline is stale (created before the MR)
+        local is_stale_pipeline=false
+        if [[ -n "$pipeline_created_at" && -n "$mr_created_at" ]]; then
+            # Compare timestamps - if pipeline was created before MR, it's stale
+            local pipeline_ts mr_ts
+            pipeline_ts=$(date -d "$pipeline_created_at" +%s 2>/dev/null || echo "0")
+            mr_ts=$(date -d "$mr_created_at" +%s 2>/dev/null || echo "0")
+            if [[ $pipeline_ts -lt $mr_ts ]]; then
+                is_stale_pipeline=true
+            fi
+        fi
+
+        # If pipeline is stale, trigger a fresh one
+        if [[ "$is_stale_pipeline" == "true" ]]; then
+            # Only trigger once at the start
+            if [[ $elapsed -eq 0 ]]; then
+                demo_info "Pipeline is stale (created before MR), triggering fresh build..."
+                push_empty_commit_for_mr "$mr_iid" || true
+                # Also trigger Jenkins scan to pick up the new commit
+                trigger_jenkins_scan "$job_name"
+            else
+                demo_info "Waiting for fresh pipeline... (${elapsed}s)"
+            fi
+            sleep $poll_interval
+            elapsed=$((elapsed + poll_interval))
+            continue
+        fi
 
         case "$pipeline_status" in
             success)
@@ -265,6 +306,80 @@ assert_mr_contains_diff() {
 # ============================================================================
 # JENKINS OPERATIONS
 # ============================================================================
+
+# Push an empty commit to a GitLab branch to trigger Jenkins
+# This works around the issue where Jenkins doesn't get MR context from
+# GitLab pipeline triggers, but does get it from push webhooks.
+# Usage: push_empty_commit_for_mr <mr_iid>
+push_empty_commit_for_mr() {
+    local mr_iid="$1"
+    local project="${DEPLOYMENTS_REPO_PATH:-p2c/k8s-deployments}"
+    local encoded_project=$(_encode_project "$project")
+
+    # Get the source branch and current HEAD from the MR
+    local mr_info
+    mr_info=$(get_mr "$mr_iid")
+    local source_branch
+    source_branch=$(echo "$mr_info" | jq -r '.source_branch // empty')
+    local target_branch
+    target_branch=$(echo "$mr_info" | jq -r '.target_branch // empty')
+
+    if [[ -z "$source_branch" ]]; then
+        demo_warn "Could not get source branch for MR !$mr_iid"
+        return 1
+    fi
+
+    # Use GitLab Commits API to create a commit that triggers Jenkins
+    # We'll create a commit with an action that updates a timestamp file
+    demo_action "Triggering fresh Jenkins build for MR !$mr_iid → $target_branch..."
+
+    local timestamp
+    timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local commit_message="chore: trigger pipeline for $target_branch MR [jenkins-ci]"
+
+    # Create or update .mr-trigger file with timestamp
+    # This creates a real commit which triggers the push webhook to Jenkins
+    local result
+    result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        -H "Content-Type: application/json" \
+        "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_project}/repository/commits" \
+        -d '{
+            "branch": "'"$source_branch"'",
+            "commit_message": "'"$commit_message"'",
+            "actions": [{
+                "action": "update",
+                "file_path": ".mr-trigger",
+                "content": "'"$target_branch:$timestamp"'"
+            }]
+        }' 2>/dev/null)
+
+    # If update failed (file doesn't exist), try create
+    if echo "$result" | jq -e '.error // .message' >/dev/null 2>&1; then
+        result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            -H "Content-Type: application/json" \
+            "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_project}/repository/commits" \
+            -d '{
+                "branch": "'"$source_branch"'",
+                "commit_message": "'"$commit_message"'",
+                "actions": [{
+                    "action": "create",
+                    "file_path": ".mr-trigger",
+                    "content": "'"$target_branch:$timestamp"'"
+                }]
+            }' 2>/dev/null)
+    fi
+
+    if echo "$result" | jq -e '.id' >/dev/null 2>&1; then
+        local commit_sha
+        commit_sha=$(echo "$result" | jq -r '.short_id')
+        demo_info "Created trigger commit $commit_sha"
+        sleep 3  # Give GitLab time to fire webhook
+        return 0
+    else
+        demo_warn "Could not create trigger commit: $(echo "$result" | jq -r '.message // "unknown error"')"
+        return 1
+    fi
+}
 
 # Trigger MultiBranch Pipeline scan
 trigger_jenkins_scan() {
@@ -448,6 +563,8 @@ wait_for_argocd_sync() {
         # Wait for revision to change AND status to be Synced+Healthy
         if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" && "$current_revision" != "$baseline" ]]; then
             demo_verify "$app_name synced and healthy"
+            # Give K8s a moment to fully propagate deployment changes
+            sleep 2
             return 0
         fi
 

@@ -150,6 +150,16 @@ demo_verify "Feature branch pushed"
 
 demo_step 4 "MR-Gated Promotion Through Environments"
 
+# First: Deploy to dev via feature branch
+# Then: Promote through environments using branch-to-branch MRs
+#
+# This uses proper GitOps promotion pattern:
+# - feature → dev (initial deployment with manifest generation)
+# - dev → stage (promotion with manifest regeneration for stage)
+# - stage → prod (promotion with manifest regeneration for prod)
+
+prev_branch=""
+
 for env in "${ENVIRONMENTS[@]}"; do
     demo_info "--- Promoting to $env ---"
 
@@ -157,8 +167,15 @@ for env in "${ENVIRONMENTS[@]}"; do
     jenkins_baseline=$(get_jenkins_build_number "$env")
     argocd_baseline=$(get_argocd_revision "${DEMO_APP}-${env}")
 
+    # Determine source branch: feature branch for dev, previous env for others
+    if [[ "$env" == "dev" ]]; then
+        source_branch="$FEATURE_BRANCH"
+    else
+        source_branch="$prev_branch"
+    fi
+
     # Create MR
-    mr_iid=$(create_mr "$FEATURE_BRANCH" "$env" "UC-C1: Add $DEMO_LABEL_KEY label to $env")
+    mr_iid=$(create_mr "$source_branch" "$env" "UC-C1: Add $DEMO_LABEL_KEY label to $env")
 
     # Wait for MR pipeline (generates manifests)
     demo_action "Waiting for pipeline to generate manifests..."
@@ -181,6 +198,9 @@ for env in "${ENVIRONMENTS[@]}"; do
 
     demo_verify "Promotion to $env complete"
     echo ""
+
+    # Track previous environment for promotion chain
+    prev_branch="$env"
 done
 
 # ---------------------------------------------------------------------------
@@ -209,9 +229,13 @@ cat << EOF
   What happened:
   1. Added '$DEMO_LABEL_KEY: $DEMO_LABEL_VALUE' to services/core/app.cue
   2. Pushed CUE change only (no manual manifest generation)
-  3. For each environment (dev, stage, prod):
-     - Created MR targeting environment branch
-     - Pipeline generated manifests (visible in MR diff)
+  3. Promoted through environments using GitOps pattern:
+     - Feature branch → dev (initial deployment)
+     - dev → stage (promotion)
+     - stage → prod (promotion)
+  4. For each environment:
+     - Created MR from source branch
+     - Pipeline regenerated manifests with environment-specific config
      - Merged MR after pipeline passed
      - ArgoCD synced the change
      - Verified label appears in K8s deployment
