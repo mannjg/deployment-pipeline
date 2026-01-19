@@ -481,8 +481,12 @@ Build: ${env.BUILD_URL}
                             '''
 
                             sh """
-                                # Check if manifests changed
-                                if git diff --quiet manifests/; then
+                                # Stage all manifests first (handles both modified and untracked files)
+                                git add manifests/ 2>/dev/null || true
+
+                                # Check if there are staged changes to manifests
+                                if git diff --cached --quiet manifests/ 2>/dev/null && \
+                                   [ -z "\$(git status --porcelain manifests/ 2>/dev/null)" ]; then
                                     echo "No manifest changes to commit"
                                 else
                                     echo "Committing generated manifests..."
