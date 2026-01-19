@@ -110,9 +110,9 @@ if ! grep -q "\"$DEMO_LABEL_KEY\": \"$DEMO_LABEL_VALUE\"" services/core/app.cue;
     exit 1
 fi
 
-# Verify CUE is valid
+# Verify CUE is valid (use -c=false since main branch env.cue is incomplete by design)
 demo_action "Validating CUE configuration..."
-if cue vet ./...; then
+if cue vet -c=false ./...; then
     demo_verify "CUE validation passed"
 else
     demo_fail "CUE validation failed"

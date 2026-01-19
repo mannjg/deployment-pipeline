@@ -8,10 +8,6 @@
 //
 package envs
 
-import (
-	"deployments.local/k8s-deployments/services/apps"
-)
-
 // Environment configurations are defined per-branch:
 // - dev branch: dev: exampleApp: apps.exampleApp & { ... }
 // - stage branch: stage: exampleApp: apps.exampleApp & { ... }
