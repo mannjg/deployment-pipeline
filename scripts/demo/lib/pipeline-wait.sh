@@ -139,10 +139,13 @@ get_commit_statuses() {
 # Returns: 0 if passed, 1 if failed
 #
 # This project uses Jenkins for CI (not GitLab CI).
-# Jenkins reports build status via GitLab commit status API.
+# Jenkins reports build status via GitLab commit status API, which GitLab
+# surfaces through the MR's head_pipeline field.
 #
-# NOTE: Jenkins may commit generated manifests and push, updating the MR's
-# HEAD commit. We re-fetch the MR SHA on each poll to handle this.
+# NOTE: We use head_pipeline.status from the MR API rather than querying
+# commit statuses directly. This handles the case where Jenkins pushes
+# new commits (manifest regeneration) which changes the MR's HEAD SHA.
+# GitLab's head_pipeline tracks the pipeline for the current HEAD automatically.
 wait_for_mr_pipeline() {
     local mr_iid="$1"
     local timeout="${2:-$MR_PIPELINE_TIMEOUT}"
@@ -157,25 +160,21 @@ wait_for_mr_pipeline() {
     local elapsed=0
 
     while [[ $elapsed -lt $timeout ]]; do
-        # Re-fetch MR SHA on each iteration (Jenkins may push new commits)
+        # Fetch MR info which includes head_pipeline status
         local mr_info
         mr_info=$(get_mr "$mr_iid")
-        local source_sha
-        source_sha=$(echo "$mr_info" | jq -r '.sha // empty')
 
-        if [[ -z "$source_sha" ]]; then
-            demo_fail "Could not get MR source SHA"
+        if [[ -z "$mr_info" ]]; then
+            demo_fail "Could not fetch MR info"
             return 1
         fi
 
-        local statuses
-        statuses=$(get_commit_statuses "$source_sha")
+        # Use head_pipeline.status from the MR - GitLab tracks this automatically
+        # when Jenkins posts commit status via the API
+        local pipeline_status
+        pipeline_status=$(echo "$mr_info" | jq -r '.head_pipeline.status // empty')
 
-        # Look for jenkins status (matches "jenkins/*" or "continuous-integration/jenkins/*")
-        local jenkins_status
-        jenkins_status=$(echo "$statuses" | jq -r '[.[] | select(.name | test("jenkins"; "i"))] | sort_by(.created_at) | last | .status // empty')
-
-        case "$jenkins_status" in
+        case "$pipeline_status" in
             success)
                 demo_verify "Jenkins CI passed"
                 return 0
@@ -184,11 +183,11 @@ wait_for_mr_pipeline() {
                 demo_fail "Jenkins CI failed"
                 return 1
                 ;;
-            pending|running)
-                demo_info "Jenkins: $jenkins_status (${elapsed}s)"
+            running|pending|created)
+                demo_info "Pipeline: $pipeline_status (${elapsed}s)"
                 ;;
             *)
-                demo_info "Waiting for Jenkins... (${elapsed}s)"
+                demo_info "Waiting for pipeline... (${elapsed}s)"
                 ;;
         esac
 

@@ -627,15 +627,13 @@ Build: ${env.BUILD_URL}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
-                // Update GitLab commit status using ORIGINAL_COMMIT_SHA (before any merges)
+                // Update GitLab commit status using current HEAD (final state after any commits)
+                // This ensures the MR's head_pipeline is populated with the status for
+                // the current HEAD, even when Jenkins pushes manifest regeneration commits.
                 container('pipeline') {
                     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
-                            COMMIT_SHA="${env.ORIGINAL_COMMIT_SHA ?: ''}"
-                            if [ -z "\$COMMIT_SHA" ]; then
-                                COMMIT_SHA=\$(git rev-parse HEAD)
-                                echo "Warning: ORIGINAL_COMMIT_SHA not set, using current HEAD"
-                            fi
+                            COMMIT_SHA=\$(git rev-parse HEAD)
                             echo "Reporting success status for commit: \$COMMIT_SHA"
                             curl -s -X POST \
                                 -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
@@ -661,15 +659,11 @@ Check logs above for error details.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
-                // Update GitLab commit status using ORIGINAL_COMMIT_SHA (before any merges)
+                // Update GitLab commit status using current HEAD
                 container('pipeline') {
                     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
-                            COMMIT_SHA="${env.ORIGINAL_COMMIT_SHA ?: ''}"
-                            if [ -z "\$COMMIT_SHA" ]; then
-                                COMMIT_SHA=\$(git rev-parse HEAD)
-                                echo "Warning: ORIGINAL_COMMIT_SHA not set, using current HEAD"
-                            fi
+                            COMMIT_SHA=\$(git rev-parse HEAD)
                             echo "Reporting failure status for commit: \$COMMIT_SHA"
                             curl -s -X POST \
                                 -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
