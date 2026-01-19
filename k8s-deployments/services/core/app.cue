@@ -69,7 +69,6 @@ import (
 	defaultLabels: {
 		app:        appName
 		deployment: appName
-		"cost-center": "platform-shared"
 	}
 
 	// ===== Configuration Schema =====
