@@ -74,13 +74,18 @@ _projectedSecretsVolumeBuilder: {
 	// Optional: app-level envFrom sources (provided by app.cue)
 	appEnvFrom: [...k8s.#EnvFromSource] | *[]
 
-	// Default labels (can be extended via appConfig.labels)
-	_defaultLabels: {
+	// Selector labels - only immutable identifying labels
+	// These MUST NOT change after deployment creation (K8s selector is immutable)
+	_selectorLabels: {
 		app:        appName
 		deployment: appName
 	}
 
+	// Default labels (can be extended via appConfig.labels)
+	_defaultLabels: _selectorLabels
+
 	// Computed labels - merge defaults with config
+	// Used for metadata and pod template labels (can include additional labels)
 	_labels: _defaultLabels & appConfig.labels
 
 	// Computed env - concatenate: app-level defaults + environment-specific
@@ -244,7 +249,7 @@ _projectedSecretsVolumeBuilder: {
 		spec: {
 			replicas: appConfig.deployment.replicas
 
-			selector: matchLabels: _labels
+			selector: matchLabels: _selectorLabels
 
 			// Deployment strategy with defaults
 			if appConfig.deployment.strategy != _|_ {
