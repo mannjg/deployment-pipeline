@@ -320,7 +320,7 @@ While preserving:
 | UC-B4 | App ConfigMap with env override | ✅ | ✅ | 🔲 | — | Demo exists, needs pipeline verification |
 | UC-B5 | App probe with env override | 🔲 | 🔲 | 🔲 | — | |
 | UC-B6 | App env var with env override | 🔲 | 🔲 | 🔲 | — | |
-| UC-C1 | Add default label | 🔲 | 🔲 | 🔲 | — | **Start here** |
+| UC-C1 | Add default label | ✅ | ✅ | 🔲 | `uc-c1-default-label` | Ready for pipeline verification |
 | UC-C2 | Add security context | ⚠️ | 🔲 | 🔲 | — | Schema exists, disabled by default |
 | UC-C3 | Change deployment strategy | 🔲 | 🔲 | 🔲 | — | |
 | UC-C4 | Add standard pod annotation | 🔲 | 🔲 | 🔲 | — | |
