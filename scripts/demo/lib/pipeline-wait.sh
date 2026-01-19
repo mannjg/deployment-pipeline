@@ -140,23 +140,15 @@ get_commit_statuses() {
 #
 # This project uses Jenkins for CI (not GitLab CI).
 # Jenkins reports build status via GitLab commit status API.
+#
+# NOTE: Jenkins may commit generated manifests and push, updating the MR's
+# HEAD commit. We re-fetch the MR SHA on each poll to handle this.
 wait_for_mr_pipeline() {
     local mr_iid="$1"
     local timeout="${2:-$MR_PIPELINE_TIMEOUT}"
     local job_name="${DEPLOYMENTS_REPO_NAME:-k8s-deployments}"
 
     demo_action "Waiting for Jenkins CI on MR !$mr_iid (timeout ${timeout}s)..."
-
-    # Get MR SHA
-    local mr_info
-    mr_info=$(get_mr "$mr_iid")
-    local source_sha
-    source_sha=$(echo "$mr_info" | jq -r '.sha // empty')
-
-    if [[ -z "$source_sha" ]]; then
-        demo_fail "Could not get MR source SHA"
-        return 1
-    fi
 
     # Trigger Jenkins scan to discover the branch
     trigger_jenkins_scan "$job_name"
@@ -165,6 +157,17 @@ wait_for_mr_pipeline() {
     local elapsed=0
 
     while [[ $elapsed -lt $timeout ]]; do
+        # Re-fetch MR SHA on each iteration (Jenkins may push new commits)
+        local mr_info
+        mr_info=$(get_mr "$mr_iid")
+        local source_sha
+        source_sha=$(echo "$mr_info" | jq -r '.sha // empty')
+
+        if [[ -z "$source_sha" ]]; then
+            demo_fail "Could not get MR source SHA"
+            return 1
+        fi
+
         local statuses
         statuses=$(get_commit_statuses "$source_sha")
 

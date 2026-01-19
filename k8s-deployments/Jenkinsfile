@@ -83,24 +83,41 @@ def getMRTargetEnvironment(String branchName, String gitlabToken, String gitlabU
 }
 
 /**
- * Fetches env.cue from a target environment branch for MR-preview manifest generation.
+ * Merges the target environment branch into the current feature branch for MR-preview.
+ * This ensures the feature branch has the latest env.cue and manifests from the target,
+ * so that the generated manifests will merge cleanly when the MR is accepted.
  * @param targetEnv The target environment branch (dev, stage, or prod)
- * @return true if env.cue was successfully fetched, false otherwise
+ * @return true if merge was successful, false otherwise
  */
-def fetchEnvCueFromTarget(String targetEnv) {
+def mergeTargetBranchForPreview(String targetEnv) {
     try {
         sh """
-            echo "Fetching env.cue from ${targetEnv} branch for MR-preview..."
+            echo "Merging ${targetEnv} into feature branch for clean MR-preview..."
             git fetch origin ${targetEnv}
-            git show origin/${targetEnv}:env.cue > env.cue || {
-                echo "ERROR: Could not fetch env.cue from ${targetEnv}"
+
+            # Configure git for merge
+            git config user.name "Jenkins CI"
+            git config user.email "jenkins@local"
+
+            # Merge target branch into feature branch
+            # Use --no-edit to accept default merge message
+            # Use -X theirs for manifest conflicts (we'll regenerate anyway)
+            git merge origin/${targetEnv} --no-edit -X theirs || {
+                echo "ERROR: Could not merge ${targetEnv} into feature branch"
                 exit 1
             }
-            echo "Successfully fetched env.cue from ${targetEnv}"
+
+            echo "Successfully merged ${targetEnv} into feature branch"
+
+            # Verify env.cue exists
+            if [ ! -f "env.cue" ]; then
+                echo "ERROR: env.cue not found after merge"
+                exit 1
+            fi
         """
         return true
     } catch (Exception e) {
-        echo "Warning: Could not fetch env.cue from ${targetEnv}: ${e.message}"
+        echo "Warning: Could not merge ${targetEnv}: ${e.message}"
         return false
     }
 }
@@ -360,8 +377,9 @@ Build: ${env.BUILD_URL}
                                     sh '''
                                         git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
                                     '''
-                                    if (!fetchEnvCueFromTarget(mrTargetEnv)) {
-                                        echo "Could not fetch env.cue from ${mrTargetEnv} - skipping manifest generation"
+                                    // Merge target branch into feature branch for clean MR
+                                    if (!mergeTargetBranchForPreview(mrTargetEnv)) {
+                                        echo "Could not merge ${mrTargetEnv} into feature branch - skipping manifest generation"
                                         env.HAS_ENV_CUE = 'false'
                                         sh 'git config --global --unset credential.helper || true'
                                         return
