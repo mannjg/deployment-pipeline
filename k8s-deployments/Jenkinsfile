@@ -111,20 +111,17 @@ def mergeTargetBranchForPreview(String targetEnv) {
                 git add env.cue
             fi
 
-            # Resolve any remaining conflicts in manifests by taking target's version
-            # (we'll regenerate them anyway)
-            git diff --name-only --diff-filter=U | while read file; do
-                if [[ "\$file" == manifests/* ]]; then
-                    echo "Resolving manifest conflict: \$file (taking target version)"
-                    git show origin/${targetEnv}:\$file > \$file 2>/dev/null || git rm -f \$file
-                    git add \$file
-                fi
-            done
+            # Resolve manifest conflicts by deleting manifests/ (we regenerate anyway)
+            if [ -d "manifests" ]; then
+                git rm -rf manifests/ 2>/dev/null || rm -rf manifests/
+                git add -A manifests/ 2>/dev/null || true
+            fi
 
             # Check for any remaining unresolved conflicts
-            if git diff --name-only --diff-filter=U | grep -v "^$" > /dev/null 2>&1; then
+            CONFLICTS=\$(git diff --name-only --diff-filter=U 2>/dev/null || true)
+            if [ -n "\$CONFLICTS" ]; then
                 echo "ERROR: Unresolved merge conflicts:"
-                git diff --name-only --diff-filter=U
+                echo "\$CONFLICTS"
                 exit 1
             fi
 
