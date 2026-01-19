@@ -41,23 +41,23 @@ demo_step() {
 }
 
 demo_action() {
-    echo -e "  ${GREEN}→${NC} $*"
+    echo -e "  ${GREEN}→${NC} $*" >&2
 }
 
 demo_info() {
-    echo -e "  ${BLUE}ℹ${NC} $*"
+    echo -e "  ${BLUE}ℹ${NC} $*" >&2
 }
 
 demo_verify() {
-    echo -e "  ${GREEN}✓${NC} $*"
+    echo -e "  ${GREEN}✓${NC} $*" >&2
 }
 
 demo_fail() {
-    echo -e "  ${RED}✗${NC} $*"
+    echo -e "  ${RED}✗${NC} $*" >&2
 }
 
 demo_warn() {
-    echo -e "  ${YELLOW}⚠${NC} $*"
+    echo -e "  ${YELLOW}⚠${NC} $*" >&2
 }
 
 demo_wait() {
