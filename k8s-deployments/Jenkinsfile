@@ -369,6 +369,11 @@ Build: ${env.BUILD_URL}
 =======================================================
 """
 
+                        // Capture original commit SHA before any merges
+                        // This is the SHA we need to report status to GitLab
+                        env.ORIGINAL_COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                        echo "Original commit SHA: ${env.ORIGINAL_COMMIT_SHA}"
+
                         // Validate required environment variables
                         if (!env.GITLAB_URL) {
                             error "GITLAB_URL_INTERNAL not set. Configure pipeline-config ConfigMap."
@@ -618,15 +623,21 @@ Build: ${env.BUILD_URL}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
-                // Update GitLab commit status (target_url omitted - it's optional)
+                // Update GitLab commit status using ORIGINAL_COMMIT_SHA (before any merges)
                 container('pipeline') {
                     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
+                            COMMIT_SHA="${env.ORIGINAL_COMMIT_SHA ?: ''}"
+                            if [ -z "\$COMMIT_SHA" ]; then
+                                COMMIT_SHA=\$(git rev-parse HEAD)
+                                echo "Warning: ORIGINAL_COMMIT_SHA not set, using current HEAD"
+                            fi
+                            echo "Reporting success status for commit: \$COMMIT_SHA"
                             curl -s -X POST \
                                 -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
                                 -H "Content-Type: application/json" \
                                 -d '{"state": "success", "description": "Pipeline passed", "context": "jenkins/k8s-deployments"}' \
-                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/statuses/\$(git rev-parse HEAD)" \
+                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/statuses/\$COMMIT_SHA" \
                                 || echo "Could not update commit status"
                         """
                     }
@@ -646,15 +657,21 @@ Check logs above for error details.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
-                // Update GitLab commit status (target_url omitted - it's optional)
+                // Update GitLab commit status using ORIGINAL_COMMIT_SHA (before any merges)
                 container('pipeline') {
                     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
+                            COMMIT_SHA="${env.ORIGINAL_COMMIT_SHA ?: ''}"
+                            if [ -z "\$COMMIT_SHA" ]; then
+                                COMMIT_SHA=\$(git rev-parse HEAD)
+                                echo "Warning: ORIGINAL_COMMIT_SHA not set, using current HEAD"
+                            fi
+                            echo "Reporting failure status for commit: \$COMMIT_SHA"
                             curl -s -X POST \
                                 -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
                                 -H "Content-Type: application/json" \
                                 -d '{"state": "failed", "description": "Pipeline failed", "context": "jenkins/k8s-deployments"}' \
-                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/statuses/\$(git rev-parse HEAD)" \
+                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/statuses/\$COMMIT_SHA" \
                                 || echo "Could not update commit status"
                         """
                     }
