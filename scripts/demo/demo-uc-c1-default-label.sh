@@ -104,6 +104,12 @@ else
     demo_verify "Updated label in services/core/app.cue"
 fi
 
+# Verify the label was actually added/updated
+if ! grep -q "\"$DEMO_LABEL_KEY\": \"$DEMO_LABEL_VALUE\"" services/core/app.cue; then
+    demo_fail "Failed to add/update $DEMO_LABEL_KEY in app.cue"
+    exit 1
+fi
+
 # Verify CUE is valid
 demo_action "Validating CUE configuration..."
 if cue vet ./...; then
