@@ -100,12 +100,38 @@ def mergeTargetBranchForPreview(String targetEnv) {
             git config user.email "jenkins@local"
 
             # Merge target branch into feature branch
-            # Use --no-edit to accept default merge message
-            # Use -X theirs for manifest conflicts (we'll regenerate anyway)
-            git merge origin/${targetEnv} --no-edit -X theirs || {
-                echo "ERROR: Could not merge ${targetEnv} into feature branch"
+            # Use --no-commit so we can resolve conflicts before committing
+            git merge origin/${targetEnv} --no-commit --no-edit || true
+
+            # Handle add/delete conflicts for env.cue
+            # If env.cue exists on target but not on feature, take target's version
+            if git diff --name-only --diff-filter=U | grep -q "^env.cue\$"; then
+                echo "Resolving env.cue conflict (taking version from ${targetEnv})"
+                git show origin/${targetEnv}:env.cue > env.cue
+                git add env.cue
+            fi
+
+            # Resolve any remaining conflicts in manifests by taking target's version
+            # (we'll regenerate them anyway)
+            git diff --name-only --diff-filter=U | while read file; do
+                if [[ "\$file" == manifests/* ]]; then
+                    echo "Resolving manifest conflict: \$file (taking target version)"
+                    git show origin/${targetEnv}:\$file > \$file 2>/dev/null || git rm -f \$file
+                    git add \$file
+                fi
+            done
+
+            # Check for any remaining unresolved conflicts
+            if git diff --name-only --diff-filter=U | grep -v "^$" > /dev/null 2>&1; then
+                echo "ERROR: Unresolved merge conflicts:"
+                git diff --name-only --diff-filter=U
                 exit 1
-            }
+            fi
+
+            # Commit the merge if there were changes
+            if ! git diff --staged --quiet; then
+                git commit --no-edit -m "Merge ${targetEnv} into feature branch for MR-preview"
+            fi
 
             echo "Successfully merged ${targetEnv} into feature branch"
 
