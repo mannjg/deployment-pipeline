@@ -123,7 +123,18 @@ get_mr() {
         "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_project}/merge_requests/$mr_iid" 2>/dev/null
 }
 
-# Wait for MR pipeline to complete
+# Get commit statuses from GitLab
+# Usage: get_commit_statuses <commit_sha>
+get_commit_statuses() {
+    local commit_sha="$1"
+    local project="${DEPLOYMENTS_REPO_PATH:-p2c/k8s-deployments}"
+    local encoded_project=$(_encode_project "$project")
+
+    curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_project}/repository/commits/${commit_sha}/statuses" 2>/dev/null
+}
+
+# Wait for MR CI to complete (supports both GitLab CI and Jenkins via commit status)
 # Usage: wait_for_mr_pipeline <mr_iid> [timeout]
 # Returns: 0 if passed, 1 if failed
 wait_for_mr_pipeline() {
@@ -132,38 +143,89 @@ wait_for_mr_pipeline() {
 
     local project="${DEPLOYMENTS_REPO_PATH:-p2c/k8s-deployments}"
     local encoded_project=$(_encode_project "$project")
+    local job_name="${DEPLOYMENTS_REPO_NAME:-k8s-deployments}"
 
-    demo_action "Waiting for MR !$mr_iid pipeline (timeout ${timeout}s)..."
+    demo_action "Waiting for MR !$mr_iid CI (timeout ${timeout}s)..."
 
     local poll_interval=10
     local elapsed=0
+    local jenkins_scan_triggered=false
 
     while [[ $elapsed -lt $timeout ]]; do
         local mr_info
         mr_info=$(get_mr "$mr_iid")
 
-        local pipeline_status
-        pipeline_status=$(echo "$mr_info" | jq -r '.head_pipeline.status // "pending"')
+        # Check if GitLab CI is configured (head_pipeline exists and is not null)
+        local pipeline_id
+        pipeline_id=$(echo "$mr_info" | jq -r '.head_pipeline.id // empty')
 
-        case "$pipeline_status" in
-            success)
-                demo_verify "MR pipeline passed"
-                return 0
-                ;;
-            failed|canceled)
-                demo_fail "MR pipeline $pipeline_status"
+        if [[ -n "$pipeline_id" ]]; then
+            # GitLab CI mode: wait for pipeline status
+            local pipeline_status
+            pipeline_status=$(echo "$mr_info" | jq -r '.head_pipeline.status // "pending"')
+
+            case "$pipeline_status" in
+                success)
+                    demo_verify "MR pipeline passed"
+                    return 0
+                    ;;
+                failed|canceled)
+                    demo_fail "MR pipeline $pipeline_status"
+                    return 1
+                    ;;
+                *)
+                    demo_info "GitLab CI status: $pipeline_status (${elapsed}s elapsed)"
+                    ;;
+            esac
+        else
+            # Jenkins mode: wait for commit status from Jenkins
+            # Get the source branch SHA
+            local source_sha
+            source_sha=$(echo "$mr_info" | jq -r '.sha // empty')
+
+            if [[ -z "$source_sha" ]]; then
+                demo_fail "Could not get MR source SHA"
                 return 1
-                ;;
-            *)
-                demo_info "Pipeline status: $pipeline_status (${elapsed}s elapsed)"
-                ;;
-        esac
+            fi
+
+            # Trigger Jenkins scan once if not done
+            if [[ "$jenkins_scan_triggered" == "false" ]]; then
+                demo_info "No GitLab CI configured - using Jenkins CI via commit status"
+                trigger_jenkins_scan "$job_name"
+                jenkins_scan_triggered=true
+            fi
+
+            # Check commit status from Jenkins
+            local statuses
+            statuses=$(get_commit_statuses "$source_sha")
+
+            # Look for jenkins status (context: "jenkins/k8s-deployments")
+            local jenkins_status
+            jenkins_status=$(echo "$statuses" | jq -r '[.[] | select(.name == "jenkins/k8s-deployments")] | sort_by(.created_at) | last | .status // empty')
+
+            case "$jenkins_status" in
+                success)
+                    demo_verify "Jenkins CI passed (via commit status)"
+                    return 0
+                    ;;
+                failed)
+                    demo_fail "Jenkins CI failed (via commit status)"
+                    return 1
+                    ;;
+                pending|running)
+                    demo_info "Jenkins CI status: $jenkins_status (${elapsed}s elapsed)"
+                    ;;
+                *)
+                    demo_info "Waiting for Jenkins CI to report... (${elapsed}s elapsed)"
+                    ;;
+            esac
+        fi
 
         sleep $poll_interval
         elapsed=$((elapsed + poll_interval))
     done
 
-    demo_fail "Timeout waiting for MR pipeline (${timeout}s)"
+    demo_fail "Timeout waiting for MR CI (${timeout}s)"
     return 1
 }
 
