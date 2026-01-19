@@ -582,19 +582,14 @@ Build: ${env.BUILD_URL}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
-                // Update GitLab commit status
+                // Update GitLab commit status (target_url omitted - it's optional)
                 container('pipeline') {
                     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
                             curl -s -X POST \
                                 -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
                                 -H "Content-Type: application/json" \
-                                -d '{
-                                    "state": "success",
-                                    "description": "Pipeline passed",
-                                    "context": "jenkins/k8s-deployments",
-                                    "target_url": "${env.BUILD_URL}"
-                                }' \
+                                -d '{"state": "success", "description": "Pipeline passed", "context": "jenkins/k8s-deployments"}' \
                                 "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/statuses/\$(git rev-parse HEAD)" \
                                 || echo "Could not update commit status"
                         """
@@ -610,25 +605,19 @@ Build: ${env.BUILD_URL}
 PIPELINE FAILED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Branch: ${env.BRANCH_NAME}
-Build: ${env.BUILD_URL}
 
 Check logs above for error details.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
-                // Update GitLab commit status
+                // Update GitLab commit status (target_url omitted - it's optional)
                 container('pipeline') {
                     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
                             curl -s -X POST \
                                 -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
                                 -H "Content-Type: application/json" \
-                                -d '{
-                                    "state": "failed",
-                                    "description": "Pipeline failed",
-                                    "context": "jenkins/k8s-deployments",
-                                    "target_url": "${env.BUILD_URL}"
-                                }' \
+                                -d '{"state": "failed", "description": "Pipeline failed", "context": "jenkins/k8s-deployments"}' \
                                 "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/statuses/\$(git rev-parse HEAD)" \
                                 || echo "Could not update commit status"
                         """
