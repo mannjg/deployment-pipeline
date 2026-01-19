@@ -2,9 +2,7 @@
 #
 # Reset Demo State
 #
-# Cleans up GitLab MRs and resets app version for fresh validation runs.
-# Does NOT touch k8s-deployments environment branches - those have valid
-# CI/CD-managed images that should be preserved.
+# Cleans up GitLab MRs and resets state for fresh demo/validation runs.
 #
 # Usage:
 #   ./scripts/03-pipelines/reset-demo-state.sh
@@ -12,11 +10,14 @@
 # What it does:
 #   1. Closes open promotion MRs (promote-stage-*, promote-prod-*)
 #   2. Closes open update-dev MRs (update-dev-*)
-#   3. Resets example-app/pom.xml version to 1.0.0-SNAPSHOT
+#   3. Closes UC-C1 demo MRs and branches (uc-c1-*)
+#   4. Resets CUE configuration files on env branches to match main
+#   5. Removes demo-specific labels (cost-center) from manifests
+#   6. Resets example-app/pom.xml version to 1.0.0-SNAPSHOT
 #
-# What it does NOT do:
-#   - Delete or modify k8s-deployments environment branches
-#   - Touch env.cue files (they have valid CI/CD-managed images)
+# What it preserves:
+#   - env.cue files (they have valid CI/CD-managed images)
+#   - Environment-specific configuration (namespaces, replicas, etc.)
 #
 
 set -euo pipefail
@@ -122,6 +123,122 @@ close_mrs_matching() {
 }
 
 # =============================================================================
+# Sync file from main to environment branches
+# =============================================================================
+sync_file_to_env_branches() {
+    local file_path="$1"
+    local commit_message="${2:-chore: sync $file_path from main}"
+
+    local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
+    local encoded_file=$(echo "$file_path" | sed 's/\//%2F/g')
+
+    # Get file content from main branch
+    local main_content=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file?ref=main" 2>/dev/null)
+
+    if [[ -z "$main_content" ]] || ! echo "$main_content" | jq -e '.content' > /dev/null 2>&1; then
+        log_warn "Could not get $file_path from main branch"
+        return 1
+    fi
+
+    local content_b64=$(echo "$main_content" | jq -r '.content')
+
+    # Update on each environment branch
+    for branch in dev stage prod; do
+        local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"branch\": \"$branch\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"$commit_message\"}" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
+
+        if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
+            log_info "  $branch: synced"
+        else
+            local error=$(echo "$result" | jq -r '.message // "unknown error"' 2>/dev/null)
+            # "A file with this name doesn't exist" means branch doesn't have this file yet
+            if [[ "$error" == *"doesn't exist"* ]]; then
+                log_info "  $branch: file doesn't exist (skipping)"
+            else
+                log_warn "  $branch: $error"
+            fi
+        fi
+    done
+}
+
+# =============================================================================
+# Remove demo labels from manifests on env branches
+# =============================================================================
+remove_demo_labels_from_manifests() {
+    local label_pattern="$1"  # e.g., "cost-center"
+
+    local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
+
+    # Manifest files to clean
+    local manifest_files=(
+        "manifests/exampleApp/exampleApp.yaml"
+        "manifests/postgres/postgres.yaml"
+    )
+
+    for branch in dev stage prod; do
+        log_info "Cleaning manifests on $branch branch..."
+
+        for manifest_path in "${manifest_files[@]}"; do
+            local encoded_file=$(echo "$manifest_path" | sed 's/\//%2F/g')
+
+            # Get current manifest
+            local file_info=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+                "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file?ref=$branch" 2>/dev/null)
+
+            if [[ -z "$file_info" ]] || ! echo "$file_info" | jq -e '.content' > /dev/null 2>&1; then
+                continue
+            fi
+
+            local content=$(echo "$file_info" | jq -r '.content' | base64 -d)
+
+            # Check if label exists in manifest
+            if ! echo "$content" | grep -q "$label_pattern"; then
+                continue
+            fi
+
+            # Remove lines containing the label pattern
+            local cleaned_content=$(echo "$content" | grep -v "$label_pattern")
+            local cleaned_b64=$(echo "$cleaned_content" | base64 -w0)
+
+            # Update the manifest
+            local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{\"branch\": \"$branch\", \"encoding\": \"base64\", \"content\": \"$cleaned_b64\", \"commit_message\": \"chore: remove $label_pattern labels for demo reset\"}" \
+                "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
+
+            if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
+                log_info "  $branch/$manifest_path: cleaned"
+            fi
+        done
+    done
+}
+
+# =============================================================================
+# Reset CUE configuration on environment branches
+# =============================================================================
+reset_cue_config() {
+    log_step "Resetting CUE configuration on environment branches..."
+
+    # Files that demos might modify
+    local cue_files=(
+        "services/core/app.cue"
+        "services/resources/deployment.cue"
+    )
+
+    for file in "${cue_files[@]}"; do
+        log_info "Syncing $file from main..."
+        sync_file_to_env_branches "$file" "chore: reset $file from main for demo"
+    done
+
+    # Remove demo-specific labels from manifests
+    log_step "Removing demo labels from manifests..."
+    remove_demo_labels_from_manifests "cost-center"
+}
+
+# =============================================================================
 # Reset App Version
 # =============================================================================
 reset_app_version() {
@@ -165,8 +282,8 @@ reset_app_version() {
 main() {
     echo "=== Reset Demo State ==="
     echo ""
-    echo "This script cleans up for fresh validation runs WITHOUT destroying"
-    echo "the k8s-deployments environment branches (which have valid images)."
+    echo "This script cleans up for fresh demo/validation runs."
+    echo "It resets CUE config on env branches but preserves CI/CD-managed images."
     echo ""
 
     get_credentials
@@ -180,6 +297,15 @@ main() {
     log_step "Closing update-dev MRs in k8s-deployments..."
     close_mrs_matching "$DEPLOYMENTS_REPO_PATH" "^update-dev-" "dev"
 
+    # Close UC-C1 demo MRs and branches
+    log_step "Closing UC-C1 demo MRs in k8s-deployments..."
+    close_mrs_matching "$DEPLOYMENTS_REPO_PATH" "^uc-c1-" "dev"
+    close_mrs_matching "$DEPLOYMENTS_REPO_PATH" "^uc-c1-" "stage"
+    close_mrs_matching "$DEPLOYMENTS_REPO_PATH" "^uc-c1-" "prod"
+
+    # Reset CUE configuration on environment branches
+    reset_cue_config
+
     # Reset app version
     reset_app_version "1.0.0-SNAPSHOT"
 
@@ -187,12 +313,11 @@ main() {
     echo "=== Reset Complete ==="
     echo ""
     log_info "Next steps:"
-    log_info "  1. Commit the version change: git add -A && git commit -m 'chore: reset demo state'"
+    log_info "  1. Commit any local changes: git add -A && git commit -m 'chore: reset demo state'"
     log_info "  2. Push to GitHub: git push origin main"
-    log_info "  3. Run validation: ./scripts/test/validate-pipeline.sh"
+    log_info "  3. Run demo: ./scripts/demo/demo-uc-c1-default-label.sh"
     echo ""
-    log_warn "Note: Environment branches (dev/stage/prod) were NOT modified."
-    log_warn "They retain their valid CI/CD-managed images."
+    log_info "Note: env.cue files (with CI/CD-managed images) were preserved."
 }
 
 main "$@"
