@@ -137,7 +137,11 @@ git add services/core/app.cue
 git commit -m "feat: add $DEMO_LABEL_KEY label to all deployments (UC-C1)"
 
 demo_action "Pushing feature branch to GitLab..."
-git push origin "$FEATURE_BRANCH"
+# Use subtree push to push only k8s-deployments to GitLab
+# Note: Must be run from repo root, not k8s-deployments directory
+cd "$PROJECT_ROOT"
+git subtree push --prefix=k8s-deployments gitlab-deployments "$FEATURE_BRANCH"
+cd "$K8S_DEPLOYMENTS_DIR"
 demo_verify "Feature branch pushed"
 
 # ---------------------------------------------------------------------------
