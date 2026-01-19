@@ -60,25 +60,20 @@ def getMRTargetEnvironment(String branchName, String gitlabToken, String gitlabU
         // URL-encode the project path
         def encodedProject = projectPath.replace('/', '%2F')
 
-        // Query GitLab API for open MRs with this source branch
-        def response = sh(
+        // Query GitLab API for open MRs with this source branch and extract target_branch using jq
+        def targetBranch = sh(
             script: """
                 curl -sf -H "PRIVATE-TOKEN: ${gitlabToken}" \
                     "${gitlabUrl}/api/v4/projects/${encodedProject}/merge_requests?state=opened&source_branch=${branchName}" \
-                    2>/dev/null || echo "[]"
+                    2>/dev/null | jq -r '.[0].target_branch // empty'
             """,
             returnStdout: true
         ).trim()
 
-        // Parse JSON response
-        def mrs = readJSON text: response
-        if (mrs && mrs.size() > 0) {
-            def targetBranch = mrs[0].target_branch
-            // Only return if target is an environment branch
-            if (targetBranch in ['dev', 'stage', 'prod']) {
-                echo "Found open MR targeting ${targetBranch} for branch ${branchName}"
-                return targetBranch
-            }
+        // Only return if target is an environment branch
+        if (targetBranch in ['dev', 'stage', 'prod']) {
+            echo "Found open MR targeting ${targetBranch} for branch ${branchName}"
+            return targetBranch
         }
     } catch (Exception e) {
         echo "Warning: Could not query MRs for ${branchName}: ${e.message}"
