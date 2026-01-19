@@ -9,6 +9,40 @@ This document defines the verification framework for validating all k8s-deployme
 - Ensure correctness for a reference implementation
 - Support tight iteration loops with context handoff between worker agents
 
+## Prerequisites
+
+### Jenkins-Only Automation
+
+**Critical:** All CI/CD automation runs through Jenkins, not GitLab CI.
+
+GitLab is used only for:
+- Source control (git repository)
+- Merge request workflow (MR creation, approval, merge)
+- Commit status display (Jenkins reports status back to GitLab)
+
+GitLab is NOT used for:
+- Pipeline execution (no `.gitlab-ci.yml`)
+- Auto DevOps (must be disabled on all projects)
+
+**Required GitLab project settings:**
+```bash
+# Disable Auto DevOps on k8s-deployments
+curl -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  "${GITLAB_URL}/api/v4/projects/p2c%2Fk8s-deployments" \
+  -d "auto_devops_enabled=false"
+
+# Disable Auto DevOps on example-app
+curl -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  "${GITLAB_URL}/api/v4/projects/p2c%2Fexample-app" \
+  -d "auto_devops_enabled=false"
+```
+
+**Why Jenkins:**
+- Airgapped environment compatibility (no GitLab runners needed)
+- Centralized CI/CD management
+- Existing infrastructure integration
+- Reference implementation for enterprise patterns
+
 ## Verification Framework
 
 ### The TDD Loop
