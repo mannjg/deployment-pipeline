@@ -130,6 +130,13 @@ def mergeTargetBranchForPreview(String targetEnv) {
                 git add -A manifests/ 2>/dev/null || true
             fi
 
+            # Resolve .mr-trigger conflicts (this is just a trigger file, keep ours)
+            if git diff --name-only --diff-filter=U | grep -q "^.mr-trigger\$"; then
+                echo "Resolving .mr-trigger conflict (keeping current version)"
+                git checkout --ours .mr-trigger
+                git add .mr-trigger
+            fi
+
             # Check for any remaining unresolved conflicts
             CONFLICTS=\$(git diff --name-only --diff-filter=U 2>/dev/null || true)
             if [ -n "\$CONFLICTS" ]; then

@@ -2,21 +2,33 @@
 #
 # Reset Demo State
 #
-# Cleans up GitLab MRs and resets state for fresh demo/validation runs.
+# Establishes a well-defined starting point for demos by cleaning up ALL
+# demo artifacts, regardless of which demo was run.
 #
 # Usage:
 #   ./scripts/03-pipelines/reset-demo-state.sh
 #
+# Clean Starting Point:
+#   - No open MRs targeting dev, stage, or prod branches
+#   - Jenkinsfile on all env branches synced from main
+#   - CUE configuration on dev matches main (no demo modifications)
+#   - Manifests on dev have no demo-specific labels
+#   - App version at 1.0.0-SNAPSHOT
+#
 # What it does:
-#   1. Closes open promotion MRs (promote-stage-*, promote-prod-*)
-#   2. Closes open update-dev MRs (update-dev-*)
-#   3. Closes UC-C1 demo MRs and branches (uc-c1-*)
-#   4. Resets CUE configuration files on env branches to match main
-#   5. Removes demo-specific labels (cost-center) from manifests
+#   1. Closes ALL open MRs targeting environment branches (dev, stage, prod)
+#      - Feature branch MRs (uc-c1-*, update-dev-*, etc.)
+#      - Promotion MRs (promote-stage-*, promote-prod-*)
+#      - GitOps promotion MRs (dev→stage, stage→prod)
+#   2. Deletes feature branches (but preserves dev/stage/prod/main)
+#   3. Syncs Jenkinsfile from main to all env branches
+#   4. Resets CUE configuration files on dev to match main
+#   5. Removes demo-specific labels (cost-center) from dev manifests
 #   6. Resets example-app/pom.xml version to 1.0.0-SNAPSHOT
 #
 # What it preserves:
 #   - env.cue files (they have valid CI/CD-managed images)
+#   - Environment branches (dev, stage, prod, main)
 #   - Environment-specific configuration (namespaces, replicas, etc.)
 #
 
@@ -68,7 +80,64 @@ get_credentials() {
 }
 
 # =============================================================================
-# Close MRs matching pattern
+# Close ALL open MRs targeting environment branches
+# =============================================================================
+# This ensures a clean starting point regardless of what demo was run.
+# The GitOps promotion flow creates MRs from various sources:
+# - Feature branches (uc-c1-*, update-dev-*, promote-*)
+# - Environment branches (dev→stage, stage→prod)
+# All of these need to be closed for a clean reset.
+close_all_env_mrs() {
+    local project_path="$1"
+    local encoded_project=$(echo "$project_path" | sed 's/\//%2F/g')
+
+    log_info "Closing ALL open MRs targeting environment branches..."
+
+    # Close MRs targeting each environment branch
+    for target_branch in dev stage prod; do
+        local api_url="$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests?state=opened&target_branch=$target_branch"
+        local mrs=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$api_url" 2>/dev/null)
+
+        if [[ -z "$mrs" ]] || [[ "$mrs" == "[]" ]]; then
+            log_info "  $target_branch: no open MRs"
+            continue
+        fi
+
+        # Get all MRs (no pattern filtering)
+        local all_mrs=$(echo "$mrs" | jq -r '.[] | "\(.iid):\(.source_branch)"')
+
+        if [[ -z "$all_mrs" ]]; then
+            log_info "  $target_branch: no open MRs"
+            continue
+        fi
+
+        local count=0
+        while IFS=: read -r mr_iid source_branch; do
+            if [[ -n "$mr_iid" ]]; then
+                log_info "  Closing MR !$mr_iid ($source_branch → $target_branch)..."
+
+                # Close the MR
+                curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+                    "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests/$mr_iid" \
+                    -d "state_event=close" >/dev/null 2>&1 || true
+
+                # Delete the source branch ONLY if it's not an environment branch
+                if [[ "$source_branch" != "dev" && "$source_branch" != "stage" && "$source_branch" != "prod" && "$source_branch" != "main" ]]; then
+                    curl -sk -X DELETE -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+                        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/branches/$source_branch" \
+                        >/dev/null 2>&1 || true
+                fi
+
+                count=$((count + 1))
+            fi
+        done <<< "$all_mrs"
+
+        log_info "  $target_branch: closed $count MRs"
+    done
+}
+
+# =============================================================================
+# Close MRs matching pattern (kept for backward compatibility)
 # =============================================================================
 close_mrs_matching() {
     local project_path="$1"
@@ -222,6 +291,48 @@ remove_demo_labels_from_manifests() {
 }
 
 # =============================================================================
+# Sync Jenkinsfile from main to all environment branches
+# =============================================================================
+# This ensures all env branches have the latest pipeline logic, especially
+# important for env-to-env MR support (dev→stage, stage→prod).
+sync_jenkinsfile_to_env_branches() {
+    log_step "Syncing Jenkinsfile to environment branches..."
+
+    local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
+    local encoded_file="Jenkinsfile"
+
+    # Get Jenkinsfile from main
+    local main_content=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file?ref=main" 2>/dev/null)
+
+    if [[ -z "$main_content" ]] || ! echo "$main_content" | jq -e '.content' > /dev/null 2>&1; then
+        log_warn "Could not get Jenkinsfile from main branch"
+        return 1
+    fi
+
+    local content_b64=$(echo "$main_content" | jq -r '.content')
+
+    # Sync to each environment branch
+    for branch in dev stage prod; do
+        local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"branch\": \"$branch\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: sync Jenkinsfile from main\"}" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
+
+        if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
+            log_info "  $branch: synced"
+        else
+            local error=$(echo "$result" | jq -r '.message // "unknown error"' 2>/dev/null)
+            if [[ "$error" == *"already exists"* ]] || [[ "$error" == *"same content"* ]]; then
+                log_info "  $branch: already up to date"
+            else
+                log_warn "  $branch: $error"
+            fi
+        fi
+    done
+}
+
+# =============================================================================
 # Reset CUE configuration on the dev branch only
 # =============================================================================
 # NOTE: We only reset dev because:
@@ -318,26 +429,29 @@ reset_app_version() {
 main() {
     echo "=== Reset Demo State ==="
     echo ""
-    echo "This script cleans up for fresh demo/validation runs."
-    echo "It resets CUE config on env branches but preserves CI/CD-managed images."
+    echo "This script establishes a well-defined starting point for demos."
+    echo ""
+    echo "CLEAN STARTING POINT:"
+    echo "  - No open MRs targeting dev, stage, or prod branches"
+    echo "  - Jenkinsfile synced from main to all env branches"
+    echo "  - CUE configuration on dev matches main (no demo modifications)"
+    echo "  - Manifests on dev have no demo-specific labels"
+    echo "  - env.cue files preserved (valid CI/CD-managed images)"
+    echo "  - App version at 1.0.0-SNAPSHOT"
     echo ""
 
     get_credentials
 
-    # Close promotion MRs in k8s-deployments
-    log_step "Closing promotion MRs in k8s-deployments..."
-    close_mrs_matching "$DEPLOYMENTS_REPO_PATH" "^promote-stage-" "stage"
-    close_mrs_matching "$DEPLOYMENTS_REPO_PATH" "^promote-prod-" "prod"
+    # Close ALL open MRs targeting environment branches
+    # This handles all scenarios:
+    # - Feature branch MRs (uc-c1-*, update-dev-*, etc.)
+    # - Promotion MRs (promote-stage-*, promote-prod-*)
+    # - GitOps promotion MRs (dev→stage, stage→prod)
+    log_step "Closing ALL open MRs targeting environment branches..."
+    close_all_env_mrs "$DEPLOYMENTS_REPO_PATH"
 
-    # Close update-dev MRs in k8s-deployments
-    log_step "Closing update-dev MRs in k8s-deployments..."
-    close_mrs_matching "$DEPLOYMENTS_REPO_PATH" "^update-dev-" "dev"
-
-    # Close UC-C1 demo MRs and branches
-    log_step "Closing UC-C1 demo MRs in k8s-deployments..."
-    close_mrs_matching "$DEPLOYMENTS_REPO_PATH" "^uc-c1-" "dev"
-    close_mrs_matching "$DEPLOYMENTS_REPO_PATH" "^uc-c1-" "stage"
-    close_mrs_matching "$DEPLOYMENTS_REPO_PATH" "^uc-c1-" "prod"
+    # Sync Jenkinsfile to ensure all env branches have latest pipeline logic
+    sync_jenkinsfile_to_env_branches
 
     # Reset CUE configuration on environment branches
     reset_cue_config
@@ -347,6 +461,13 @@ main() {
 
     echo ""
     echo "=== Reset Complete ==="
+    echo ""
+    log_info "Clean starting point established:"
+    log_info "  - All env-targeting MRs closed"
+    log_info "  - Jenkinsfile synced to all env branches"
+    log_info "  - Dev branch CUE config synced from main"
+    log_info "  - Dev branch manifests cleaned"
+    log_info "  - App version at 1.0.0-SNAPSHOT"
     echo ""
     log_info "Next steps:"
     log_info "  1. Commit any local changes: git add -A && git commit -m 'chore: reset demo state'"

@@ -199,11 +199,27 @@ wait_for_mr_pipeline() {
             fi
         fi
 
-        # If pipeline is stale, trigger a fresh one
+        # If pipeline is stale OR missing after initial wait, trigger a fresh one
+        # This handles two cases:
+        # 1. Stale pipeline: A previous MR had a pipeline, but this is a new MR
+        # 2. No pipeline: For env→env MRs (dev→stage), there may be no pipeline
+        #    because no push happened to the source branch
+        local needs_trigger=false
+        local trigger_reason=""
+
         if [[ "$is_stale_pipeline" == "true" ]]; then
-            # Only trigger once at the start
-            if [[ $elapsed -eq 0 ]]; then
-                demo_info "Pipeline is stale (created before MR), triggering fresh build..."
+            needs_trigger=true
+            trigger_reason="Pipeline is stale (created before MR)"
+        elif [[ -z "$pipeline_status" && $elapsed -ge 10 ]]; then
+            # No pipeline after initial wait - likely an env→env MR
+            needs_trigger=true
+            trigger_reason="No pipeline found (likely env→env MR)"
+        fi
+
+        if [[ "$needs_trigger" == "true" ]]; then
+            # Only trigger once
+            if [[ $elapsed -le 10 ]]; then
+                demo_info "$trigger_reason, triggering fresh build..."
                 push_empty_commit_for_mr "$mr_iid" || true
                 # Also trigger Jenkins scan to pick up the new commit
                 trigger_jenkins_scan "$job_name"
@@ -339,34 +355,51 @@ push_empty_commit_for_mr() {
 
     # Create or update .mr-trigger file with timestamp
     # This creates a real commit which triggers the push webhook to Jenkins
+    # We use a unique content for each trigger to ensure a new commit
+    local trigger_content="${target_branch}-${timestamp}"
+
+    # Build JSON payload properly using jq to avoid escaping issues
+    local json_payload
+    json_payload=$(jq -n \
+        --arg branch "$source_branch" \
+        --arg msg "$commit_message" \
+        --arg content "$trigger_content" \
+        '{
+            branch: $branch,
+            commit_message: $msg,
+            actions: [{
+                action: "update",
+                file_path: ".mr-trigger",
+                content: $content
+            }]
+        }')
+
     local result
     result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
         -H "Content-Type: application/json" \
         "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_project}/repository/commits" \
-        -d '{
-            "branch": "'"$source_branch"'",
-            "commit_message": "'"$commit_message"'",
-            "actions": [{
-                "action": "update",
-                "file_path": ".mr-trigger",
-                "content": "'"$target_branch:$timestamp"'"
-            }]
-        }' 2>/dev/null)
+        -d "$json_payload" 2>/dev/null)
 
     # If update failed (file doesn't exist), try create
     if echo "$result" | jq -e '.error // .message' >/dev/null 2>&1; then
+        json_payload=$(jq -n \
+            --arg branch "$source_branch" \
+            --arg msg "$commit_message" \
+            --arg content "$trigger_content" \
+            '{
+                branch: $branch,
+                commit_message: $msg,
+                actions: [{
+                    action: "create",
+                    file_path: ".mr-trigger",
+                    content: $content
+                }]
+            }')
+
         result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
             -H "Content-Type: application/json" \
             "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_project}/repository/commits" \
-            -d '{
-                "branch": "'"$source_branch"'",
-                "commit_message": "'"$commit_message"'",
-                "actions": [{
-                    "action": "create",
-                    "file_path": ".mr-trigger",
-                    "content": "'"$target_branch:$timestamp"'"
-                }]
-            }' 2>/dev/null)
+            -d "$json_payload" 2>/dev/null)
     fi
 
     if echo "$result" | jq -e '.id' >/dev/null 2>&1; then
