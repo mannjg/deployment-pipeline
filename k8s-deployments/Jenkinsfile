@@ -413,8 +413,9 @@ Build: ${env.BUILD_URL}
                         }
 
                         // Handle different scenarios
-                        if (mrTargetEnv) {
-                            // Found an MR - need to use target environment's env.cue
+                        if (mrTargetEnv && !isEnvBranch) {
+                            // Feature branch → env MR: use MR-preview mode
+                            // This brings in target's env.cue for manifest generation
                             echo "MR-Preview Mode: Found MR targeting ${mrTargetEnv}"
                             isMRPreview = true
 
@@ -437,6 +438,12 @@ Build: ${env.BUILD_URL}
                                 sh 'git config --global --unset credential.helper || true'
                             }
                             hasEnvCue = true
+                        } else if (mrTargetEnv && isEnvBranch) {
+                            // Env → env MR (promotion): build normally with source env's config
+                            // No MR-preview needed - the MR just shows the diff between environments
+                            // The manifests on each env branch are already correct for their env
+                            echo "Env-to-env promotion MR (${env.BRANCH_NAME} → ${mrTargetEnv}): Building normally"
+                            // hasEnvCue is already true for env branches
                         } else if (!hasEnvCue) {
                             // No MR and no env.cue - can't generate manifests
                             echo "No open MR found and no env.cue present"
@@ -474,8 +481,8 @@ Build: ${env.BUILD_URL}
                         // Determine target environment from branch name or MR target
                         def targetEnv = getTargetEnvironment(env.BRANCH_NAME)
                         if (isMRPreview && mrTargetEnv) {
-                            // In MR-preview mode, ALWAYS use the MR target environment
-                            // This handles both feature→env and env→env (promotion) MRs
+                            // In MR-preview mode (feature→env MRs), use the MR target environment
+                            // Note: env→env MRs don't use MR-preview, they build with their own config
                             targetEnv = mrTargetEnv
                             echo "Using MR target environment for manifest generation: ${targetEnv}"
                         }
