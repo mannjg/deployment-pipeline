@@ -538,6 +538,11 @@ Build: ${env.BUILD_URL}"
                         }
 
                         echo "Validation and manifest generation complete"
+
+                        // Capture final commit SHA for status reporting
+                        // This must be done BEFORE createPromotionMR which switches branches
+                        env.FINAL_COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                        echo "Final commit SHA for status reporting: ${env.FINAL_COMMIT_SHA}"
                     }
                 }
             }
@@ -660,13 +665,13 @@ Build: ${env.BUILD_URL}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
-                // Update GitLab commit status using current HEAD (final state after any commits)
-                // This ensures the MR's head_pipeline is populated with the status for
-                // the current HEAD, even when Jenkins pushes manifest regeneration commits.
+                // Update GitLab commit status for the source branch commit
+                // Use FINAL_COMMIT_SHA (captured before createPromotionMR switches branches)
+                // Falls back to ORIGINAL_COMMIT_SHA if pipeline exited early
                 container('pipeline') {
                     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
-                            COMMIT_SHA=\$(git rev-parse HEAD)
+                            COMMIT_SHA="${env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA}"
                             echo "Reporting success status for commit: \$COMMIT_SHA"
                             curl -s -X POST \
                                 -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
@@ -692,11 +697,13 @@ Check logs above for error details.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
-                // Update GitLab commit status using current HEAD
+                // Update GitLab commit status for the source branch commit
+                // Use FINAL_COMMIT_SHA (captured before createPromotionMR switches branches)
+                // Falls back to ORIGINAL_COMMIT_SHA if pipeline exited early
                 container('pipeline') {
                     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
-                            COMMIT_SHA=\$(git rev-parse HEAD)
+                            COMMIT_SHA="${env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA}"
                             echo "Reporting failure status for commit: \$COMMIT_SHA"
                             curl -s -X POST \
                                 -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
