@@ -8,6 +8,8 @@
  * Instead of: webhook → scan all branches → find changed branch → build
  * We do:      webhook → trigger specific branch build directly
  *
+ * Trigger URL: /job/k8s-deployments-auto-promote/buildWithParameters?token=<TOKEN>&BRANCH=dev
+ *
  * Flow:
  *   - Push to dev   → triggers k8s-deployments/dev build
  *   - Push to stage → triggers k8s-deployments/stage build
@@ -25,18 +27,23 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '50', daysToKeepStr: '7'))
     }
 
+    parameters {
+        choice(
+            name: 'BRANCH',
+            choices: ['dev', 'stage', 'prod'],
+            description: 'Branch that was pushed to (passed by GitLab webhook)'
+        )
+    }
+
     stages {
         stage('Trigger Branch Build') {
             steps {
                 script {
-                    // GitLab plugin provides branch name via environment variables
-                    def branch = env.gitlabBranch ?: env.gitlabTargetBranch ?: ''
+                    // Use parameter from webhook, or fall back to GitLab plugin env vars
+                    def branch = params.BRANCH ?: env.gitlabBranch ?: env.gitlabTargetBranch ?: ''
 
                     if (!branch) {
-                        echo "No branch information from webhook. Available env vars:"
-                        echo "  gitlabBranch: ${env.gitlabBranch}"
-                        echo "  gitlabTargetBranch: ${env.gitlabTargetBranch}"
-                        echo "  gitlabSourceBranch: ${env.gitlabSourceBranch}"
+                        echo "No branch information. Check webhook configuration."
                         currentBuild.result = 'NOT_BUILT'
                         currentBuild.description = "No branch info"
                         return
