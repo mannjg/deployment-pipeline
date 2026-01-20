@@ -358,30 +358,33 @@ push_empty_commit_for_mr() {
     # We use a unique content for each trigger to ensure a new commit
     local trigger_content="${target_branch}-${timestamp}"
 
-    # Build JSON payload properly using jq to avoid escaping issues
-    local json_payload
-    json_payload=$(jq -n \
-        --arg branch "$source_branch" \
-        --arg msg "$commit_message" \
-        --arg content "$trigger_content" \
-        '{
-            branch: $branch,
-            commit_message: $msg,
-            actions: [{
-                action: "update",
-                file_path: ".mr-trigger",
-                content: $content
-            }]
-        }')
-
+    # Strategy: First try to check if file exists and delete it, then create fresh
+    # This avoids update/create confusion with the GitLab API
     local result
-    result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-        -H "Content-Type: application/json" \
-        "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_project}/repository/commits" \
-        -d "$json_payload" 2>/dev/null)
 
-    # If update failed (file doesn't exist), try create
-    if echo "$result" | jq -e '.error // .message' >/dev/null 2>&1; then
+    # Check if file exists
+    local file_check
+    file_check=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_project}/repository/files/.mr-trigger?ref=${source_branch}" 2>/dev/null)
+
+    local json_payload
+    if echo "$file_check" | jq -e '.file_name' >/dev/null 2>&1; then
+        # File exists - use update action
+        json_payload=$(jq -n \
+            --arg branch "$source_branch" \
+            --arg msg "$commit_message" \
+            --arg content "$trigger_content" \
+            '{
+                branch: $branch,
+                commit_message: $msg,
+                actions: [{
+                    action: "update",
+                    file_path: ".mr-trigger",
+                    content: $content
+                }]
+            }')
+    else
+        # File doesn't exist - use create action
         json_payload=$(jq -n \
             --arg branch "$source_branch" \
             --arg msg "$commit_message" \
@@ -395,12 +398,12 @@ push_empty_commit_for_mr() {
                     content: $content
                 }]
             }')
-
-        result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-            -H "Content-Type: application/json" \
-            "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_project}/repository/commits" \
-            -d "$json_payload" 2>/dev/null)
     fi
+
+    result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        -H "Content-Type: application/json" \
+        "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_project}/repository/commits" \
+        -d "$json_payload" 2>/dev/null)
 
     if echo "$result" | jq -e '.id' >/dev/null 2>&1; then
         local commit_sha
