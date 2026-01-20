@@ -1,20 +1,20 @@
 #!/bin/bash
 set -euo pipefail
 
-# Promote app configuration from source environment to target environment
-# Performs semantic merge: copies app-specific config, preserves env-specific fields
+# Promote configuration from source environment to target environment
+# Syncs platform/app layers and promotes CI/CD-managed image tags.
 #
 # Usage: ./promote-app-config.sh <source-env> <target-env>
 #
-# What gets PROMOTED (app-specific):
-#   - deployment.image (CI/CD managed)
+# What gets SYNCED (from source to target):
+#   - services/base/  - Base defaults and schemas
+#   - services/core/  - Shared templates (defaultLabels, #App)
+#   - services/apps/  - App definitions
+#   - deployment.image in env.cue (CI/CD managed)
 #
-# TODO: Future enhancement - also promote:
-#   - deployment.additionalEnv (app env vars)
-#   - configMap.data (app config)
-#
-# What gets PRESERVED (env-specific):
-#   - namespace, replicas, resources, debug, labels.environment
+# What gets PRESERVED (via CUE unification):
+#   - Target's env.cue values: namespace, replicas, resources, debug, labels.environment
+#   - CUE's layering ensures env-specific overrides "win" when manifests are generated
 #
 # Prerequisites:
 #   - Must be run from k8s-deployments repo root
@@ -135,6 +135,33 @@ BACKUP_FILE="env.cue.backup.$(date +%s)"
 cp env.cue "$BACKUP_FILE"
 log_debug "Created backup: $BACKUP_FILE"
 
+# Sync platform and app layers from source to target
+# These files define templates/schemas - env.cue handles env-specific overrides
+# CUE unification ensures target's env.cue values (namespace, replicas, etc.) are preserved
+log_info "Syncing platform and app layers from $SOURCE_ENV..."
+PLATFORM_CHANGED=false
+
+for dir in services/base services/core services/apps; do
+    if [ -d "$SOURCE_DIR/$dir" ]; then
+        # Check if there are actual differences
+        if ! diff -rq "$dir" "$SOURCE_DIR/$dir" >/dev/null 2>&1; then
+            log_info "  Syncing $dir/ (changes detected)"
+            rm -rf "$dir"
+            cp -r "$SOURCE_DIR/$dir" "$dir"
+            git add "$dir"
+            PLATFORM_CHANGED=true
+        else
+            log_debug "  $dir/ unchanged"
+        fi
+    fi
+done
+
+if [ "$PLATFORM_CHANGED" = true ]; then
+    log_info "Platform/app layer changes will be included in promotion"
+else
+    log_debug "No platform/app layer changes detected"
+fi
+
 # Discover apps in source environment
 log_info "Discovering apps in $SOURCE_ENV environment..."
 APPS=$(cd "$SOURCE_DIR" && cue export ./env.cue -e "$SOURCE_ENV" --out json 2>/dev/null | jq -r 'keys[]') || {
@@ -224,16 +251,16 @@ rm -f "$BACKUP_FILE"
 log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 log_info "Promotion Summary: $SOURCE_ENV -> $TARGET_ENV"
 log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-log_info "  Promoted: $PROMOTED_COUNT apps"
-log_info "  Skipped:  $SKIPPED_COUNT apps"
+log_info "  Platform layer: $([ "$PLATFORM_CHANGED" = true ] && echo "changed" || echo "unchanged")"
+log_info "  App images:     $PROMOTED_COUNT promoted, $SKIPPED_COUNT skipped"
 log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-if [[ $PROMOTED_COUNT -eq 0 ]]; then
-    log_warn "No apps were promoted"
+if [[ $PROMOTED_COUNT -eq 0 ]] && [[ "$PLATFORM_CHANGED" != true ]]; then
+    log_warn "No changes to promote"
     exit 0
 fi
 
-log_info "✓ App config promotion complete"
+log_info "✓ Promotion complete"
 log_info "Next steps:"
 log_info "  1. Run ./scripts/generate-manifests.sh"
 log_info "  2. Review changes with: git diff"
