@@ -473,8 +473,9 @@ Build: ${env.BUILD_URL}
                         // Generate manifests
                         // Determine target environment from branch name or MR target
                         def targetEnv = getTargetEnvironment(env.BRANCH_NAME)
-                        if (!targetEnv && isMRPreview && mrTargetEnv) {
-                            // Use the MR target environment for MR-preview mode
+                        if (isMRPreview && mrTargetEnv) {
+                            // In MR-preview mode, ALWAYS use the MR target environment
+                            // This handles both feature→env and env→env (promotion) MRs
                             targetEnv = mrTargetEnv
                             echo "Using MR target environment for manifest generation: ${targetEnv}"
                         }
