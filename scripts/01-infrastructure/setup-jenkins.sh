@@ -38,9 +38,9 @@ check_prerequisites() {
         exit 1
     fi
 
-    if ! microk8s kubectl get namespace jenkins &> /dev/null; then
+    if ! kubectl get namespace jenkins &> /dev/null; then
         log_warn "Jenkins namespace doesn't exist. Creating..."
-        microk8s kubectl create namespace jenkins
+        kubectl create namespace jenkins
     fi
 
     # Check if custom agent image exists
@@ -96,12 +96,12 @@ wait_for_jenkins() {
 
     # Wait for Jenkins controller to be ready
     log_info "Waiting for Jenkins controller..."
-    microk8s kubectl wait --for=condition=ready pod \
+    kubectl wait --for=condition=ready pod \
         -l app.kubernetes.io/component=jenkins-controller \
         -n jenkins \
         --timeout=600s || {
         log_warn "Jenkins controller pods may still be starting. Checking status..."
-        microk8s kubectl get pods -n jenkins
+        kubectl get pods -n jenkins
     }
 
     log_info "Jenkins is ready!"
@@ -113,15 +113,15 @@ get_admin_password() {
     # Wait for secret to be created
     sleep 10
 
-    if microk8s kubectl get secret -n jenkins jenkins &> /dev/null; then
-        ADMIN_PASSWORD=$(microk8s kubectl get secret -n jenkins jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
+    if kubectl get secret -n jenkins jenkins &> /dev/null; then
+        ADMIN_PASSWORD=$(kubectl get secret -n jenkins jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
         echo "$ADMIN_PASSWORD" > "$PROJECT_ROOT/k8s/jenkins/admin-password.txt"
         chmod 600 "$PROJECT_ROOT/k8s/jenkins/admin-password.txt"
         log_info "Admin password saved to: $PROJECT_ROOT/k8s/jenkins/admin-password.txt"
     else
         log_warn "Admin password secret not found. It may be created later."
         log_info "You can retrieve it with:"
-        log_info "  microk8s kubectl get secret -n jenkins jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d"
+        log_info "  kubectl get secret -n jenkins jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d"
     fi
 }
 
@@ -130,9 +130,9 @@ create_docker_config() {
 
     # Create a secret for Docker config (if needed)
     # This allows agents to pull images from Docker Hub
-    if ! microk8s kubectl get secret -n jenkins docker-config &> /dev/null; then
+    if ! kubectl get secret -n jenkins docker-config &> /dev/null; then
         log_info "Creating docker-config secret..."
-        microk8s kubectl create secret generic docker-config \
+        kubectl create secret generic docker-config \
             -n jenkins \
             --from-literal=config.json='{"auths":{}}' || true
     fi
@@ -152,14 +152,14 @@ print_info() {
         echo "  Password: $(cat $PROJECT_ROOT/k8s/jenkins/admin-password.txt)"
     else
         echo "  Password: Run the following to retrieve:"
-        echo "    microk8s kubectl get secret -n jenkins jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d"
+        echo "    kubectl get secret -n jenkins jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d"
     fi
     echo ""
     echo "Jenkins pods:"
-    microk8s kubectl get pods -n jenkins
+    kubectl get pods -n jenkins
     echo ""
     echo "Ingress:"
-    microk8s kubectl get ingress -n jenkins
+    kubectl get ingress -n jenkins
     echo ""
     echo "Next steps:"
     echo "  1. Login to Jenkins at http://jenkins.local"

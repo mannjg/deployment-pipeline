@@ -614,6 +614,80 @@ wait_for_argocd_sync() {
 }
 
 # ============================================================================
+# PROMOTION MR OPERATIONS
+# ============================================================================
+
+# Wait for Jenkins-created promotion MR
+# Usage: wait_for_promotion_mr <target_env> [baseline_time] [timeout]
+# Returns: Sets PROMOTION_MR_IID on success
+#
+# After merging to dev/stage, Jenkins automatically creates a promotion branch
+# (promote-{targetEnv}-{timestamp}) and opens an MR. This function waits for
+# that MR to appear.
+#
+# IMPORTANT: Pass baseline_time captured BEFORE merging to avoid race conditions.
+# If not provided, uses current time (may miss MRs created during ArgoCD sync).
+#
+# This is the correct pattern for env→env promotion. Do NOT create direct
+# env→env MRs as they will merge env.cue incorrectly.
+wait_for_promotion_mr() {
+    local target_env="$1"
+    local baseline_time="${2:-}"
+    local timeout="${3:-180}"
+
+    local project="${DEPLOYMENTS_REPO_PATH:-p2c/k8s-deployments}"
+    local encoded_project=$(_encode_project "$project")
+
+    # Promotion branches created by k8s-deployments CI: promote-{targetEnv}-{timestamp}
+    local branch_prefix="promote-${target_env}-"
+
+    # Use provided baseline or current time (ISO 8601)
+    local start_time
+    if [[ -n "$baseline_time" ]]; then
+        start_time="$baseline_time"
+    else
+        start_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    fi
+
+    demo_action "Waiting for auto-created promotion MR to $target_env (timeout ${timeout}s)..."
+    demo_info "Looking for MR with branch: ${branch_prefix}* created after $start_time"
+
+    local poll_interval=10
+    local elapsed=0
+
+    while [[ $elapsed -lt $timeout ]]; do
+        # GitLab API: created_after filter for MRs created since we started waiting
+        local mrs
+        mrs=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "${GITLAB_URL_EXTERNAL}/api/v4/projects/$encoded_project/merge_requests?state=opened&target_branch=$target_env&created_after=$start_time" 2>/dev/null)
+
+        # Find any MR with promotion branch pattern
+        local match
+        match=$(echo "$mrs" | jq -r --arg prefix "$branch_prefix" \
+            'first(.[] | select(.source_branch | startswith($prefix))) // empty')
+
+        if [[ -n "$match" ]]; then
+            PROMOTION_MR_IID=$(echo "$match" | jq -r '.iid')
+            local source_branch
+            source_branch=$(echo "$match" | jq -r '.source_branch')
+            demo_verify "Found promotion MR !$PROMOTION_MR_IID (branch: $source_branch)"
+            return 0
+        fi
+
+        demo_info "Waiting for promotion MR... (${elapsed}s elapsed)"
+        sleep $poll_interval
+        elapsed=$((elapsed + poll_interval))
+    done
+
+    demo_fail "Timeout waiting for promotion MR to $target_env (${timeout}s)"
+    demo_info "Open MRs targeting $target_env:"
+    curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "${GITLAB_URL_EXTERNAL}/api/v4/projects/$encoded_project/merge_requests?state=opened&target_branch=$target_env" | \
+        jq -r '.[] | "  !\(.iid): \(.source_branch) (created: \(.created_at))"' 2>/dev/null || echo "  (none)"
+    return 1
+}
+
+# ============================================================================
 # COMBINED FLOWS
 # ============================================================================
 

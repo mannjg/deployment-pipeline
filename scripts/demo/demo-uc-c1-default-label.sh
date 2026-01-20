@@ -12,6 +12,16 @@
 # - Changes to services/core/ propagate to ALL apps in ALL environments
 # - The MR shows both CUE change AND generated manifest changes
 # - Pipeline generates manifests (not the human)
+# - Promotion uses Jenkins-created branches that preserve env-specific config
+#
+# Promotion Pattern:
+# - Feature → dev: Manual MR (we create it)
+# - dev → stage: Wait for Jenkins auto-created promotion MR
+# - stage → prod: Wait for Jenkins auto-created promotion MR
+#
+# IMPORTANT: We do NOT create direct env→env MRs (e.g., dev → stage).
+# That would merge env.cue incorrectly, causing stage to deploy with dev config.
+# Jenkins uses promote-app-config.sh to preserve env-specific config.
 #
 # Prerequisites:
 # - Environment branches (dev/stage/prod) exist in GitLab
@@ -150,44 +160,67 @@ demo_verify "Feature branch pushed"
 
 demo_step 4 "MR-Gated Promotion Through Environments"
 
-# First: Deploy to dev via feature branch
-# Then: Promote through environments using branch-to-branch MRs
-#
 # This uses proper GitOps promotion pattern:
-# - feature → dev (initial deployment with manifest generation)
-# - dev → stage (promotion with manifest regeneration for stage)
-# - stage → prod (promotion with manifest regeneration for prod)
+# - feature → dev: Manual MR creation (initial deployment)
+# - dev → stage: Wait for Jenkins-created promotion MR
+# - stage → prod: Wait for Jenkins-created promotion MR
+#
+# IMPORTANT: We do NOT create direct env→env MRs (e.g., dev → stage).
+# That would merge env.cue incorrectly, causing stage to deploy to dev namespace.
+# Instead, Jenkins creates promotion branches that use promote-app-config.sh
+# to preserve env-specific config (namespace, replicas, resources, debug).
 
-prev_branch=""
+# Track baseline time for promotion MR detection (avoids race conditions)
+next_promotion_baseline=""
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_info "--- Promoting to $env ---"
 
     # Capture baselines before MR
-    jenkins_baseline=$(get_jenkins_build_number "$env")
     argocd_baseline=$(get_argocd_revision "${DEMO_APP}-${env}")
 
-    # Determine source branch: feature branch for dev, previous env for others
     if [[ "$env" == "dev" ]]; then
-        source_branch="$FEATURE_BRANCH"
+        # DEV: Create MR from feature branch (this is correct)
+        mr_iid=$(create_mr "$FEATURE_BRANCH" "$env" "UC-C1: Add $DEMO_LABEL_KEY label to $env")
+
+        # Wait for MR pipeline (generates manifests)
+        demo_action "Waiting for pipeline to generate manifests..."
+        wait_for_mr_pipeline "$mr_iid" || exit 1
+
+        # Verify MR contains expected changes
+        demo_action "Verifying MR contains CUE and manifest changes..."
+        assert_mr_contains_diff "$mr_iid" "services/core/app.cue" "$DEMO_LABEL_KEY" || exit 1
+        assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "$DEMO_LABEL_KEY" || exit 1
+
+        # Capture baseline time BEFORE merge (for next env's promotion MR detection)
+        next_promotion_baseline=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+        # Merge MR
+        accept_mr "$mr_iid" || exit 1
     else
-        source_branch="$prev_branch"
+        # STAGE/PROD: Wait for Jenkins-created promotion MR
+        # After merging to the previous env, Jenkins automatically:
+        # 1. Creates a promote-{env}-{timestamp} branch
+        # 2. Runs promote-app-config.sh to preserve env-specific config
+        # 3. Regenerates manifests for the target environment
+        # 4. Opens an MR
+        wait_for_promotion_mr "$env" "$next_promotion_baseline" || exit 1
+        mr_iid="$PROMOTION_MR_IID"
+
+        # Wait for MR pipeline (validates the promotion)
+        demo_action "Waiting for pipeline to validate promotion..."
+        wait_for_mr_pipeline "$mr_iid" || exit 1
+
+        # Verify MR contains expected changes
+        demo_action "Verifying MR contains manifest changes with correct namespace..."
+        assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "$DEMO_LABEL_KEY" || exit 1
+
+        # Capture baseline time BEFORE merge (for next env's promotion MR detection)
+        next_promotion_baseline=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+        # Merge MR
+        accept_mr "$mr_iid" || exit 1
     fi
-
-    # Create MR
-    mr_iid=$(create_mr "$source_branch" "$env" "UC-C1: Add $DEMO_LABEL_KEY label to $env")
-
-    # Wait for MR pipeline (generates manifests)
-    demo_action "Waiting for pipeline to generate manifests..."
-    wait_for_mr_pipeline "$mr_iid" || exit 1
-
-    # Verify MR contains expected changes
-    demo_action "Verifying MR contains CUE and manifest changes..."
-    assert_mr_contains_diff "$mr_iid" "services/core/app.cue" "$DEMO_LABEL_KEY" || exit 1
-    assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "$DEMO_LABEL_KEY" || exit 1
-
-    # Merge MR
-    accept_mr "$mr_iid" || exit 1
 
     # Wait for ArgoCD sync
     wait_for_argocd_sync "${DEMO_APP}-${env}" "$argocd_baseline" || exit 1
@@ -198,9 +231,6 @@ for env in "${ENVIRONMENTS[@]}"; do
 
     demo_verify "Promotion to $env complete"
     echo ""
-
-    # Track previous environment for promotion chain
-    prev_branch="$env"
 done
 
 # ---------------------------------------------------------------------------
@@ -230,12 +260,11 @@ cat << EOF
   1. Added '$DEMO_LABEL_KEY: $DEMO_LABEL_VALUE' to services/core/app.cue
   2. Pushed CUE change only (no manual manifest generation)
   3. Promoted through environments using GitOps pattern:
-     - Feature branch → dev (initial deployment)
-     - dev → stage (promotion)
-     - stage → prod (promotion)
+     - Feature branch → dev: Manual MR (pipeline generates manifests)
+     - dev → stage: Jenkins auto-created promotion MR
+     - stage → prod: Jenkins auto-created promotion MR
   4. For each environment:
-     - Created MR from source branch
-     - Pipeline regenerated manifests with environment-specific config
+     - Pipeline generated/validated manifests with correct namespace
      - Merged MR after pipeline passed
      - ArgoCD synced the change
      - Verified label appears in K8s deployment
@@ -243,8 +272,13 @@ cat << EOF
   Key Observations:
   - Human only changed CUE (the intent)
   - Pipeline generated YAML (the implementation)
-  - MR showed both changes for review
-  - Label propagated to ALL environments
+  - Promotion MRs preserve env-specific config (namespace, replicas, resources)
+  - Label propagated to ALL environments with correct namespaces
+
+  Why This Works:
+  - Jenkins promotion uses promote-app-config.sh for semantic merge
+  - App-level changes (labels) propagate
+  - Env-specific config (namespace, replicas) is preserved
 
 EOF
 

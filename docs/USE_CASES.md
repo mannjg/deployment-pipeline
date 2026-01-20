@@ -220,6 +220,69 @@ Changes made to `services/base/` (defaults/schema) or `services/core/` (template
 
 ---
 
+## Category D: Operational Scenarios
+
+Changes that bypass or modify the normal promotion chain. These handle real-world operational needs that don't fit the happy-path flow.
+
+**Note:** These scenarios require direct env→env MR support with proper env.cue preservation. Current implementation doesn't support this — merging dev→stage directly overwrites stage's env.cue. See Implementation Notes below.
+
+### UC-D1: Emergency Hotfix to Production
+
+| Aspect | Detail |
+|--------|--------|
+| **Story** | "Prod is broken. I need to deploy a fix immediately without waiting for dev→stage→prod" |
+| **Trigger** | Direct MR to `prod` branch (or direct commit if MR review is waived) |
+| **Change** | Image tag update, config fix, or rollback to known-good state |
+| **Expected Behavior** | Prod deploys the fix; dev/stage are NOT affected; promotion chain is bypassed |
+| **Constraint** | Must still preserve prod's env.cue (namespace, replicas, resources) |
+| **Validates** | Direct env MRs work correctly; env.cue is preserved even when bypassing chain |
+
+### UC-D2: Cherry-Pick Promotion (Multi-App)
+
+| Aspect | Detail |
+|--------|--------|
+| **Story** | "Dev has new versions of both example-app and postgres. I want to promote only example-app to stage, hold postgres back" |
+| **Trigger** | Manual promotion MR that includes only example-app changes |
+| **Change** | Selective image/config promotion for one app |
+| **Expected Behavior** | Stage gets new example-app; stage's postgres unchanged; dev has both |
+| **Constraint** | Requires multi-app awareness in promotion tooling |
+| **Validates** | Promotion can be selective per-app, not all-or-nothing |
+
+### UC-D3: Environment Rollback
+
+| Aspect | Detail |
+|--------|--------|
+| **Story** | "Stage deployment is unhealthy. Roll back to the previous known-good state" |
+| **Trigger** | Revert MR or direct branch reset to previous commit |
+| **Change** | Git history manipulation or revert commit |
+| **Expected Behavior** | Stage returns to previous manifests; ArgoCD syncs the rollback |
+| **Constraint** | Must not affect other environments; should be auditable |
+| **Validates** | GitOps rollback works; ArgoCD correctly syncs reverted state |
+
+### UC-D4: Re-Promote Single App
+
+| Aspect | Detail |
+|--------|--------|
+| **Story** | "Postgres promotion to stage failed. Re-run promotion for postgres only, don't touch example-app" |
+| **Trigger** | Manual trigger of promotion for specific app |
+| **Change** | Re-run promote-app-config.sh for single app |
+| **Expected Behavior** | Only postgres config is re-promoted; example-app stays as-is on stage |
+| **Constraint** | Requires app-scoped promotion capability |
+| **Validates** | Promotion is recoverable and app-scoped |
+
+### UC-D5: Skip Environment (Dev → Prod Direct)
+
+| Aspect | Detail |
+|--------|--------|
+| **Story** | "Critical security patch needs to go to prod. Stage is currently broken for unrelated reasons" |
+| **Trigger** | Direct promotion MR from dev → prod, skipping stage |
+| **Change** | Image/config promotion that bypasses intermediate environment |
+| **Expected Behavior** | Prod gets the fix; stage remains unchanged |
+| **Constraint** | Should be rare and auditable; may require approval |
+| **Validates** | Promotion chain can be bypassed when necessary |
+
+---
+
 ## Use Case Summary
 
 ### All Use Cases at a Glance
@@ -241,6 +304,11 @@ Changes made to `services/base/` (defaults/schema) or `services/core/` (template
 | | UC-C4 | Add pod annotation | `services/core/` | All apps, all envs |
 | | UC-C5 | Platform default with app override | Platform + App | Platform default, app overrides |
 | | UC-C6 | Platform default with env override | Platform + `env.cue` | Platform default, env overrides |
+| **D: Operational** | UC-D1 | Emergency hotfix to prod | Direct MR to `prod` | Bypasses chain |
+| | UC-D2 | Cherry-pick promotion (multi-app) | Selective promotion MR | Per-app control |
+| | UC-D3 | Environment rollback | Revert MR or branch reset | Single env affected |
+| | UC-D4 | Re-promote single app | Manual promotion trigger | Per-app recovery |
+| | UC-D5 | Skip environment | Direct dev→prod MR | Bypasses intermediate env |
 
 ### Override Hierarchy
 
@@ -326,6 +394,11 @@ While preserving:
 | UC-C4 | Add standard pod annotation | 🔲 | 🔲 | 🔲 | — | |
 | UC-C5 | Platform default + app override | 🔲 | 🔲 | 🔲 | — | Multi-app pivot (uses postgres) |
 | UC-C6 | Platform default + env override | 🔲 | 🔲 | 🔲 | — | |
+| UC-D1 | Emergency hotfix to prod | 🔲 | 🔲 | 🔲 | — | Requires direct env MR support |
+| UC-D2 | Cherry-pick promotion (multi-app) | 🔲 | 🔲 | 🔲 | — | Requires multi-app promotion tooling |
+| UC-D3 | Environment rollback | 🔲 | 🔲 | 🔲 | — | GitOps rollback pattern |
+| UC-D4 | Re-promote single app | 🔲 | 🔲 | 🔲 | — | Requires app-scoped promotion |
+| UC-D5 | Skip environment (dev→prod) | 🔲 | 🔲 | 🔲 | — | Requires direct env MR support |
 
 **Status Legend:**
 - 🔲 Not started

@@ -1,15 +1,22 @@
 #!/bin/bash
-# Setup GitLab webhook for k8s-deployments auto-promote
+# Setup GitLab webhooks for k8s-deployments auto-promote
 #
-# Configures GitLab webhook to trigger Jenkins auto-promote job
-# when MRs are merged to dev or stage branches.
+# Configures GitLab webhooks to trigger Jenkins auto-promote job
+# when code is pushed to dev or stage branches (e.g., MR merges).
+#
+# Uses the build-token-root plugin endpoint which bypasses CRUMB:
+#   /buildByToken/buildWithParameters?job=<job>&token=<token>&BRANCH=<branch>
+#
+# Creates separate webhooks for dev and stage branches because each
+# needs a different BRANCH parameter value.
 #
 # Usage: ./scripts/03-pipelines/setup-auto-promote-webhook.sh
 #
 # Prerequisites:
 #   - kubectl configured for target cluster
 #   - GitLab running and accessible
-#   - Jenkins auto-promote job created
+#   - Jenkins auto-promote job created with auth token
+#   - build-token-root plugin installed in Jenkins
 
 set -euo pipefail
 
@@ -26,6 +33,9 @@ GITLAB_URL="${GITLAB_URL_EXTERNAL:?GITLAB_URL_EXTERNAL not set}"
 JENKINS_URL_INTERNAL="${JENKINS_URL_INTERNAL:?JENKINS_URL_INTERNAL not set}"
 JOB_NAME="${JENKINS_AUTO_PROMOTE_JOB_NAME:-k8s-deployments-auto-promote}"
 PROJECT_PATH="${DEPLOYMENTS_REPO_PATH:?DEPLOYMENTS_REPO_PATH not set}"
+
+# Branches to set up webhooks for
+AUTO_PROMOTE_BRANCHES=("dev" "stage")
 
 # -----------------------------------------------------------------------------
 # Validate Configuration
@@ -95,18 +105,17 @@ url_encode() {
 # -----------------------------------------------------------------------------
 # Main Logic
 # -----------------------------------------------------------------------------
-setup_webhook() {
-    log_step "Setting up webhook for $PROJECT_PATH..."
+setup_webhook_for_branch() {
+    local branch="$1"
+    local webhook_token="$2"
 
-    # Generate webhook token (must match Jenkins job config)
-    local webhook_token
-    webhook_token=$(echo -n "${JOB_NAME}-webhook" | sha256sum | cut -c1-32)
+    log_step "Setting up webhook for $PROJECT_PATH branch: $branch"
 
-    # Webhook URL uses GitLab plugin endpoint
-    local webhook_url="${JENKINS_URL_INTERNAL}/project/${JOB_NAME}"
+    # Webhook URL uses build-token-root plugin endpoint (bypasses CRUMB)
+    # Format: /buildByToken/buildWithParameters?job=<job>&token=<token>&BRANCH=<branch>
+    local webhook_url="${JENKINS_URL_INTERNAL}/buildByToken/buildWithParameters?job=${JOB_NAME}&token=${webhook_token}&BRANCH=${branch}"
 
-    log_info "Webhook URL: $webhook_url"
-    log_info "Token: ${webhook_token:0:8}..."
+    log_info "Webhook URL: ${JENKINS_URL_INTERNAL}/buildByToken/buildWithParameters?job=${JOB_NAME}&token=***&BRANCH=${branch}"
 
     local encoded_path
     encoded_path=$(url_encode "$PROJECT_PATH")
@@ -122,49 +131,64 @@ setup_webhook() {
         exit 1
     fi
 
-    # Check for existing webhook with this URL
+    # Check for existing webhook for this branch (by matching BRANCH= parameter)
     local existing_id
-    existing_id=$(echo "$existing_hooks" | jq -r --arg url "$webhook_url" \
-        '.[] | select(.url == $url) | .id' | head -1)
+    existing_id=$(echo "$existing_hooks" | jq -r --arg branch "$branch" \
+        '.[] | select(.url | contains("BRANCH=" + $branch)) | .id' | head -1)
 
     if [[ -n "$existing_id" && "$existing_id" != "null" ]]; then
-        log_info "Webhook already exists (id: $existing_id), updating..."
+        log_info "Webhook for $branch already exists (id: $existing_id), updating..."
 
         local update_result
         update_result=$(gitlab_api PUT "/projects/${encoded_path}/hooks/${existing_id}" \
-            -d "{\"url\": \"${webhook_url}\", \"push_events\": true, \"push_events_branch_filter\": \"dev,stage\", \"enable_ssl_verification\": false, \"token\": \"${webhook_token}\"}")
+            -d "{\"url\": \"${webhook_url}\", \"push_events\": true, \"merge_requests_events\": true, \"push_events_branch_filter\": \"${branch}\", \"enable_ssl_verification\": false}")
 
         if echo "$update_result" | jq -e '.id' &>/dev/null; then
-            log_pass "Webhook updated successfully"
+            log_pass "Webhook for $branch updated successfully"
         else
-            log_fail "Failed to update webhook"
+            log_fail "Failed to update webhook for $branch"
             echo "$update_result"
-            exit 1
+            return 1
         fi
     else
-        log_step "Creating new webhook..."
+        log_step "Creating new webhook for $branch..."
 
         local create_result
         create_result=$(gitlab_api POST "/projects/${encoded_path}/hooks" \
-            -d "{\"url\": \"${webhook_url}\", \"push_events\": true, \"push_events_branch_filter\": \"dev,stage\", \"enable_ssl_verification\": false, \"token\": \"${webhook_token}\"}")
+            -d "{\"url\": \"${webhook_url}\", \"push_events\": true, \"merge_requests_events\": true, \"push_events_branch_filter\": \"${branch}\", \"enable_ssl_verification\": false}")
 
         if echo "$create_result" | jq -e '.id' &>/dev/null; then
             local new_id
             new_id=$(echo "$create_result" | jq -r '.id')
-            log_pass "Webhook created (id: $new_id)"
+            log_pass "Webhook for $branch created (id: $new_id)"
         else
-            log_fail "Failed to create webhook"
+            log_fail "Failed to create webhook for $branch"
             echo "$create_result"
-            exit 1
+            return 1
         fi
     fi
+}
+
+setup_webhooks() {
+    # Generate webhook token (must match Jenkins job auth token)
+    local webhook_token
+    webhook_token=$(echo -n "${JOB_NAME}-webhook" | sha256sum | cut -c1-32)
+
+    log_info "Auth token: ${webhook_token:0:8}..."
+    log_info "Branches: ${AUTO_PROMOTE_BRANCHES[*]}"
+    echo ""
+
+    for branch in "${AUTO_PROMOTE_BRANCHES[@]}"; do
+        setup_webhook_for_branch "$branch" "$webhook_token" || exit 1
+        echo ""
+    done
 }
 
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 main() {
-    echo "=== Setup Auto-Promote Webhook ==="
+    echo "=== Setup Auto-Promote Webhooks ==="
     echo ""
 
     validate_config
@@ -175,13 +199,16 @@ main() {
     log_info "Jenkins job: $JOB_NAME"
     echo ""
 
-    setup_webhook
+    setup_webhooks
 
+    log_pass "All webhooks setup complete"
     echo ""
-    log_pass "Webhook setup complete"
+    echo "Webhooks will trigger on push to environment branches."
+    echo "This happens automatically when MRs are merged to dev/stage."
     echo ""
-    echo "The webhook will trigger on push to 'dev' and 'stage' branches."
-    echo "This happens automatically when MRs are merged to these branches."
+    echo "Flow:"
+    echo "  1. MR merged to dev → webhook triggers auto-promote → creates stage promotion MR"
+    echo "  2. MR merged to stage → webhook triggers auto-promote → creates prod promotion MR"
 }
 
 main "$@"

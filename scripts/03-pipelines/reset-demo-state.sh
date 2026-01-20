@@ -10,9 +10,9 @@
 #
 # Clean Starting Point:
 #   - No open MRs targeting dev, stage, or prod branches
-#   - Jenkinsfile on all env branches synced from main
-#   - CUE configuration on dev matches main (no demo modifications)
-#   - Manifests on dev have no demo-specific labels
+#   - Jenkinsfile and scripts/ on all env branches synced from main
+#   - CUE configuration on all env branches matches main (no demo modifications)
+#   - Manifests on all env branches have no demo-specific labels
 #   - App version at 1.0.0-SNAPSHOT
 #
 # What it does:
@@ -22,9 +22,10 @@
 #      - GitOps promotion MRs (dev→stage, stage→prod)
 #   2. Deletes feature branches (but preserves dev/stage/prod/main)
 #   3. Syncs Jenkinsfile from main to all env branches
-#   4. Resets CUE configuration files on dev to match main
-#   5. Removes demo-specific labels (cost-center) from dev manifests
-#   6. Resets example-app/pom.xml version to 1.0.0-SNAPSHOT
+#   4. Syncs scripts/ directory from main to all env branches
+#   5. Resets CUE configuration files on all env branches to match main
+#   6. Removes demo-specific labels (cost-center) from all env branch manifests
+#   7. Resets example-app/pom.xml version to 1.0.0-SNAPSHOT
 #
 # What it preserves:
 #   - env.cue files (they have valid CI/CD-managed images)
@@ -234,13 +235,8 @@ sync_file_to_env_branches() {
 }
 
 # =============================================================================
-# Remove demo labels from manifests on ONLY the dev branch
+# Remove demo labels from manifests on ALL environment branches
 # =============================================================================
-# NOTE: We only clean dev manifests because:
-# 1. Jenkins regenerates manifests during MR processing
-# 2. Modifying stage/prod manifests creates merge conflicts when
-#    the same feature branch is promoted through environments
-# 3. Dev is the first target, so it needs to show the diff properly
 remove_demo_labels_from_manifests() {
     local label_pattern="$1"  # e.g., "cost-center"
 
@@ -252,41 +248,42 @@ remove_demo_labels_from_manifests() {
         "manifests/postgres/postgres.yaml"
     )
 
-    # Only clean dev branch - stage/prod will be handled by Jenkins during MR
-    local branch="dev"
-    log_info "Cleaning manifests on $branch branch..."
+    # Clean all environment branches for full demo reset
+    for branch in dev stage prod; do
+        log_info "Cleaning manifests on $branch branch..."
 
-    for manifest_path in "${manifest_files[@]}"; do
-        local encoded_file=$(echo "$manifest_path" | sed 's/\//%2F/g')
+        for manifest_path in "${manifest_files[@]}"; do
+            local encoded_file=$(echo "$manifest_path" | sed 's/\//%2F/g')
 
-        # Get current manifest
-        local file_info=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file?ref=$branch" 2>/dev/null)
+            # Get current manifest
+            local file_info=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+                "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file?ref=$branch" 2>/dev/null)
 
-        if [[ -z "$file_info" ]] || ! echo "$file_info" | jq -e '.content' > /dev/null 2>&1; then
-            continue
-        fi
+            if [[ -z "$file_info" ]] || ! echo "$file_info" | jq -e '.content' > /dev/null 2>&1; then
+                continue
+            fi
 
-        local content=$(echo "$file_info" | jq -r '.content' | base64 -d)
+            local content=$(echo "$file_info" | jq -r '.content' | base64 -d)
 
-        # Check if label exists in manifest
-        if ! echo "$content" | grep -q "$label_pattern"; then
-            continue
-        fi
+            # Check if label exists in manifest
+            if ! echo "$content" | grep -q "$label_pattern"; then
+                continue
+            fi
 
-        # Remove lines containing the label pattern
-        local cleaned_content=$(echo "$content" | grep -v "$label_pattern")
-        local cleaned_b64=$(echo "$cleaned_content" | base64 -w0)
+            # Remove lines containing the label pattern
+            local cleaned_content=$(echo "$content" | grep -v "$label_pattern")
+            local cleaned_b64=$(echo "$cleaned_content" | base64 -w0)
 
-        # Update the manifest
-        local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"branch\": \"$branch\", \"encoding\": \"base64\", \"content\": \"$cleaned_b64\", \"commit_message\": \"chore: remove $label_pattern labels for demo reset\"}" \
-            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
+            # Update the manifest
+            local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{\"branch\": \"$branch\", \"encoding\": \"base64\", \"content\": \"$cleaned_b64\", \"commit_message\": \"chore: remove $label_pattern labels for demo reset\"}" \
+                "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
 
-        if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
-            log_info "  $branch/$manifest_path: cleaned"
-        fi
+            if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
+                log_info "  $branch/$manifest_path: cleaned"
+            fi
+        done
     done
 }
 
@@ -333,15 +330,67 @@ sync_jenkinsfile_to_env_branches() {
 }
 
 # =============================================================================
-# Reset CUE configuration on the dev branch only
+# Sync scripts directory from main to all environment branches
 # =============================================================================
-# NOTE: We only reset dev because:
-# 1. The demo workflow promotes changes from dev → stage → prod via MRs
-# 2. Resetting stage/prod would create merge conflicts when the feature
-#    branch (which has the changes) tries to merge to those environments
-# 3. Stage/prod will naturally get the changes when MRs are merged
+# This ensures all env branches have the latest pipeline scripts, including
+# promote-app-config.sh which handles platform layer promotion.
+sync_scripts_to_env_branches() {
+    log_step "Syncing scripts/ directory to environment branches..."
+
+    local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
+
+    # List all files in scripts/ directory on main branch (recursive)
+    local tree_url="$GITLAB_URL/api/v4/projects/$encoded_project/repository/tree?ref=main&path=scripts&recursive=true&per_page=100"
+    local files=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$tree_url" 2>/dev/null | jq -r '.[] | select(.type == "blob") | .path')
+
+    if [[ -z "$files" ]]; then
+        log_warn "Could not list files in scripts/ directory"
+        return 1
+    fi
+
+    # Sync each file to all environment branches
+    for file_path in $files; do
+        local encoded_file=$(echo "$file_path" | sed 's/\//%2F/g')
+
+        # Get file content from main
+        local main_content=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file?ref=main" 2>/dev/null)
+
+        if [[ -z "$main_content" ]] || ! echo "$main_content" | jq -e '.content' > /dev/null 2>&1; then
+            log_warn "Could not get $file_path from main branch"
+            continue
+        fi
+
+        local content_b64=$(echo "$main_content" | jq -r '.content')
+
+        log_info "Syncing $file_path..."
+        for branch in dev stage prod; do
+            local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{\"branch\": \"$branch\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: sync $file_path from main\"}" \
+                "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
+
+            if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
+                log_info "  $branch: synced"
+            else
+                local error=$(echo "$result" | jq -r '.message // "unknown error"' 2>/dev/null)
+                if [[ "$error" == *"already exists"* ]] || [[ "$error" == *"same content"* ]]; then
+                    log_info "  $branch: already up to date"
+                else
+                    log_warn "  $branch: $error"
+                fi
+            fi
+        done
+    done
+}
+
+# =============================================================================
+# Reset CUE configuration on ALL environment branches
+# =============================================================================
+# This ensures a fully repeatable demo by resetting services/core/app.cue
+# and other demo-modified files on dev, stage, and prod branches.
 reset_cue_config() {
-    log_step "Resetting CUE configuration on dev branch..."
+    log_step "Resetting CUE configuration on all environment branches..."
 
     local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
 
@@ -365,22 +414,24 @@ reset_cue_config() {
 
         local content_b64=$(echo "$main_content" | jq -r '.content')
 
-        # Only update dev branch
-        log_info "Syncing $file_path to dev..."
-        local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"branch\": \"dev\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset $file_path from main for demo\"}" \
-            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
+        # Update all environment branches
+        log_info "Syncing $file_path to environment branches..."
+        for branch in dev stage prod; do
+            local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{\"branch\": \"$branch\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset $file_path from main for demo\"}" \
+                "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
 
-        if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
-            log_info "  dev: synced"
-        else
-            local error=$(echo "$result" | jq -r '.message // "unknown error"' 2>/dev/null)
-            log_warn "  dev: $error"
-        fi
+            if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
+                log_info "  $branch: synced"
+            else
+                local error=$(echo "$result" | jq -r '.message // "unknown error"' 2>/dev/null)
+                log_warn "  $branch: $error"
+            fi
+        done
     done
 
-    # Remove demo-specific labels from manifests (dev only)
+    # Remove demo-specific labels from manifests on all branches
     log_step "Removing demo labels from manifests..."
     remove_demo_labels_from_manifests "cost-center"
 }
@@ -434,8 +485,8 @@ main() {
     echo "CLEAN STARTING POINT:"
     echo "  - No open MRs targeting dev, stage, or prod branches"
     echo "  - Jenkinsfile synced from main to all env branches"
-    echo "  - CUE configuration on dev matches main (no demo modifications)"
-    echo "  - Manifests on dev have no demo-specific labels"
+    echo "  - CUE configuration on ALL env branches matches main (no demo modifications)"
+    echo "  - Manifests on ALL env branches have no demo-specific labels"
     echo "  - env.cue files preserved (valid CI/CD-managed images)"
     echo "  - App version at 1.0.0-SNAPSHOT"
     echo ""
@@ -453,6 +504,9 @@ main() {
     # Sync Jenkinsfile to ensure all env branches have latest pipeline logic
     sync_jenkinsfile_to_env_branches
 
+    # Sync scripts directory to ensure all env branches have latest tooling
+    sync_scripts_to_env_branches
+
     # Reset CUE configuration on environment branches
     reset_cue_config
 
@@ -465,8 +519,9 @@ main() {
     log_info "Clean starting point established:"
     log_info "  - All env-targeting MRs closed"
     log_info "  - Jenkinsfile synced to all env branches"
-    log_info "  - Dev branch CUE config synced from main"
-    log_info "  - Dev branch manifests cleaned"
+    log_info "  - scripts/ directory synced to all env branches"
+    log_info "  - CUE config synced from main to dev/stage/prod"
+    log_info "  - Manifests cleaned on dev/stage/prod"
     log_info "  - App version at 1.0.0-SNAPSHOT"
     echo ""
     log_info "Next steps:"
