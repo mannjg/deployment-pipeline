@@ -24,6 +24,17 @@ Examples:
   cue-edit.py env-field set env.cue dev exampleApp replicas 2
 
 Note: App names use CUE identifiers (e.g., "exampleApp" not "example-app")
+
+Platform-level changes:
+  cue-edit.py platform-annotation add <key> <value>
+  cue-edit.py platform-annotation remove <key>
+
+Examples:
+  # Add Prometheus scraping annotation to all deployments
+  cue-edit.py platform-annotation add prometheus.io/scrape true
+
+  # Remove the annotation
+  cue-edit.py platform-annotation remove prometheus.io/scrape
 """
 
 import argparse
@@ -54,13 +65,17 @@ def run_cue_vet(file_path: str, project_root: str) -> tuple[bool, str]:
 
 def find_project_root(file_path: str) -> str:
     """Find the project root (directory containing cue.mod or services/)."""
-    path = Path(file_path).resolve().parent
+    path = Path(file_path).resolve()
+    # If it's a file, start from its parent directory
+    if path.is_file():
+        path = path.parent
+    # Check current directory first, then walk up
     while path != path.parent:
         if (path / "cue.mod").exists() or (path / "services").exists():
             return str(path)
         path = path.parent
-    # Fallback to file's directory
-    return str(Path(file_path).resolve().parent)
+    # Fallback to original path
+    return str(Path(file_path).resolve())
 
 
 def find_block_end(content: str, start_pos: int) -> int:
@@ -325,6 +340,215 @@ def remove_env_field(content: str, env: str, app: str, field: str) -> str:
     return before + app_block + after
 
 
+# ============================================================================
+# PLATFORM-LEVEL ANNOTATION FUNCTIONS
+# ============================================================================
+
+def add_platform_annotation(project_root: str, key: str, value: str) -> dict:
+    """Add a default pod annotation to the platform layer.
+
+    This modifies two files:
+    1. services/core/app.cue - Add/update defaultPodAnnotations struct and pass to template
+    2. services/resources/deployment.cue - Accept and use defaultPodAnnotations
+
+    Returns dict with 'app_cue' and 'deployment_cue' keys containing modified content.
+    """
+    app_cue_path = Path(project_root) / "services" / "core" / "app.cue"
+    deployment_cue_path = Path(project_root) / "services" / "resources" / "deployment.cue"
+
+    if not app_cue_path.exists():
+        raise ValueError(f"File not found: {app_cue_path}")
+    if not deployment_cue_path.exists():
+        raise ValueError(f"File not found: {deployment_cue_path}")
+
+    app_content = app_cue_path.read_text()
+    deployment_content = deployment_cue_path.read_text()
+
+    # Step 1: Add/update defaultPodAnnotations in app.cue
+    app_content = _add_annotation_to_app_cue(app_content, key, value)
+
+    # Step 2: Add defaultPodAnnotations to deployment template call (if not present)
+    app_content = _add_annotation_param_to_template_call(app_content)
+
+    # Step 3: Add defaultPodAnnotations parameter to deployment.cue (if not present)
+    deployment_content = _add_annotation_param_to_deployment_cue(deployment_content)
+
+    # Step 4: Add _podAnnotations merge logic (if not present)
+    deployment_content = _add_annotation_merge_logic(deployment_content)
+
+    # Step 5: Update pod template to use _podAnnotations (if not already)
+    deployment_content = _update_pod_template_annotations(deployment_content)
+
+    return {
+        'app_cue': app_content,
+        'deployment_cue': deployment_content,
+        'app_cue_path': str(app_cue_path),
+        'deployment_cue_path': str(deployment_cue_path),
+    }
+
+
+def _add_annotation_to_app_cue(content: str, key: str, value: str) -> str:
+    """Add or update an annotation in defaultPodAnnotations struct."""
+    # Check if defaultPodAnnotations already exists
+    if 'defaultPodAnnotations:' in content:
+        # Check if this specific key exists
+        key_pattern = rf'"{re.escape(key)}":\s*"[^"]*"'
+        if re.search(key_pattern, content):
+            # Update existing key
+            content = re.sub(
+                rf'("{re.escape(key)}":\s*)"[^"]*"',
+                rf'\1"{value}"',
+                content
+            )
+        else:
+            # Add new key to existing struct
+            # Find the opening brace of defaultPodAnnotations
+            match = re.search(r'defaultPodAnnotations:\s*\{', content)
+            if match:
+                insert_pos = match.end()
+                new_entry = f'\n\t\t"{key}": "{value}"'
+                content = content[:insert_pos] + new_entry + content[insert_pos:]
+    else:
+        # Create new defaultPodAnnotations struct after defaultLabels
+        # Find the closing brace of defaultLabels
+        match = re.search(r'defaultLabels:\s*\{[^}]+\}', content)
+        if match:
+            insert_pos = match.end()
+            new_struct = f'''
+
+\t// Default pod annotations applied to all deployments
+\t// Merged with any podAnnotations provided via appConfig.deployment.podAnnotations
+\tdefaultPodAnnotations: {{
+\t\t"{key}": "{value}"
+\t}}'''
+            content = content[:insert_pos] + new_struct + content[insert_pos:]
+        else:
+            raise ValueError("Could not find defaultLabels block in app.cue")
+
+    return content
+
+
+def _add_annotation_param_to_template_call(content: str) -> str:
+    """Add defaultPodAnnotations parameter to deployment template call."""
+    if '"defaultPodAnnotations":' in content:
+        return content  # Already present
+
+    # Find the deployment template call and add the parameter after appEnvFrom
+    pattern = r'("appEnvFrom":\s*_computedAppEnvFrom)'
+    replacement = r'\1\n\t\t\t"defaultPodAnnotations": defaultPodAnnotations'
+    content = re.sub(pattern, replacement, content)
+
+    return content
+
+
+def _add_annotation_param_to_deployment_cue(content: str) -> str:
+    """Add defaultPodAnnotations parameter to #DeploymentTemplate."""
+    if 'defaultPodAnnotations:' in content:
+        return content  # Already present
+
+    # Add after appEnvFrom parameter definition
+    pattern = r'(appEnvFrom:\s*\[\.\.\.[^\]]+\]\s*\|\s*\*\[\])'
+    replacement = r'''\1
+
+\t// Default pod annotations (provided by app.cue)
+\t// Merged with appConfig.deployment.podAnnotations
+\tdefaultPodAnnotations: [string]: string'''
+    content = re.sub(pattern, replacement, content)
+
+    return content
+
+
+def _add_annotation_merge_logic(content: str) -> str:
+    """Add _podAnnotations computed field that merges defaults with config."""
+    if '_podAnnotations:' in content:
+        return content  # Already present
+
+    # Add after _labels definition
+    pattern = r'(_labels:\s*_defaultLabels\s*&\s*appConfig\.labels)'
+    replacement = r'''\1
+
+\t// Computed pod annotations - merge defaults with config
+\t_podAnnotations: defaultPodAnnotations & (appConfig.deployment.podAnnotations | {})'''
+    content = re.sub(pattern, replacement, content)
+
+    return content
+
+
+def _update_pod_template_annotations(content: str) -> str:
+    """Update pod template to always render annotations using _podAnnotations."""
+    if 'annotations: _podAnnotations' in content:
+        return content  # Already updated
+
+    # Replace the conditional annotation block with direct assignment
+    # Pattern matches the if block for podAnnotations in the template metadata
+    pattern = r'if appConfig\.deployment\.podAnnotations != _\|_ \{\s*\n\s*annotations: appConfig\.deployment\.podAnnotations\s*\n\s*\}'
+    replacement = 'annotations: _podAnnotations'
+    content = re.sub(pattern, replacement, content)
+
+    return content
+
+
+def remove_platform_annotation(project_root: str, key: str) -> dict:
+    """Remove a default pod annotation from the platform layer.
+
+    Returns dict with modified content for both files.
+    """
+    app_cue_path = Path(project_root) / "services" / "core" / "app.cue"
+    deployment_cue_path = Path(project_root) / "services" / "resources" / "deployment.cue"
+
+    if not app_cue_path.exists():
+        raise ValueError(f"File not found: {app_cue_path}")
+
+    app_content = app_cue_path.read_text()
+    deployment_content = deployment_cue_path.read_text()
+
+    # Remove the specific annotation key from defaultPodAnnotations
+    # Pattern to match the key-value line with surrounding whitespace
+    pattern = rf'\n\s*"{re.escape(key)}":\s*"[^"]*"'
+    app_content = re.sub(pattern, '', app_content)
+
+    # Check if defaultPodAnnotations is now empty
+    empty_struct_pattern = r'defaultPodAnnotations:\s*\{\s*\}'
+    if re.search(empty_struct_pattern, app_content):
+        # Remove the entire defaultPodAnnotations block including comment
+        full_block_pattern = r'\n\s*// Default pod annotations[^\n]*\n\s*// Merged with[^\n]*\n\s*defaultPodAnnotations:\s*\{\s*\}'
+        app_content = re.sub(full_block_pattern, '', app_content)
+
+        # Also remove from template call
+        app_content = re.sub(r'\n\s*"defaultPodAnnotations":\s*defaultPodAnnotations', '', app_content)
+
+        # Revert deployment.cue changes
+        # Remove _podAnnotations line
+        deployment_content = re.sub(
+            r'\n\s*// Computed pod annotations[^\n]*\n\s*_podAnnotations:[^\n]+',
+            '',
+            deployment_content
+        )
+
+        # Remove defaultPodAnnotations parameter
+        deployment_content = re.sub(
+            r'\n\s*// Default pod annotations[^\n]*\n\s*// Merged with[^\n]*\n\s*defaultPodAnnotations:[^\n]+',
+            '',
+            deployment_content
+        )
+
+        # Revert to conditional annotation rendering
+        deployment_content = re.sub(
+            r'annotations: _podAnnotations',
+            '''if appConfig.deployment.podAnnotations != _|_ {
+\t\t\t\t\tannotations: appConfig.deployment.podAnnotations
+\t\t\t\t}''',
+            deployment_content
+        )
+
+    return {
+        'app_cue': app_content,
+        'deployment_cue': deployment_content,
+        'app_cue_path': str(app_cue_path),
+        'deployment_cue_path': str(deployment_cue_path),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Safely edit CUE configuration files',
@@ -383,13 +607,88 @@ def main():
     env_field_remove.add_argument('app', help='App name (CUE identifier)')
     env_field_remove.add_argument('field', help='Field name to remove')
 
+    # platform-annotation subcommand
+    platform_ann = subparsers.add_parser('platform-annotation', help='Modify platform-level pod annotations')
+    platform_ann_sub = platform_ann.add_subparsers(dest='action')
+
+    platform_ann_add = platform_ann_sub.add_parser('add', help='Add a default pod annotation')
+    platform_ann_add.add_argument('key', help='Annotation key (e.g., prometheus.io/scrape)')
+    platform_ann_add.add_argument('value', help='Annotation value (e.g., true)')
+
+    platform_ann_remove = platform_ann_sub.add_parser('remove', help='Remove a default pod annotation')
+    platform_ann_remove.add_argument('key', help='Annotation key to remove')
+
     args = parser.parse_args()
 
     if not args.command:
         parser.print_help()
         sys.exit(1)
 
-    # Read the file
+    # Handle platform-annotation separately (it operates on project root, not a single file)
+    if args.command == 'platform-annotation':
+        # Find project root from current directory
+        project_root = find_project_root(str(Path.cwd()))
+
+        try:
+            if args.action == 'add':
+                results = add_platform_annotation(project_root, args.key, args.value)
+            elif args.action == 'remove':
+                results = remove_platform_annotation(project_root, args.key)
+            else:
+                print(f"Error: Unknown action: {args.action}", file=sys.stderr)
+                sys.exit(1)
+
+            # Write both files and validate
+            app_cue_path = Path(results['app_cue_path'])
+            deployment_cue_path = Path(results['deployment_cue_path'])
+
+            # Backup both files
+            app_backup = str(app_cue_path) + '.bak'
+            deployment_backup = str(deployment_cue_path) + '.bak'
+            shutil.copy(str(app_cue_path), app_backup)
+            shutil.copy(str(deployment_cue_path), deployment_backup)
+
+            try:
+                # Write new content
+                app_cue_path.write_text(results['app_cue'])
+                deployment_cue_path.write_text(results['deployment_cue'])
+
+                # Validate with cue vet -c=false (main branch env.cue is incomplete by design)
+                result = subprocess.run(
+                    ["cue", "vet", "-c=false", "./..."],
+                    cwd=project_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+
+                if result.returncode != 0:
+                    # Restore backups
+                    shutil.move(app_backup, str(app_cue_path))
+                    shutil.move(deployment_backup, str(deployment_cue_path))
+                    print(f"Error: CUE validation failed:\n{result.stderr}", file=sys.stderr)
+                    sys.exit(1)
+
+                # Success - remove backups
+                Path(app_backup).unlink(missing_ok=True)
+                Path(deployment_backup).unlink(missing_ok=True)
+                print(f"Successfully modified {app_cue_path}")
+                print(f"Successfully modified {deployment_cue_path}")
+                sys.exit(0)
+
+            except Exception as e:
+                # Restore on any error
+                if Path(app_backup).exists():
+                    shutil.move(app_backup, str(app_cue_path))
+                if Path(deployment_backup).exists():
+                    shutil.move(deployment_backup, str(deployment_cue_path))
+                raise
+
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Read the file (for non-platform-annotation commands)
     file_path = Path(args.file).resolve()
     if not file_path.exists():
         print(f"Error: File not found: {file_path}", file=sys.stderr)
