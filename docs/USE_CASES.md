@@ -391,7 +391,7 @@ While preserving:
 | UC-C1 | Add default label | ✅ | ✅ | ✅ | `uc-c1-default-label` | Pipeline verified 2026-01-21 |
 | UC-C2 | Add security context | ⚠️ | 🔲 | 🔲 | — | Schema exists, disabled by default |
 | UC-C3 | Change deployment strategy | 🔲 | 🔲 | 🔲 | — | |
-| UC-C4 | Add standard pod annotation | 🔲 | 🔲 | 🔲 | — | |
+| UC-C4 | Add standard pod annotation | ✅ | ✅ | 🔲 | — | Ready for pipeline verification |
 | UC-C5 | Platform default + app override | 🔲 | 🔲 | 🔲 | — | Multi-app pivot (uses postgres) |
 | UC-C6 | Platform default + env override | 🔲 | 🔲 | 🔲 | — | |
 | UC-D1 | Emergency hotfix to prod | 🔲 | 🔲 | 🔲 | — | Requires direct env MR support |
