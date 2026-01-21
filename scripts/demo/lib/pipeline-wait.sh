@@ -146,9 +146,6 @@ get_commit_statuses() {
 # commit statuses directly. This handles the case where Jenkins pushes
 # new commits (manifest regeneration) which changes the MR's HEAD SHA.
 # GitLab's head_pipeline tracks the pipeline for the current HEAD automatically.
-#
-# IMPORTANT: We also verify that the pipeline was created AFTER the MR was
-# created, not reusing a stale pipeline from a previous MR to a different target.
 wait_for_mr_pipeline() {
     local mr_iid="$1"
     local timeout="${2:-$MR_PIPELINE_TIMEOUT}"
@@ -161,12 +158,6 @@ wait_for_mr_pipeline() {
 
     local poll_interval=10
     local elapsed=0
-
-    # Get MR creation timestamp for comparison
-    local mr_info_initial
-    mr_info_initial=$(get_mr "$mr_iid")
-    local mr_created_at
-    mr_created_at=$(echo "$mr_info_initial" | jq -r '.created_at // empty')
 
     while [[ $elapsed -lt $timeout ]]; do
         # Fetch MR info which includes head_pipeline status
@@ -182,54 +173,6 @@ wait_for_mr_pipeline() {
         # when Jenkins posts commit status via the API
         local pipeline_status
         pipeline_status=$(echo "$mr_info" | jq -r '.head_pipeline.status // empty')
-
-        # Get pipeline created_at to verify it's for THIS MR, not a stale one
-        local pipeline_created_at
-        pipeline_created_at=$(echo "$mr_info" | jq -r '.head_pipeline.created_at // empty')
-
-        # Check if this pipeline is stale (created before the MR)
-        local is_stale_pipeline=false
-        if [[ -n "$pipeline_created_at" && -n "$mr_created_at" ]]; then
-            # Compare timestamps - if pipeline was created before MR, it's stale
-            local pipeline_ts mr_ts
-            pipeline_ts=$(date -d "$pipeline_created_at" +%s 2>/dev/null || echo "0")
-            mr_ts=$(date -d "$mr_created_at" +%s 2>/dev/null || echo "0")
-            if [[ $pipeline_ts -lt $mr_ts ]]; then
-                is_stale_pipeline=true
-            fi
-        fi
-
-        # If pipeline is stale OR missing after initial wait, trigger a fresh one
-        # This handles two cases:
-        # 1. Stale pipeline: A previous MR had a pipeline, but this is a new MR
-        # 2. No pipeline: For env→env MRs (dev→stage), there may be no pipeline
-        #    because no push happened to the source branch
-        local needs_trigger=false
-        local trigger_reason=""
-
-        if [[ "$is_stale_pipeline" == "true" ]]; then
-            needs_trigger=true
-            trigger_reason="Pipeline is stale (created before MR)"
-        elif [[ -z "$pipeline_status" && $elapsed -ge 10 ]]; then
-            # No pipeline after initial wait - likely an env→env MR
-            needs_trigger=true
-            trigger_reason="No pipeline found (likely env→env MR)"
-        fi
-
-        if [[ "$needs_trigger" == "true" ]]; then
-            # Only trigger once
-            if [[ $elapsed -le 10 ]]; then
-                demo_info "$trigger_reason, triggering fresh build..."
-                push_empty_commit_for_mr "$mr_iid" || true
-                # Also trigger Jenkins scan to pick up the new commit
-                trigger_jenkins_scan "$job_name"
-            else
-                demo_info "Waiting for fresh pipeline... (${elapsed}s)"
-            fi
-            sleep $poll_interval
-            elapsed=$((elapsed + poll_interval))
-            continue
-        fi
 
         case "$pipeline_status" in
             success)
