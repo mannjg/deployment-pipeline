@@ -118,9 +118,8 @@ done
 
 demo_step 2 "Add Default Pod Annotations to Platform Layer"
 
-demo_info "This requires changes to TWO files:"
-demo_info "  1. services/core/app.cue - Define defaultPodAnnotations and pass to template"
-demo_info "  2. services/resources/deployment.cue - Accept and use defaultPodAnnotations"
+demo_info "Adding annotation to defaultPodAnnotations in services/core/app.cue"
+demo_info "  (deployment.cue infrastructure already supports defaultPodAnnotations)"
 
 # Make CUE changes using cue-edit.py (includes CUE validation)
 add_prometheus_annotations || exit 1
@@ -175,9 +174,9 @@ for env in "${ENVIRONMENTS[@]}"; do
         wait_for_mr_pipeline "$mr_iid" || exit 1
 
         # Verify MR contains expected changes
+        # Note: deployment.cue infrastructure is already in place, only app.cue changes
         demo_action "Verifying MR contains CUE and manifest changes..."
         assert_mr_contains_diff "$mr_iid" "services/core/app.cue" "defaultPodAnnotations" || exit 1
-        assert_mr_contains_diff "$mr_iid" "services/resources/deployment.cue" "defaultPodAnnotations" || exit 1
         assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "prometheus.io/scrape" || exit 1
 
         # Capture baseline time BEFORE merge
@@ -246,9 +245,8 @@ cat << EOF
   This demo validated UC-C4: Add Standard Pod Annotation to All Deployments
 
   What happened:
-  1. Added defaultPodAnnotations to services/core/app.cue
-  2. Updated services/resources/deployment.cue to use merged annotations
-  3. Pushed CUE changes only (no manual manifest generation)
+  1. Added prometheus annotations to defaultPodAnnotations in services/core/app.cue
+  2. Pushed CUE changes only (no manual manifest generation)
   4. Promoted through environments using GitOps pattern:
      - Feature branch -> dev: Manual MR (pipeline generates manifests)
      - dev -> stage: Jenkins auto-created promotion MR
