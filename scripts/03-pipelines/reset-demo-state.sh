@@ -9,6 +9,8 @@
 #   ./scripts/03-pipelines/reset-demo-state.sh
 #
 # Clean Starting Point:
+#   - No stale local demo branches (uc-c1-*, update-dev-*, promote-*)
+#   - No orphaned GitLab demo branches
 #   - No open MRs targeting dev, stage, or prod branches
 #   - Jenkinsfile and scripts/ on all env branches synced from main
 #   - CUE configuration on all env branches matches main (no demo modifications)
@@ -16,16 +18,17 @@
 #   - App version at 1.0.0-SNAPSHOT
 #
 # What it does:
-#   1. Closes ALL open MRs targeting environment branches (dev, stage, prod)
+#   1. Cleans up stale local demo branches (uc-c1-*, update-dev-*, promote-*)
+#   2. Closes ALL open MRs targeting environment branches (dev, stage, prod)
 #      - Feature branch MRs (uc-c1-*, update-dev-*, etc.)
 #      - Promotion MRs (promote-stage-*, promote-prod-*)
 #      - GitOps promotion MRs (dev→stage, stage→prod)
-#   2. Deletes feature branches (but preserves dev/stage/prod/main)
-#   3. Syncs Jenkinsfile from main to all env branches
-#   4. Syncs scripts/ directory from main to all env branches
-#   5. Resets CUE configuration files on all env branches to match main
-#   6. Removes demo-specific labels (cost-center) from all env branch manifests
-#   7. Resets example-app/pom.xml version to 1.0.0-SNAPSHOT
+#   3. Deletes orphaned GitLab demo branches (those without MRs)
+#   4. Syncs Jenkinsfile from main to all env branches
+#   5. Syncs scripts/ directory from main to all env branches
+#   6. Resets CUE configuration files on all env branches to match main
+#   7. Removes demo-specific labels (cost-center) from all env branch manifests
+#   8. Resets example-app/pom.xml version to 1.0.0-SNAPSHOT
 #
 # What it preserves:
 #   - env.cue files (they have valid CI/CD-managed images)
@@ -78,6 +81,88 @@ get_credentials() {
 
     GITLAB_URL="https://${GITLAB_HOST_EXTERNAL}"
     log_info "GitLab: $GITLAB_URL"
+}
+
+# =============================================================================
+# Clean up stale local demo branches
+# =============================================================================
+# Removes local branches matching demo patterns (uc-c1-*, update-dev-*, promote-*)
+# Preserves main, dev, stage, prod
+cleanup_local_branches() {
+    log_step "Cleaning up local demo branches..."
+
+    local patterns=("uc-c1-*" "update-dev-*" "promote-*")
+    local deleted=0
+
+    for pattern in "${patterns[@]}"; do
+        local branches=$(git branch --list "$pattern" 2>/dev/null | sed 's/^[* ]*//')
+        if [[ -n "$branches" ]]; then
+            while IFS= read -r branch; do
+                if [[ -n "$branch" ]]; then
+                    git branch -D "$branch" >/dev/null 2>&1 && deleted=$((deleted + 1))
+                fi
+            done <<< "$branches"
+        fi
+    done
+
+    if [[ $deleted -gt 0 ]]; then
+        log_info "Deleted $deleted local demo branches"
+    else
+        log_info "No local demo branches to clean"
+    fi
+}
+
+# =============================================================================
+# Clean up orphaned GitLab branches (without MRs)
+# =============================================================================
+# Removes GitLab branches matching demo patterns that don't have open MRs
+cleanup_gitlab_orphan_branches() {
+    local project_path="$1"
+    local encoded_project=$(echo "$project_path" | sed 's/\//%2F/g')
+
+    log_step "Cleaning up orphaned GitLab demo branches..."
+
+    local patterns=("uc-c1-" "update-dev-" "promote-")
+    local deleted=0
+
+    # Get all branches from GitLab
+    local branches_url="$GITLAB_URL/api/v4/projects/$encoded_project/repository/branches?per_page=100"
+    local all_branches=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$branches_url" 2>/dev/null | jq -r '.[].name')
+
+    if [[ -z "$all_branches" ]]; then
+        log_info "No branches found"
+        return 0
+    fi
+
+    for branch in $all_branches; do
+        # Skip environment branches
+        if [[ "$branch" == "main" || "$branch" == "dev" || "$branch" == "stage" || "$branch" == "prod" ]]; then
+            continue
+        fi
+
+        # Check if branch matches any demo pattern
+        local is_demo_branch=false
+        for pattern in "${patterns[@]}"; do
+            if [[ "$branch" == ${pattern}* ]]; then
+                is_demo_branch=true
+                break
+            fi
+        done
+
+        if [[ "$is_demo_branch" == true ]]; then
+            # Delete the orphan branch
+            local encoded_branch=$(echo "$branch" | jq -sRr @uri)
+            curl -sk -X DELETE -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+                "$GITLAB_URL/api/v4/projects/$encoded_project/repository/branches/$encoded_branch" \
+                >/dev/null 2>&1 && deleted=$((deleted + 1))
+        fi
+    done
+
+    if [[ $deleted -gt 0 ]]; then
+        log_info "Deleted $deleted orphaned GitLab demo branches"
+    else
+        log_info "No orphaned GitLab demo branches to clean"
+    fi
 }
 
 # =============================================================================
@@ -483,6 +568,8 @@ main() {
     echo "This script establishes a well-defined starting point for demos."
     echo ""
     echo "CLEAN STARTING POINT:"
+    echo "  - No stale local demo branches"
+    echo "  - No orphaned GitLab demo branches"
     echo "  - No open MRs targeting dev, stage, or prod branches"
     echo "  - Jenkinsfile synced from main to all env branches"
     echo "  - CUE configuration on ALL env branches matches main (no demo modifications)"
@@ -493,6 +580,9 @@ main() {
 
     get_credentials
 
+    # Clean up stale local demo branches first
+    cleanup_local_branches
+
     # Close ALL open MRs targeting environment branches
     # This handles all scenarios:
     # - Feature branch MRs (uc-c1-*, update-dev-*, etc.)
@@ -500,6 +590,9 @@ main() {
     # - GitOps promotion MRs (dev→stage, stage→prod)
     log_step "Closing ALL open MRs targeting environment branches..."
     close_all_env_mrs "$DEPLOYMENTS_REPO_PATH"
+
+    # Clean up orphaned GitLab demo branches (those without MRs)
+    cleanup_gitlab_orphan_branches "$DEPLOYMENTS_REPO_PATH"
 
     # Sync Jenkinsfile to ensure all env branches have latest pipeline logic
     sync_jenkinsfile_to_env_branches
@@ -517,7 +610,9 @@ main() {
     echo "=== Reset Complete ==="
     echo ""
     log_info "Clean starting point established:"
+    log_info "  - Local demo branches cleaned up"
     log_info "  - All env-targeting MRs closed"
+    log_info "  - Orphaned GitLab demo branches deleted"
     log_info "  - Jenkinsfile synced to all env branches"
     log_info "  - scripts/ directory synced to all env branches"
     log_info "  - CUE config synced from main to dev/stage/prod"
