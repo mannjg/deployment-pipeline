@@ -137,6 +137,18 @@ def mergeTargetBranchForPreview(String targetEnv) {
                 git add .mr-trigger
             fi
 
+            # Resolve services/ conflicts by keeping feature branch version (ours)
+            # Feature branch has the actual changes (e.g., new annotations) that we want
+            SERVICE_CONFLICTS=\$(git diff --name-only --diff-filter=U 2>/dev/null | grep "^services/" || true)
+            if [ -n "\$SERVICE_CONFLICTS" ]; then
+                echo "Resolving services/ conflicts (keeping feature branch version):"
+                echo "\$SERVICE_CONFLICTS"
+                for file in \$SERVICE_CONFLICTS; do
+                    git checkout --ours "\$file"
+                    git add "\$file"
+                done
+            fi
+
             # Check for any remaining unresolved conflicts
             CONFLICTS=\$(git diff --name-only --diff-filter=U 2>/dev/null || true)
             if [ -n "\$CONFLICTS" ]; then
