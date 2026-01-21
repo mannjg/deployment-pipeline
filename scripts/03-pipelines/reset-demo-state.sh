@@ -9,7 +9,8 @@
 #   ./scripts/03-pipelines/reset-demo-state.sh
 #
 # Clean Starting Point:
-#   - No stale local demo branches (uc-c1-*, update-dev-*, promote-*)
+#   - Jenkins queue cleared (no stale running/queued jobs)
+#   - No stale local demo branches (uc-*, update-dev-*, promote-*)
 #   - No orphaned GitLab demo branches
 #   - No open MRs targeting dev, stage, or prod branches
 #   - Jenkinsfile and scripts/ on all env branches synced from main
@@ -18,17 +19,19 @@
 #   - App version at 1.0.0-SNAPSHOT
 #
 # What it does:
-#   1. Cleans up stale local demo branches (uc-c1-*, update-dev-*, promote-*)
-#   2. Closes ALL open MRs targeting environment branches (dev, stage, prod)
-#      - Feature branch MRs (uc-c1-*, update-dev-*, etc.)
+#   1. Clears Jenkins queue and aborts running k8s-deployments jobs
+#   2. Deletes Jenkins agent pods to prevent stale job completion
+#   3. Cleans up stale local demo branches (uc-*, update-dev-*, promote-*)
+#   4. Closes ALL open MRs targeting environment branches (dev, stage, prod)
+#      - Feature branch MRs (uc-*, update-dev-*, etc.)
 #      - Promotion MRs (promote-stage-*, promote-prod-*)
 #      - GitOps promotion MRs (dev→stage, stage→prod)
-#   3. Deletes orphaned GitLab demo branches (those without MRs)
-#   4. Syncs Jenkinsfile from main to all env branches
-#   5. Syncs scripts/ directory from main to all env branches
-#   6. Resets CUE configuration files on all env branches to match main
-#   7. Removes demo-specific labels (cost-center) from all env branch manifests
-#   8. Resets example-app/pom.xml version to 1.0.0-SNAPSHOT
+#   5. Deletes orphaned GitLab demo branches (those without MRs)
+#   6. Syncs Jenkinsfile from main to all env branches
+#   7. Syncs scripts/ directory from main to all env branches
+#   8. Resets CUE configuration files on all env branches to match main
+#   9. Removes demo-specific labels (cost-center) from all env branch manifests
+#   10. Resets example-app/pom.xml version to 1.0.0-SNAPSHOT
 #
 # What it preserves:
 #   - env.cue files (they have valid CI/CD-managed images)
@@ -79,19 +82,107 @@ get_credentials() {
         exit 1
     fi
 
+    # Get Jenkins credentials
+    JENKINS_USER="${JENKINS_USER:-}"
+    JENKINS_TOKEN="${JENKINS_TOKEN:-}"
+    if [[ -z "$JENKINS_USER" ]]; then
+        JENKINS_USER=$(kubectl get secret "${JENKINS_ADMIN_SECRET}" -n "${JENKINS_NAMESPACE}" \
+            -o jsonpath="{.data.${JENKINS_ADMIN_USER_KEY}}" 2>/dev/null | base64 -d) || true
+    fi
+    if [[ -z "$JENKINS_TOKEN" ]]; then
+        JENKINS_TOKEN=$(kubectl get secret "${JENKINS_ADMIN_SECRET}" -n "${JENKINS_NAMESPACE}" \
+            -o jsonpath="{.data.${JENKINS_ADMIN_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
+    fi
+
     GITLAB_URL="https://${GITLAB_HOST_EXTERNAL}"
+    JENKINS_URL="${JENKINS_URL_EXTERNAL:-http://jenkins.local}"
     log_info "GitLab: $GITLAB_URL"
+    log_info "Jenkins: $JENKINS_URL"
+}
+
+# =============================================================================
+# Clean up Jenkins queue and running jobs
+# =============================================================================
+# Stops all running/queued Jenkins jobs for k8s-deployments to prevent stale
+# promotion MRs from being created after demo reset.
+cleanup_jenkins_queue() {
+    log_step "Cleaning up Jenkins queue and running jobs..."
+
+    if [[ -z "$JENKINS_USER" ]] || [[ -z "$JENKINS_TOKEN" ]]; then
+        log_warn "Jenkins credentials not available, skipping queue cleanup"
+        return 0
+    fi
+
+    local jenkins_auth="$JENKINS_USER:$JENKINS_TOKEN"
+
+    # 1. Cancel all queued items for k8s-deployments
+    log_info "Canceling queued Jenkins jobs..."
+    local queue_items=$(curl -sk -u "$jenkins_auth" "$JENKINS_URL/queue/api/json" 2>/dev/null | \
+        jq -r '.items[] | select(.task.name | test("k8s-deployments")) | .id' 2>/dev/null || true)
+
+    local canceled=0
+    if [[ -n "$queue_items" ]]; then
+        for item_id in $queue_items; do
+            curl -sk -X POST -u "$jenkins_auth" "$JENKINS_URL/queue/cancelItem?id=$item_id" >/dev/null 2>&1 && \
+                canceled=$((canceled + 1))
+        done
+    fi
+    log_info "  Canceled $canceled queued items"
+
+    # 2. Abort running builds for k8s-deployments branches
+    log_info "Aborting running Jenkins builds..."
+    local aborted=0
+
+    # Get all jobs under k8s-deployments multibranch pipeline
+    local jobs=$(curl -sk -u "$jenkins_auth" "$JENKINS_URL/job/k8s-deployments/api/json" 2>/dev/null | \
+        jq -r '.jobs[].name' 2>/dev/null || true)
+
+    if [[ -n "$jobs" ]]; then
+        for job_name in $jobs; do
+            # URL-encode the job name (handle slashes, etc.)
+            local encoded_job=$(echo "$job_name" | jq -sRr @uri)
+
+            # Get running builds for this job
+            local builds=$(curl -sk -u "$jenkins_auth" \
+                "$JENKINS_URL/job/k8s-deployments/job/$encoded_job/api/json" 2>/dev/null | \
+                jq -r '.builds[]? | select(.building == true) | .number' 2>/dev/null || true)
+
+            for build_num in $builds; do
+                if [[ -n "$build_num" ]]; then
+                    curl -sk -X POST -u "$jenkins_auth" \
+                        "$JENKINS_URL/job/k8s-deployments/job/$encoded_job/$build_num/stop" >/dev/null 2>&1 && \
+                        aborted=$((aborted + 1))
+                fi
+            done
+        done
+    fi
+    log_info "  Aborted $aborted running builds"
+
+    # 3. Delete all Jenkins agent pods (except main Jenkins pod)
+    log_info "Deleting Jenkins agent pods..."
+    local deleted_pods=$(kubectl get pods -n "${JENKINS_NAMESPACE}" --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | \
+        grep -v "^jenkins-" | wc -l)
+
+    kubectl get pods -n "${JENKINS_NAMESPACE}" --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | \
+        grep -v "^jenkins-" | \
+        xargs -r kubectl delete pod -n "${JENKINS_NAMESPACE}" --force --grace-period=0 >/dev/null 2>&1 || true
+
+    log_info "  Deleted $deleted_pods agent pods"
+
+    # 4. Wait a moment for Jenkins to stabilize
+    log_info "Waiting for Jenkins to stabilize..."
+    sleep 5
 }
 
 # =============================================================================
 # Clean up stale local demo branches
 # =============================================================================
-# Removes local branches matching demo patterns (uc-c1-*, update-dev-*, promote-*)
+# Removes local branches matching demo patterns (uc-*, update-dev-*, promote-*)
 # Preserves main, dev, stage, prod
 cleanup_local_branches() {
     log_step "Cleaning up local demo branches..."
 
-    local patterns=("uc-c1-*" "update-dev-*" "promote-*")
+    local patterns=("uc-*" "update-dev-*" "promote-*")
     local deleted=0
 
     for pattern in "${patterns[@]}"; do
@@ -122,7 +213,7 @@ cleanup_gitlab_orphan_branches() {
 
     log_step "Cleaning up orphaned GitLab demo branches..."
 
-    local patterns=("uc-c1-" "update-dev-" "promote-")
+    local patterns=("uc-" "update-dev-" "promote-")
     local deleted=0
 
     # Get all branches from GitLab
@@ -568,6 +659,7 @@ main() {
     echo "This script establishes a well-defined starting point for demos."
     echo ""
     echo "CLEAN STARTING POINT:"
+    echo "  - Jenkins queue cleared (no stale running/queued jobs)"
     echo "  - No stale local demo branches"
     echo "  - No orphaned GitLab demo branches"
     echo "  - No open MRs targeting dev, stage, or prod branches"
@@ -580,7 +672,11 @@ main() {
 
     get_credentials
 
-    # Clean up stale local demo branches first
+    # CRITICAL: Clean up Jenkins first to prevent stale jobs from creating MRs
+    # after we close existing ones
+    cleanup_jenkins_queue
+
+    # Clean up stale local demo branches
     cleanup_local_branches
 
     # Close ALL open MRs targeting environment branches
@@ -610,6 +706,7 @@ main() {
     echo "=== Reset Complete ==="
     echo ""
     log_info "Clean starting point established:"
+    log_info "  - Jenkins queue cleared, agent pods deleted"
     log_info "  - Local demo branches cleaned up"
     log_info "  - All env-targeting MRs closed"
     log_info "  - Orphaned GitLab demo branches deleted"
