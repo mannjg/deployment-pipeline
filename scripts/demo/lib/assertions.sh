@@ -169,8 +169,9 @@ assert_annotation_equals() {
     local annotation_key="$4"
     local expected_value="$5"
 
-    # Annotations with dots need bracket notation
-    local jsonpath="{.metadata.annotations['$annotation_key']}"
+    # Annotations with dots need escaped dot notation for kubectl jsonpath
+    local escaped_key="${annotation_key//./\\.}"
+    local jsonpath="{.metadata.annotations.${escaped_key}}"
     assert_field_equals "$namespace" "$kind" "$name" "$jsonpath" "$expected_value"
 }
 
@@ -198,7 +199,9 @@ assert_pod_annotation_equals() {
     local annotation_key="$3"
     local expected_value="$4"
 
-    local jsonpath="{.spec.template.metadata.annotations['$annotation_key']}"
+    # Annotations with dots need escaped dot notation for kubectl jsonpath
+    local escaped_key="${annotation_key//./\\.}"
+    local jsonpath="{.spec.template.metadata.annotations.${escaped_key}}"
     assert_field_equals "$namespace" "deployment" "$deployment" "$jsonpath" "$expected_value"
 }
 
