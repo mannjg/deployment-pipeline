@@ -14,10 +14,10 @@ import (
 // secrets, configmaps, cluster CA, and downward API into a single volume.
 _projectedSecretsVolumeBuilder: {
 	// Configuration inputs with defaults
-	enabled:            bool | *true
-	secretItems:        [...{key: string, path: string}] | *base.#DefaultProjectedSecretItems
-	configMapItems:     [...{key: string, path: string}] | *base.#DefaultProjectedConfigMapItems
-	clusterCAItems:     [...{key: string, path: string}] | *base.#DefaultProjectedClusterCAItems
+	enabled: bool | *true
+	secretItems: [...{key: string, path: string}] | *base.#DefaultProjectedSecretItems
+	configMapItems: [...{key: string, path: string}] | *base.#DefaultProjectedConfigMapItems
+	clusterCAItems: [...{key: string, path: string}] | *base.#DefaultProjectedClusterCAItems
 	includeDownwardAPI: bool | *true
 
 	// Volume source names (must be provided by caller with their own defaults)
@@ -74,6 +74,10 @@ _projectedSecretsVolumeBuilder: {
 	// Optional: app-level envFrom sources (provided by app.cue)
 	appEnvFrom: [...k8s.#EnvFromSource] | *[]
 
+	// Default pod annotations (provided by app.cue)
+	// Merged with appConfig.deployment.podAnnotations
+	defaultPodAnnotations: [string]: string
+
 	// Selector labels - only immutable identifying labels
 	// These MUST NOT change after deployment creation (K8s selector is immutable)
 	_selectorLabels: {
@@ -87,6 +91,9 @@ _projectedSecretsVolumeBuilder: {
 	// Computed labels - merge defaults with config
 	// Used for metadata and pod template labels (can include additional labels)
 	_labels: _defaultLabels & appConfig.labels
+
+	// Computed pod annotations - merge platform defaults with app-specific
+	_podAnnotations: defaultPodAnnotations & (appConfig.deployment.podAnnotations | *{})
 
 	// Computed env - concatenate: app-level defaults + environment-specific
 	// Note: appEnvVars includes system defaults (like DEBUG) computed in app.cue
@@ -261,10 +268,8 @@ _projectedSecretsVolumeBuilder: {
 
 			template: {
 				metadata: {
-					labels: _labels
-					if appConfig.deployment.podAnnotations != _|_ {
-						annotations: appConfig.deployment.podAnnotations
-					}
+					labels:      _labels
+					annotations: _podAnnotations
 				}
 
 				spec: {
@@ -289,24 +294,24 @@ _projectedSecretsVolumeBuilder: {
 						}
 
 						// Liveness probe with smart defaults
-					// If exec or tcpSocket is specified, use custom probe entirely
-					// Otherwise merge custom settings with HTTP defaults
-					if (appConfig.deployment.livenessProbe.exec | _|_) != _|_ || (appConfig.deployment.livenessProbe.tcpSocket | _|_) != _|_ {
-						livenessProbe: appConfig.deployment.livenessProbe
-					}
-					if (appConfig.deployment.livenessProbe.exec | _|_) == _|_ && (appConfig.deployment.livenessProbe.tcpSocket | _|_) == _|_ {
-						livenessProbe: _baseProbes.liveness & (appConfig.deployment.livenessProbe | {})
-					}
+						// If exec or tcpSocket is specified, use custom probe entirely
+						// Otherwise merge custom settings with HTTP defaults
+						if (appConfig.deployment.livenessProbe.exec | _|_) != _|_ || (appConfig.deployment.livenessProbe.tcpSocket | _|_) != _|_ {
+							livenessProbe: appConfig.deployment.livenessProbe
+						}
+						if (appConfig.deployment.livenessProbe.exec | _|_) == _|_ && (appConfig.deployment.livenessProbe.tcpSocket | _|_) == _|_ {
+							livenessProbe: _baseProbes.liveness & (appConfig.deployment.livenessProbe | {})
+						}
 
 						// Readiness probe with smart defaults
-					// If exec or tcpSocket is specified, use custom probe entirely
-					// Otherwise merge custom settings with HTTP defaults
-					if (appConfig.deployment.readinessProbe.exec | _|_) != _|_ || (appConfig.deployment.readinessProbe.tcpSocket | _|_) != _|_ {
-						readinessProbe: appConfig.deployment.readinessProbe
-					}
-					if (appConfig.deployment.readinessProbe.exec | _|_) == _|_ && (appConfig.deployment.readinessProbe.tcpSocket | _|_) == _|_ {
-						readinessProbe: _baseProbes.readiness & (appConfig.deployment.readinessProbe | {})
-					}
+						// If exec or tcpSocket is specified, use custom probe entirely
+						// Otherwise merge custom settings with HTTP defaults
+						if (appConfig.deployment.readinessProbe.exec | _|_) != _|_ || (appConfig.deployment.readinessProbe.tcpSocket | _|_) != _|_ {
+							readinessProbe: appConfig.deployment.readinessProbe
+						}
+						if (appConfig.deployment.readinessProbe.exec | _|_) == _|_ && (appConfig.deployment.readinessProbe.tcpSocket | _|_) == _|_ {
+							readinessProbe: _baseProbes.readiness & (appConfig.deployment.readinessProbe | {})
+						}
 
 						securityContext: base.#DefaultContainerSecurityContext
 					}]

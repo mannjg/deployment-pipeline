@@ -366,30 +366,41 @@ trigger_jenkins_scan() {
 
     demo_action "Triggering Jenkins branch scan for $job_name..."
 
-    # Get CSRF crumb
+    # Get CSRF crumb with cookie jar (crumb is tied to session)
     local cookie_jar=$(mktemp)
     local crumb_file=$(mktemp)
 
     curl -sk -c "$cookie_jar" -u "$JENKINS_USER:$JENKINS_TOKEN" \
         "${JENKINS_URL_EXTERNAL}/crumbIssuer/api/json" > "$crumb_file" 2>/dev/null || true
 
-    local crumb_header=""
+    # Build curl command as array to handle arguments properly
+    local curl_cmd=(curl -sk -X POST -o /dev/null -w "%{http_code}")
+    curl_cmd+=(-b "$cookie_jar")
+    curl_cmd+=(-u "$JENKINS_USER:$JENKINS_TOKEN")
+
+    # Add crumb header if available
     if jq empty "$crumb_file" 2>/dev/null; then
         local crumb_field=$(jq -r '.crumbRequestField // empty' "$crumb_file")
         local crumb_value=$(jq -r '.crumb // empty' "$crumb_file")
         if [[ -n "$crumb_field" && -n "$crumb_value" ]]; then
-            crumb_header="-H ${crumb_field}:${crumb_value}"
+            curl_cmd+=(-H "${crumb_field}:${crumb_value}")
         fi
     fi
 
+    curl_cmd+=("${JENKINS_URL_EXTERNAL}/job/${job_name}/build?delay=0sec")
+
     # Trigger scan
-    curl -sk -w "%{http_code}" -o /dev/null -X POST \
-        -b "$cookie_jar" \
-        -u "$JENKINS_USER:$JENKINS_TOKEN" \
-        $crumb_header \
-        "${JENKINS_URL_EXTERNAL}/job/${job_name}/build?delay=0sec" 2>/dev/null || true
+    local http_code
+    http_code=$("${curl_cmd[@]}" 2>/dev/null) || true
 
     rm -f "$cookie_jar" "$crumb_file"
+
+    # Log result (302 = success redirect)
+    if [[ "$http_code" == "302" ]] || [[ "$http_code" == "200" ]] || [[ "$http_code" == "201" ]]; then
+        echo "$http_code"
+    else
+        demo_info "Jenkins scan trigger returned HTTP $http_code (may still work)"
+    fi
 
     sleep 3  # Give Jenkins time to start scanning
 }

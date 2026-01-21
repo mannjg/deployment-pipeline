@@ -10,12 +10,12 @@ import (
 )
 
 // Hidden package-level references to ensure imports are recognized as used
-#_DeploymentTemplate:     resources.#DeploymentTemplate
-#_ServiceTemplate:         resources.#ServiceTemplate
-#_DebugServiceTemplate:    resources.#DebugServiceTemplate
-#_ConfigMapTemplate:       resources.#ConfigMapTemplate
-#_PVCTemplate:             resources.#PVCTemplate
-#_SecretTemplate:          resources.#SecretTemplate
+#_DeploymentTemplate:   resources.#DeploymentTemplate
+#_ServiceTemplate:      resources.#ServiceTemplate
+#_DebugServiceTemplate: resources.#DebugServiceTemplate
+#_ConfigMapTemplate:    resources.#ConfigMapTemplate
+#_PVCTemplate:          resources.#PVCTemplate
+#_SecretTemplate:       resources.#SecretTemplate
 
 // #App is the main application template that apps instantiate.
 // Apps provide their appName, and environments provide appConfig values.
@@ -71,6 +71,13 @@ import (
 		deployment: appName
 	}
 
+	// Default pod annotations applied to all deployments
+	// Merged with any podAnnotations provided via appConfig.deployment.podAnnotations
+	defaultPodAnnotations: {
+		// Annotations added here apply to all deployments
+		...
+	}
+
 	// ===== Configuration Schema =====
 	// appConfig must be satisfied by environment files
 	// This is where all environment-specific configuration is provided
@@ -107,10 +114,11 @@ import (
 	resources: {
 		// Always-present resources
 		deployment: (#_DeploymentTemplate & {
-			"appName":    appName
-			"appConfig":  appConfig
-			"appEnvVars": _computedAppEnvVars
-			"appEnvFrom": _computedAppEnvFrom
+			"appName":               appName
+			"appConfig":             appConfig
+			"appEnvVars":            _computedAppEnvVars
+			"appEnvFrom":            _computedAppEnvFrom
+			"defaultPodAnnotations": defaultPodAnnotations
 		}).deployment
 
 		service: (#_ServiceTemplate & {
