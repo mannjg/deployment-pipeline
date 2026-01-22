@@ -314,3 +314,110 @@ demo_init() {
 
     demo_header "$demo_name"
 }
+
+# ============================================================================
+# PIPELINE STATE INTEGRATION
+# ============================================================================
+
+# Source pipeline-state.sh for quiescence checks
+# Note: pipeline-wait.sh must also be sourced for load_pipeline_credentials
+source "${DEMO_LIB_DIR}/pipeline-state.sh"
+
+# Preflight check: ensure pipeline is quiescent before starting demo
+# If dirty, offers cleanup (interactive or automatic via DEMO_FORCE_CLEANUP=1)
+# Returns: 0 if clean (or cleaned), exits 1 if user declines or cleanup fails
+demo_preflight_check() {
+    demo_action "Checking pipeline state..."
+
+    # Ensure credentials are loaded (load_pipeline_credentials is from pipeline-wait.sh)
+    # Check if the function exists (pipeline-wait.sh may be sourced by the calling script)
+    if declare -f load_pipeline_credentials >/dev/null 2>&1; then
+        load_pipeline_credentials || {
+            demo_fail "Could not load pipeline credentials"
+            exit 1
+        }
+    elif [[ -z "${GITLAB_TOKEN:-}" ]] || [[ -z "${JENKINS_USER:-}" ]]; then
+        demo_fail "Credentials not set and load_pipeline_credentials not available"
+        demo_info "Source pipeline-wait.sh or set GITLAB_TOKEN/JENKINS_USER/JENKINS_TOKEN"
+        exit 1
+    fi
+
+    if check_pipeline_quiescent; then
+        demo_verify "Pipeline is quiescent - ready to start"
+        return 0
+    fi
+
+    # Pipeline is dirty - display state
+    demo_warn "Pipeline has pending work:"
+    display_pipeline_state
+
+    # Determine cleanup approach
+    if [[ "${DEMO_FORCE_CLEANUP:-0}" == "1" ]]; then
+        demo_action "Auto-cleanup enabled (DEMO_FORCE_CLEANUP=1)"
+        demo_action "Cleaning up pipeline state..."
+        cleanup_pipeline_state
+
+        # Verify cleanup succeeded
+        if check_pipeline_quiescent; then
+            demo_verify "Pipeline cleaned up successfully"
+            return 0
+        else
+            demo_fail "Cleanup did not fully resolve pipeline state"
+            display_pipeline_state
+            exit 1
+        fi
+    else
+        # Interactive prompt
+        echo ""
+        read -rp "  Clean up and continue? [y/N] " response
+        case "$response" in
+            [yY]|[yY][eE][sS])
+                demo_action "Cleaning up pipeline state..."
+                cleanup_pipeline_state
+
+                # Verify cleanup succeeded
+                if check_pipeline_quiescent; then
+                    demo_verify "Pipeline cleaned up successfully"
+                    return 0
+                else
+                    demo_fail "Cleanup did not fully resolve pipeline state"
+                    display_pipeline_state
+                    exit 1
+                fi
+                ;;
+            *)
+                demo_warn "Cleanup declined - demo cannot proceed safely"
+                exit 1
+                ;;
+        esac
+    fi
+}
+
+# Postflight check: verify pipeline is quiescent after demo completes
+# Hard error if dirty - no cleanup offered (demo should leave clean state)
+# Returns: 0 if clean, exits with 1 if dirty
+demo_postflight_check() {
+    demo_action "Verifying pipeline state after demo..."
+
+    # Ensure credentials are loaded
+    if declare -f load_pipeline_credentials >/dev/null 2>&1; then
+        load_pipeline_credentials || {
+            demo_fail "Could not load pipeline credentials"
+            exit 1
+        }
+    elif [[ -z "${GITLAB_TOKEN:-}" ]] || [[ -z "${JENKINS_USER:-}" ]]; then
+        demo_fail "Credentials not set and load_pipeline_credentials not available"
+        demo_info "Source pipeline-wait.sh or set GITLAB_TOKEN/JENKINS_USER/JENKINS_TOKEN"
+        exit 1
+    fi
+
+    if check_pipeline_quiescent; then
+        demo_verify "Pipeline is quiescent - demo completed cleanly"
+        return 0
+    fi
+
+    # Pipeline is dirty after demo - hard error
+    demo_fail "Pipeline has unexpected pending work after demo:"
+    display_pipeline_state
+    exit 1
+}
