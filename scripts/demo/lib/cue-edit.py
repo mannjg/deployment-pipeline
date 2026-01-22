@@ -595,7 +595,11 @@ def add_platform_label(project_root: str, key: str, value: str) -> dict:
 
 
 def _add_label_to_default_labels(content: str, key: str, value: str) -> str:
-    """Add or update a label in defaultLabels struct."""
+    """Add or update a label in defaultLabels struct.
+
+    Uses CUE default value syntax (string | *"value") to allow environment-level
+    overrides. This ensures environment-specific labels can override platform defaults.
+    """
     # Check if this specific key already exists in defaultLabels
     # Keys with special characters need to be quoted
     quoted_key = f'"{key}"'
@@ -615,14 +619,19 @@ def _add_label_to_default_labels(content: str, key: str, value: str) -> str:
     default_labels_block = content[block_start:block_end + 1]
 
     # Check if key exists (could be quoted or unquoted)
+    # Pattern matches both concrete values and default value syntax (string | *"...")
     key_pattern_quoted = rf'"{re.escape(key)}":\s*[^\n]+'
     key_pattern_unquoted = rf'\b{re.escape(key)}:\s*[^\n]+'
+
+    # Use CUE default value syntax: string | *"value"
+    # This allows environment-level overrides to take precedence
+    default_value_syntax = f'string | *"{value}"'
 
     if re.search(key_pattern_quoted, default_labels_block):
         # Update existing quoted key
         new_block = re.sub(
             rf'("{re.escape(key)}":\s*)[^\n]+',
-            rf'\1"{value}"',
+            rf'\1{default_value_syntax}',
             default_labels_block
         )
         return content[:block_start] + new_block + content[block_end + 1:]
@@ -630,7 +639,7 @@ def _add_label_to_default_labels(content: str, key: str, value: str) -> str:
         # Update existing unquoted key
         new_block = re.sub(
             rf'(\b{re.escape(key)}:\s*)[^\n]+',
-            rf'\1"{value}"',
+            rf'\1{default_value_syntax}',
             default_labels_block
         )
         return content[:block_start] + new_block + content[block_end + 1:]
@@ -646,7 +655,7 @@ def _add_label_to_default_labels(content: str, key: str, value: str) -> str:
         close_line_match = re.search(r'(\n\t*)\}$', default_labels_block)
         if close_line_match:
             # Insert new line after the last entry but before the closing brace line
-            new_entry = f'\n{indent}{quoted_key}: "{value}"'
+            new_entry = f'\n{indent}{quoted_key}: {default_value_syntax}'
             # Insert position is right before the closing newline+indent+brace
             insert_offset = close_line_match.start()
             insert_pos = block_start + insert_offset
@@ -654,7 +663,7 @@ def _add_label_to_default_labels(content: str, key: str, value: str) -> str:
         else:
             # Fallback: insert right before closing brace with newline
             insert_pos = block_end
-            return content[:insert_pos] + f'\n{indent}{quoted_key}: "{value}"\n\t' + content[insert_pos:]
+            return content[:insert_pos] + f'\n{indent}{quoted_key}: {default_value_syntax}\n\t' + content[insert_pos:]
 
 
 def remove_platform_label(project_root: str, key: str) -> dict:
