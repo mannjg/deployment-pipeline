@@ -31,6 +31,10 @@ Platform-level changes:
   cue-edit.py platform-label add <key> <value>
   cue-edit.py platform-label remove <key>
 
+Environment-level labels (appConfig.labels in env.cue):
+  cue-edit.py env-label add <file> <env> <app> <key> <value>
+  cue-edit.py env-label remove <file> <env> <app> <key>
+
 Examples:
   # Add Prometheus scraping annotation to all deployments
   cue-edit.py platform-annotation add prometheus.io/scrape true
@@ -43,6 +47,12 @@ Examples:
 
   # Remove the label
   cue-edit.py platform-label remove cost-center
+
+  # Override cost-center label for prod environment
+  cue-edit.py env-label add env.cue prod exampleApp cost-center production-critical
+
+  # Remove environment-specific label override
+  cue-edit.py env-label remove env.cue prod exampleApp cost-center
 """
 
 import argparse
@@ -691,6 +701,136 @@ def remove_platform_label(project_root: str, key: str) -> dict:
     }
 
 
+# ============================================================================
+# ENVIRONMENT-LEVEL LABEL FUNCTIONS
+# ============================================================================
+
+def add_env_label(content: str, env: str, app: str, key: str, value: str) -> str:
+    """Add a label to an environment's app config in env.cue (appConfig.labels).
+
+    Structure: <env>: <app>: apps.<appRef> & {
+        appConfig: {
+            labels: {
+                environment: "env"
+                managed_by:  "argocd"
+                "new-key": "new-value"
+            }
+            ...
+        }
+    }
+    """
+    # Pattern to find the app definition within the environment
+    # Matches: dev: exampleApp: apps.exampleApp & {
+    app_pattern = rf'^({env}:\s*{app}:\s*apps\.\w+\s*&\s*\{{)'
+    app_match = re.search(app_pattern, content, re.MULTILINE)
+
+    if not app_match:
+        raise ValueError(f"Could not find app '{app}' in environment '{env}'")
+
+    app_start = app_match.end()
+
+    # Find the end of this app block
+    app_block_end = find_block_end(content, app_match.start() + content[app_match.start():].index('{'))
+    app_block = content[app_start:app_block_end]
+
+    # Look for existing labels block within appConfig
+    labels_pattern = r'(appConfig:\s*\{[^}]*?labels:\s*\{)'
+    labels_match = re.search(labels_pattern, app_block, re.DOTALL)
+
+    if labels_match:
+        # Found existing labels block
+        labels_start_in_app = labels_match.end()
+        insert_pos = app_start + labels_start_in_app
+
+        # Find the closing brace of the labels block to scope our search
+        labels_block_start = app_start + labels_match.end() - 1  # Position of opening brace of labels
+        labels_block_end = find_block_end(content, labels_block_start)
+        labels_block = content[labels_block_start:labels_block_end + 1]
+
+        # Check if key already exists (could be quoted or unquoted)
+        # Keys with special characters (like hyphens) must be quoted
+        key_pattern_quoted = rf'"{re.escape(key)}":\s*"[^"]*"'
+        key_pattern_unquoted = rf'\b{re.escape(key)}:\s*"[^"]*"'
+
+        if re.search(key_pattern_quoted, labels_block):
+            # Replace existing quoted key within the labels block only
+            new_labels_block = re.sub(
+                rf'("{re.escape(key)}":\s*)"[^"]*"',
+                rf'\1"{value}"',
+                labels_block
+            )
+            return content[:labels_block_start] + new_labels_block + content[labels_block_end + 1:]
+        elif re.search(key_pattern_unquoted, labels_block):
+            # Replace existing unquoted key within the labels block only
+            new_labels_block = re.sub(
+                rf'(\b{re.escape(key)}:\s*)"[^"]*"',
+                rf'\1"{value}"',
+                labels_block
+            )
+            return content[:labels_block_start] + new_labels_block + content[labels_block_end + 1:]
+        else:
+            # Add new entry - determine if key needs quoting
+            quoted_key = f'"{key}"' if '-' in key or '.' in key or '/' in key else key
+
+            # Find proper indentation by looking at existing entries
+            indent_match = re.search(r'\n(\t+)\w', labels_block)
+            indent = indent_match.group(1) if indent_match else '\t\t\t'
+
+            # Insert before the closing brace of labels block
+            close_line_match = re.search(r'(\n\t*)\}$', labels_block)
+            if close_line_match:
+                insert_offset = close_line_match.start()
+                insert_pos = labels_block_start + insert_offset
+                new_entry = f'\n{indent}{quoted_key}: "{value}"'
+                return content[:insert_pos] + new_entry + content[insert_pos:]
+            else:
+                # Fallback: insert right before closing brace
+                insert_pos = labels_block_end
+                return content[:insert_pos] + f'\n{indent}{quoted_key}: "{value}"\n\t\t' + content[insert_pos:]
+
+    # Look for appConfig block (labels block doesn't exist)
+    appconfig_pattern = r'(appConfig:\s*\{)'
+    appconfig_match = re.search(appconfig_pattern, app_block)
+
+    if appconfig_match:
+        insert_pos = app_start + appconfig_match.end()
+        # Keys with special characters need quoting
+        quoted_key = f'"{key}"' if '-' in key or '.' in key or '/' in key else key
+        new_block = f'\n\t\tlabels: {{\n\t\t\t{quoted_key}: "{value}"\n\t\t}}'
+        return content[:insert_pos] + new_block + content[insert_pos:]
+
+    raise ValueError(f"Could not find appConfig block for app '{app}' in environment '{env}'")
+
+
+def remove_env_label(content: str, env: str, app: str, key: str) -> str:
+    """Remove a label from an environment's app config (appConfig.labels)."""
+    # Find the app block first to scope the replacement
+    app_pattern = rf'^{env}:\s*{app}:\s*apps\.\w+\s*&\s*\{{'
+    app_match = re.search(app_pattern, content, re.MULTILINE)
+
+    if not app_match:
+        return content  # Nothing to remove if app doesn't exist
+
+    app_start = app_match.start()
+    app_block_end = find_block_end(content, app_start + content[app_start:].index('{'))
+
+    # Only remove within this app's block
+    before = content[:app_start]
+    app_block = content[app_start:app_block_end + 1]
+    after = content[app_block_end + 1:]
+
+    # Pattern to match the key-value line (quoted or unquoted key)
+    pattern_quoted = rf'\n\s*"{re.escape(key)}":\s*"[^"]*"'
+    pattern_unquoted = rf'\n\s*{re.escape(key)}:\s*"[^"]*"'
+
+    # Try quoted first, then unquoted
+    new_app_block = re.sub(pattern_quoted, '', app_block)
+    if new_app_block == app_block:
+        new_app_block = re.sub(pattern_unquoted, '', app_block)
+
+    return before + new_app_block + after
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Safely edit CUE configuration files',
@@ -770,6 +910,23 @@ def main():
 
     platform_lbl_remove = platform_lbl_sub.add_parser('remove', help='Remove a default label')
     platform_lbl_remove.add_argument('key', help='Label key to remove')
+
+    # env-label subcommand
+    env_lbl = subparsers.add_parser('env-label', help='Modify environment-level labels (appConfig.labels)')
+    env_lbl_sub = env_lbl.add_subparsers(dest='action')
+
+    env_lbl_add = env_lbl_sub.add_parser('add', help='Add a label to environment config')
+    env_lbl_add.add_argument('file', help='CUE file to modify (env.cue)')
+    env_lbl_add.add_argument('env', help='Environment name (dev/stage/prod)')
+    env_lbl_add.add_argument('app', help='App name (CUE identifier, e.g., exampleApp)')
+    env_lbl_add.add_argument('key', help='Label key (e.g., cost-center)')
+    env_lbl_add.add_argument('value', help='Label value')
+
+    env_lbl_remove = env_lbl_sub.add_parser('remove', help='Remove a label from environment config')
+    env_lbl_remove.add_argument('file', help='CUE file to modify (env.cue)')
+    env_lbl_remove.add_argument('env', help='Environment name')
+    env_lbl_remove.add_argument('app', help='App name (CUE identifier)')
+    env_lbl_remove.add_argument('key', help='Label key to remove')
 
     args = parser.parse_args()
 
@@ -928,6 +1085,14 @@ def main():
                 new_content = set_env_field(content, args.env, args.app, args.field, args.value)
             elif args.action == 'remove':
                 new_content = remove_env_field(content, args.env, args.app, args.field)
+            else:
+                print(f"Error: Unknown action: {args.action}", file=sys.stderr)
+                sys.exit(1)
+        elif args.command == 'env-label':
+            if args.action == 'add':
+                new_content = add_env_label(content, args.env, args.app, args.key, args.value)
+            elif args.action == 'remove':
+                new_content = remove_env_label(content, args.env, args.app, args.key)
             else:
                 print(f"Error: Unknown action: {args.action}", file=sys.stderr)
                 sys.exit(1)
