@@ -341,6 +341,7 @@ Env (env.cue per branch)
 |--------|----------|---------------------|
 | [`scripts/demo/demo-uc-c1-default-label.sh`](../scripts/demo/demo-uc-c1-default-label.sh) | UC-C1 | Platform-wide label propagates to all apps in all envs |
 | [`scripts/demo/demo-uc-c4-prometheus-annotations.sh`](../scripts/demo/demo-uc-c4-prometheus-annotations.sh) | UC-C4 | Platform-wide pod annotations propagate to all apps |
+| [`scripts/demo/demo-uc-c6-platform-env-override.sh`](../scripts/demo/demo-uc-c6-platform-env-override.sh) | UC-C6 | Platform default with environment override; prod can diverge |
 
 ### Future Demos (Phase 3+)
 
@@ -399,7 +400,7 @@ While preserving:
 | UC-C3 | Change deployment strategy | 🔲 | 🔲 | 🔲 | — | |
 | UC-C4 | Add standard pod annotation | ✅ | ✅ | ✅ | `uc-c4-prometheus-annotations` | Pipeline verified 2026-01-21 |
 | UC-C5 | Platform default + app override | 🔲 | 🔲 | 🔲 | — | Multi-app pivot (uses postgres) |
-| UC-C6 | Platform default + env override | 🔲 | 🔲 | 🔲 | — | |
+| UC-C6 | Platform default + env override | ✅ | ✅ | 🔲 | — | Demo ready, pending pipeline verification |
 | UC-D1 | Emergency hotfix to prod | 🔲 | 🔲 | 🔲 | — | Requires direct env MR support |
 | UC-D2 | Cherry-pick promotion (multi-app) | 🔲 | 🔲 | 🔲 | — | Requires multi-app promotion tooling |
 | UC-D3 | Environment rollback | 🔲 | 🔲 | 🔲 | — | GitOps rollback pattern |
