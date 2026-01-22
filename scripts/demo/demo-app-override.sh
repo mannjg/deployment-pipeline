@@ -34,8 +34,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 K8S_DEPLOYMENTS_DIR="${PROJECT_ROOT}/k8s-deployments"
 
-# Load helper library
+# Load helper libraries
 source "${SCRIPT_DIR}/lib/demo-helpers.sh"
+source "${SCRIPT_DIR}/lib/pipeline-wait.sh"
 
 # ============================================================================
 # CONFIGURATION
@@ -53,6 +54,12 @@ PROD_OVERRIDE_VALUE="600"
 cd "$K8S_DEPLOYMENTS_DIR"
 
 demo_init "UC-B4: App ConfigMap with Environment Override"
+
+# Load credentials
+load_pipeline_credentials || exit 1
+
+# Verify pipeline is quiescent before starting
+demo_preflight_check
 
 # Save original branch
 ORIGINAL_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
@@ -240,6 +247,9 @@ echo ""
 # ---------------------------------------------------------------------------
 
 demo_step 7 "Cleanup"
+
+# Verify pipeline is quiescent after demo
+demo_postflight_check
 
 demo_action "Reverting changes to prod's env.cue and manifests..."
 git checkout -- env.cue manifests/ 2>/dev/null || true
