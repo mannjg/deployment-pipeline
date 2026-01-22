@@ -31,6 +31,9 @@ else
     exit 1
 fi
 
+# Load demo helpers for pipeline state checks
+source "$REPO_ROOT/scripts/demo/lib/demo-helpers.sh"
+
 # Fetch credentials from K8s secrets
 # Uses secret names/keys from infra.env
 load_credentials_from_secrets() {
@@ -989,6 +992,10 @@ main() {
     local start_time=$(date +%s)
 
     preflight_checks
+
+    # Verify pipeline is quiescent (no open MRs, running builds, or lingering branches)
+    demo_preflight_check
+
     bump_version
     commit_and_push
     wait_for_jenkins_build
@@ -1028,6 +1035,9 @@ main() {
     merge_env_mr "prod"
     wait_for_env_sync "prod" "$prod_argocd_baseline"
     verify_env_deployment "prod"
+
+    # Verify pipeline is quiescent after validation
+    demo_postflight_check
 
     # Calculate duration
     local end_time=$(date +%s)
