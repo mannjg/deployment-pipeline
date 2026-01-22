@@ -360,6 +360,104 @@ push_empty_commit_for_mr() {
     fi
 }
 
+# Commit a file to a GitLab branch
+# Usage: commit_file_to_branch <branch> <file_path> <content> <commit_message>
+# Returns: 0 on success, 1 on failure
+commit_file_to_branch() {
+    local branch="$1"
+    local file_path="$2"
+    local content="$3"
+    local commit_message="$4"
+    local project="${DEPLOYMENTS_REPO_PATH:-p2c/k8s-deployments}"
+    local encoded_project=$(_encode_project "$project")
+
+    # URL-encode the file path for API calls
+    local encoded_path
+    encoded_path=$(echo "$file_path" | sed 's/\//%2F/g')
+
+    demo_action "Committing $file_path to branch $branch..."
+
+    # Check if file exists to determine create vs update action
+    local file_check
+    file_check=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_project}/repository/files/${encoded_path}?ref=${branch}" 2>/dev/null)
+
+    local action
+    if echo "$file_check" | jq -e '.file_name' >/dev/null 2>&1; then
+        action="update"
+        demo_info "File exists, updating..."
+    else
+        action="create"
+        demo_info "File does not exist, creating..."
+    fi
+
+    # Use GitLab Commits API for atomic commit
+    local json_payload
+    json_payload=$(jq -n \
+        --arg branch "$branch" \
+        --arg msg "$commit_message" \
+        --arg action "$action" \
+        --arg path "$file_path" \
+        --arg content "$content" \
+        '{
+            branch: $branch,
+            commit_message: $msg,
+            actions: [{
+                action: $action,
+                file_path: $path,
+                content: $content
+            }]
+        }')
+
+    local result
+    result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        -H "Content-Type: application/json" \
+        "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_project}/repository/commits" \
+        -d "$json_payload" 2>/dev/null)
+
+    if echo "$result" | jq -e '.id' >/dev/null 2>&1; then
+        local commit_sha
+        commit_sha=$(echo "$result" | jq -r '.short_id')
+        demo_verify "Committed $file_path to $branch (commit: $commit_sha)"
+        return 0
+    else
+        local error
+        error=$(echo "$result" | jq -r '.message // .error // "Unknown error"')
+        demo_fail "Failed to commit $file_path: $error"
+        return 1
+    fi
+}
+
+# Get file content from a GitLab branch
+# Usage: get_file_from_branch <branch> <file_path>
+# Returns: File content on stdout, or exits with 1 on failure
+get_file_from_branch() {
+    local branch="$1"
+    local file_path="$2"
+    local project="${DEPLOYMENTS_REPO_PATH:-p2c/k8s-deployments}"
+    local encoded_project=$(_encode_project "$project")
+
+    # URL-encode the file path for API calls
+    local encoded_path
+    encoded_path=$(echo "$file_path" | sed 's/\//%2F/g')
+
+    # Use raw endpoint to get file content directly
+    local content
+    local http_code
+    http_code=$(curl -sk -w "%{http_code}" -o /tmp/gitlab_file_content.$$ \
+        -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_project}/repository/files/${encoded_path}/raw?ref=${branch}" 2>/dev/null)
+
+    if [[ "$http_code" == "200" ]]; then
+        cat /tmp/gitlab_file_content.$$
+        rm -f /tmp/gitlab_file_content.$$
+        return 0
+    else
+        rm -f /tmp/gitlab_file_content.$$
+        return 1
+    fi
+}
+
 # Trigger MultiBranch Pipeline scan
 trigger_jenkins_scan() {
     local job_name="${1:-k8s-deployments}"
