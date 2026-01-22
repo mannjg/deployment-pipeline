@@ -76,6 +76,9 @@ demo_init "UC-C6: Platform Default with Environment Override"
 # Load credentials
 load_pipeline_credentials || exit 1
 
+# Verify pipeline is quiescent before starting
+demo_preflight_check
+
 # Save original branch
 ORIGINAL_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
 
@@ -365,6 +368,9 @@ EOF
 # ---------------------------------------------------------------------------
 
 demo_step 9 "Cleanup"
+
+# Verify pipeline is quiescent after demo
+demo_postflight_check
 
 demo_action "Returning to original branch: $ORIGINAL_BRANCH"
 git checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
