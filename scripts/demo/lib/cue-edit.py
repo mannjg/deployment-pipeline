@@ -28,6 +28,8 @@ Note: App names use CUE identifiers (e.g., "exampleApp" not "example-app")
 Platform-level changes:
   cue-edit.py platform-annotation add <key> <value>
   cue-edit.py platform-annotation remove <key>
+  cue-edit.py platform-label add <key> <value>
+  cue-edit.py platform-label remove <key>
 
 Examples:
   # Add Prometheus scraping annotation to all deployments
@@ -35,6 +37,12 @@ Examples:
 
   # Remove the annotation
   cue-edit.py platform-annotation remove prometheus.io/scrape
+
+  # Add cost-center label to all resources
+  cue-edit.py platform-label add cost-center platform-shared
+
+  # Remove the label
+  cue-edit.py platform-label remove cost-center
 """
 
 import argparse
@@ -549,6 +557,140 @@ def remove_platform_annotation(project_root: str, key: str) -> dict:
     }
 
 
+# ============================================================================
+# PLATFORM-LEVEL LABEL FUNCTIONS
+# ============================================================================
+
+def add_platform_label(project_root: str, key: str, value: str) -> dict:
+    """Add a default label to the platform layer (defaultLabels in app.cue).
+
+    This modifies services/core/app.cue to add a label to the defaultLabels struct.
+
+    Returns dict with 'app_cue' key containing modified content.
+    """
+    app_cue_path = Path(project_root) / "services" / "core" / "app.cue"
+
+    if not app_cue_path.exists():
+        raise ValueError(f"File not found: {app_cue_path}")
+
+    app_content = app_cue_path.read_text()
+
+    # Add/update label in defaultLabels
+    app_content = _add_label_to_default_labels(app_content, key, value)
+
+    return {
+        'app_cue': app_content,
+        'app_cue_path': str(app_cue_path),
+    }
+
+
+def _add_label_to_default_labels(content: str, key: str, value: str) -> str:
+    """Add or update a label in defaultLabels struct."""
+    # Check if this specific key already exists in defaultLabels
+    # Keys with special characters need to be quoted
+    quoted_key = f'"{key}"'
+
+    # Find the defaultLabels block
+    default_labels_match = re.search(r'defaultLabels:\s*\{', content)
+    if not default_labels_match:
+        raise ValueError("Could not find defaultLabels block in app.cue")
+
+    # Find the end of the defaultLabels block
+    block_start = default_labels_match.end() - 1  # Position of opening brace
+    block_end = find_block_end(content, block_start)
+
+    if block_end == -1:
+        raise ValueError("Could not find closing brace for defaultLabels block")
+
+    default_labels_block = content[block_start:block_end + 1]
+
+    # Check if key exists (could be quoted or unquoted)
+    key_pattern_quoted = rf'"{re.escape(key)}":\s*[^\n]+'
+    key_pattern_unquoted = rf'\b{re.escape(key)}:\s*[^\n]+'
+
+    if re.search(key_pattern_quoted, default_labels_block):
+        # Update existing quoted key
+        new_block = re.sub(
+            rf'("{re.escape(key)}":\s*)[^\n]+',
+            rf'\1"{value}"',
+            default_labels_block
+        )
+        return content[:block_start] + new_block + content[block_end + 1:]
+    elif re.search(key_pattern_unquoted, default_labels_block):
+        # Update existing unquoted key
+        new_block = re.sub(
+            rf'(\b{re.escape(key)}:\s*)[^\n]+',
+            rf'\1"{value}"',
+            default_labels_block
+        )
+        return content[:block_start] + new_block + content[block_end + 1:]
+    else:
+        # Add new key - insert before the closing brace
+        # Find proper indentation by looking at existing entries (e.g., \t\t for nested)
+        indent_match = re.search(r'\n(\t+)\w', default_labels_block)
+        indent = indent_match.group(1) if indent_match else '\t\t'
+
+        # The block ends with \n\t} - we insert before the \n that precedes the closing brace line
+        # So we need to find the last newline before the closing brace
+        # Pattern: content ends with \n<tabs>}
+        close_line_match = re.search(r'(\n\t*)\}$', default_labels_block)
+        if close_line_match:
+            # Insert new line after the last entry but before the closing brace line
+            new_entry = f'\n{indent}{quoted_key}: "{value}"'
+            # Insert position is right before the closing newline+indent+brace
+            insert_offset = close_line_match.start()
+            insert_pos = block_start + insert_offset
+            return content[:insert_pos] + new_entry + content[insert_pos:]
+        else:
+            # Fallback: insert right before closing brace with newline
+            insert_pos = block_end
+            return content[:insert_pos] + f'\n{indent}{quoted_key}: "{value}"\n\t' + content[insert_pos:]
+
+
+def remove_platform_label(project_root: str, key: str) -> dict:
+    """Remove a label from the platform layer (defaultLabels in app.cue).
+
+    Returns dict with modified content.
+    """
+    app_cue_path = Path(project_root) / "services" / "core" / "app.cue"
+
+    if not app_cue_path.exists():
+        raise ValueError(f"File not found: {app_cue_path}")
+
+    app_content = app_cue_path.read_text()
+
+    # Find the defaultLabels block
+    default_labels_match = re.search(r'defaultLabels:\s*\{', app_content)
+    if not default_labels_match:
+        raise ValueError("Could not find defaultLabels block in app.cue")
+
+    # Find the end of the defaultLabels block
+    block_start = default_labels_match.end() - 1
+    block_end = find_block_end(app_content, block_start)
+
+    if block_end == -1:
+        raise ValueError("Could not find closing brace for defaultLabels block")
+
+    default_labels_block = app_content[block_start:block_end + 1]
+
+    # Remove the key (could be quoted or unquoted)
+    # Pattern to match the key-value line with proper whitespace handling
+    pattern_quoted = rf'\n\s*"{re.escape(key)}":\s*"[^"]*"'
+    pattern_unquoted = rf'\n\s*{re.escape(key)}:\s*[^\n]+'
+
+    new_block = re.sub(pattern_quoted, '', default_labels_block)
+    if new_block == default_labels_block:
+        # Try unquoted pattern
+        new_block = re.sub(pattern_unquoted, '', default_labels_block)
+
+    app_content = app_content[:block_start] + new_block + app_content[block_end + 1:]
+
+    return {
+        'app_cue': app_content,
+        'app_cue_path': str(app_cue_path),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Safely edit CUE configuration files',
@@ -618,6 +760,17 @@ def main():
     platform_ann_remove = platform_ann_sub.add_parser('remove', help='Remove a default pod annotation')
     platform_ann_remove.add_argument('key', help='Annotation key to remove')
 
+    # platform-label subcommand
+    platform_lbl = subparsers.add_parser('platform-label', help='Modify platform-level default labels')
+    platform_lbl_sub = platform_lbl.add_subparsers(dest='action')
+
+    platform_lbl_add = platform_lbl_sub.add_parser('add', help='Add a default label')
+    platform_lbl_add.add_argument('key', help='Label key (e.g., cost-center)')
+    platform_lbl_add.add_argument('value', help='Label value (e.g., platform-shared)')
+
+    platform_lbl_remove = platform_lbl_sub.add_parser('remove', help='Remove a default label')
+    platform_lbl_remove.add_argument('key', help='Label key to remove')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -682,6 +835,61 @@ def main():
                     shutil.move(app_backup, str(app_cue_path))
                 if Path(deployment_backup).exists():
                     shutil.move(deployment_backup, str(deployment_cue_path))
+                raise
+
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Handle platform-label separately (it operates on project root, not a single file)
+    if args.command == 'platform-label':
+        # Find project root from current directory
+        project_root = find_project_root(str(Path.cwd()))
+
+        try:
+            if args.action == 'add':
+                results = add_platform_label(project_root, args.key, args.value)
+            elif args.action == 'remove':
+                results = remove_platform_label(project_root, args.key)
+            else:
+                print(f"Error: Unknown action: {args.action}", file=sys.stderr)
+                sys.exit(1)
+
+            # Write file and validate
+            app_cue_path = Path(results['app_cue_path'])
+
+            # Backup file
+            app_backup = str(app_cue_path) + '.bak'
+            shutil.copy(str(app_cue_path), app_backup)
+
+            try:
+                # Write new content
+                app_cue_path.write_text(results['app_cue'])
+
+                # Validate with cue vet -c=false (main branch env.cue is incomplete by design)
+                result = subprocess.run(
+                    ["cue", "vet", "-c=false", "./..."],
+                    cwd=project_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+
+                if result.returncode != 0:
+                    # Restore backup
+                    shutil.move(app_backup, str(app_cue_path))
+                    print(f"Error: CUE validation failed:\n{result.stderr}", file=sys.stderr)
+                    sys.exit(1)
+
+                # Success - remove backup
+                Path(app_backup).unlink(missing_ok=True)
+                print(f"Successfully modified {app_cue_path}")
+                sys.exit(0)
+
+            except Exception as e:
+                # Restore on any error
+                if Path(app_backup).exists():
+                    shutil.move(app_backup, str(app_cue_path))
                 raise
 
         except ValueError as e:
