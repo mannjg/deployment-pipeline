@@ -986,6 +986,113 @@ get_argocd_baseline() {
 }
 
 # -----------------------------------------------------------------------------
+# Version Lifecycle Validation
+# -----------------------------------------------------------------------------
+verify_version_lifecycle() {
+    log_step "Verifying version lifecycle across environments..."
+
+    local deployment="example-app"
+
+    # Get image tags from each environment
+    local dev_image=$(kubectl get deployment "$deployment" -n dev \
+        -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
+    local stage_image=$(kubectl get deployment "$deployment" -n stage \
+        -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
+    local prod_image=$(kubectl get deployment "$deployment" -n prod \
+        -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
+
+    local dev_tag=$(echo "$dev_image" | sed 's/.*://')
+    local stage_tag=$(echo "$stage_image" | sed 's/.*://')
+    local prod_tag=$(echo "$prod_image" | sed 's/.*://')
+
+    log_info "Dev tag:   $dev_tag"
+    log_info "Stage tag: $stage_tag"
+    log_info "Prod tag:  $prod_tag"
+
+    # 1. Verify dev has SNAPSHOT version
+    if [[ "$dev_tag" == *-SNAPSHOT-* ]]; then
+        log_pass "Dev has SNAPSHOT version"
+    else
+        log_fail "Dev should have SNAPSHOT version, got: $dev_tag"
+        return 1
+    fi
+
+    # 2. Verify stage has RC version
+    if [[ "$stage_tag" == *-rc[0-9]*-* ]]; then
+        log_pass "Stage has RC version"
+    else
+        log_fail "Stage should have RC version, got: $stage_tag"
+        return 1
+    fi
+
+    # 3. Verify prod has release version (no SNAPSHOT, no RC)
+    if [[ "$prod_tag" != *-SNAPSHOT-* ]] && [[ "$prod_tag" != *-rc[0-9]*-* ]]; then
+        log_pass "Prod has release version (no SNAPSHOT, no RC)"
+    else
+        log_fail "Prod should have release version, got: $prod_tag"
+        return 1
+    fi
+
+    # 4. Verify same git hash across all environments
+    local dev_hash=$(echo "$dev_tag" | grep -oE '[a-f0-9]{6,}$' || echo "")
+    local stage_hash=$(echo "$stage_tag" | grep -oE '[a-f0-9]{6,}$' || echo "")
+    local prod_hash=$(echo "$prod_tag" | grep -oE '[a-f0-9]{6,}$' || echo "")
+
+    if [[ "$dev_hash" == "$stage_hash" ]] && [[ "$stage_hash" == "$prod_hash" ]]; then
+        log_pass "Same git hash ($dev_hash) across all environments"
+    else
+        log_fail "Git hash mismatch: dev=$dev_hash, stage=$stage_hash, prod=$prod_hash"
+        return 1
+    fi
+
+    # 5. Extract versions for Nexus verification
+    local base_version=$(echo "$dev_tag" | sed -E 's/-SNAPSHOT-[a-f0-9]+$//' | sed 's/-SNAPSHOT$//')
+    local dev_version="${base_version}-SNAPSHOT"
+    local stage_version=$(echo "$stage_tag" | sed -E "s/-${stage_hash}$//")
+    local prod_version="${base_version}"
+
+    log_info "Verifying Nexus artifacts..."
+    log_info "  Dev version:   $dev_version (maven-snapshots)"
+    log_info "  Stage version: $stage_version (maven-releases)"
+    log_info "  Prod version:  $prod_version (maven-releases)"
+
+    # 6. Verify artifacts exist in Nexus
+    local nexus_url="${NEXUS_URL_INTERNAL:-http://nexus.nexus.svc.cluster.local:8081}"
+    local group_id="com.example"
+    local app_name="example-app"
+
+    # Check SNAPSHOT
+    local snapshot_check=$(curl -sf "${nexus_url}/service/rest/v1/search?repository=maven-snapshots&group=${group_id}&name=${app_name}&version=${dev_version}" 2>/dev/null | jq -r '.items | length')
+    if [[ "$snapshot_check" -gt 0 ]]; then
+        log_pass "SNAPSHOT artifact exists in Nexus"
+    else
+        log_fail "SNAPSHOT artifact not found in Nexus: ${dev_version}"
+        return 1
+    fi
+
+    # Check RC
+    local rc_check=$(curl -sf "${nexus_url}/service/rest/v1/search?repository=maven-releases&group=${group_id}&name=${app_name}&version=${stage_version}" 2>/dev/null | jq -r '.items | length')
+    if [[ "$rc_check" -gt 0 ]]; then
+        log_pass "RC artifact exists in Nexus"
+    else
+        log_fail "RC artifact not found in Nexus: ${stage_version}"
+        return 1
+    fi
+
+    # Check Release
+    local release_check=$(curl -sf "${nexus_url}/service/rest/v1/search?repository=maven-releases&group=${group_id}&name=${app_name}&version=${prod_version}" 2>/dev/null | jq -r '.items | length')
+    if [[ "$release_check" -gt 0 ]]; then
+        log_pass "Release artifact exists in Nexus"
+    else
+        log_fail "Release artifact not found in Nexus: ${prod_version}"
+        return 1
+    fi
+
+    log_pass "Version lifecycle verification complete"
+    return 0
+}
+
+# -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 main() {
@@ -1035,6 +1142,9 @@ main() {
     merge_env_mr "prod"
     wait_for_env_sync "prod" "$prod_argocd_baseline"
     verify_env_deployment "prod"
+
+    # Verify version lifecycle (SNAPSHOT → RC → Release)
+    verify_version_lifecycle
 
     # Verify pipeline is quiescent after validation
     demo_postflight_check
