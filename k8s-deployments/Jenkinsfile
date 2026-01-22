@@ -293,6 +293,57 @@ def createPromotionMR(String sourceEnv) {
                     return
                 }
 
+                // Get git hash from source environment's current image
+                def sourceImageTag = sh(
+                    script: """
+                        curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                            "${env.GITLAB_URL}/api/v4/projects/${encodedProject}/repository/files/env.cue?ref=${sourceEnv}" \
+                            2>/dev/null | jq -r '.content' | base64 -d | grep 'image:' | sed -E 's/.*image:\\s*"([^"]+)".*/\\1/' | head -1
+                    """,
+                    returnStdout: true
+                ).trim()
+
+                // Extract just the tag portion (after the colon)
+                def imageTag = sourceImageTag.contains(':') ? sourceImageTag.split(':').last() : sourceImageTag
+
+                def gitHash = sh(
+                    script: "echo '${imageTag}' | grep -oE '[a-f0-9]{6,}\$' || echo ''",
+                    returnStdout: true
+                ).trim()
+
+                if (!gitHash) {
+                    echo "WARNING: Could not extract git hash from source image tag: ${sourceImageTag}"
+                    echo "Skipping artifact promotion - MR will use existing image version"
+                }
+
+                echo "Source image tag: ${imageTag}"
+                echo "Git hash: ${gitHash}"
+
+                // Promote artifacts (Maven + Docker) and get new image tag
+                def newImageTag = ''
+                if (gitHash) {
+                    newImageTag = sh(
+                        script: """
+                            ./scripts/promote-artifact.sh \
+                                --source-env ${sourceEnv} \
+                                --target-env ${targetEnv} \
+                                --app-name example-app \
+                                --git-hash ${gitHash} \
+                                2>&1 | tee /tmp/promote.log | tail -1
+                        """,
+                        returnStdout: true
+                    ).trim()
+
+                    if (!newImageTag || newImageTag.contains("ERROR") || newImageTag.contains("[")) {
+                        echo "Artifact promotion output:"
+                        sh "cat /tmp/promote.log || true"
+                        echo "WARNING: Artifact promotion may have failed - continuing with MR creation"
+                        newImageTag = ''
+                    } else {
+                        echo "New image tag for ${targetEnv}: ${newImageTag}"
+                    }
+                }
+
                 sh '''
                     git config --global user.name "Jenkins CI"
                     git config --global user.email "jenkins@local"
@@ -315,6 +366,22 @@ def createPromotionMR(String sourceEnv) {
                         echo "ERROR: App config promotion failed"
                         exit 1
                     }
+
+                    # Update image tag in env.cue with promoted version (if we have one)
+                    NEW_IMAGE_TAG="${newImageTag}"
+                    if [ -n "\${NEW_IMAGE_TAG}" ]; then
+                        REGISTRY="\${DOCKER_REGISTRY:-nexus.nexus.svc.cluster.local:5000}"
+                        NEW_IMAGE="\${REGISTRY}/p2c/example-app:\${NEW_IMAGE_TAG}"
+
+                        echo "Updating env.cue with new image: \${NEW_IMAGE}"
+
+                        # Use sed to update the image field
+                        sed -i "s|image:.*example-app:[^\"]*\"|image: \"\${NEW_IMAGE}\"|" env.cue
+
+                        # Verify the update
+                        echo "Updated image in env.cue:"
+                        grep "image:" env.cue
+                    fi
 
                     # Regenerate manifests with promoted config
                     ./scripts/generate-manifests.sh ${targetEnv} || {
