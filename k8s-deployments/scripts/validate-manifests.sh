@@ -317,7 +317,9 @@ validate_manifest_content() {
 
 validate_environment() {
     local env=$1
-    local manifest_dir="$REPO_ROOT/manifests/$env"
+    # Manifests are organized by app name (manifests/exampleApp/, manifests/postgres/), not by environment
+    # The environment is baked into the manifest content via CUE
+    local manifest_dir="$REPO_ROOT/manifests"
 
     echo -e "\n${GREEN}=== Validating $env environment ===${NC}"
 
@@ -335,7 +337,7 @@ validate_environment() {
 
     # Count YAML files
     local yaml_count=$(find "$manifest_dir" -type f \( -name "*.yaml" -o -name "*.yml" \) | wc -l)
-    echo "Found $yaml_count YAML manifest(s) in $env/"
+    echo "Found $yaml_count YAML manifest(s)"
 
     if [ "$yaml_count" -eq 0 ]; then
         echo -e "${RED}✗ No YAML manifests found in: $manifest_dir${NC}"
