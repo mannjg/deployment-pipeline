@@ -400,7 +400,7 @@ While preserving:
 | UC-C3 | Change deployment strategy | 🔲 | 🔲 | 🔲 | — | |
 | UC-C4 | Add standard pod annotation | ✅ | ✅ | ✅ | `uc-c4-prometheus-annotations` | Pipeline verified 2026-01-21 |
 | UC-C5 | Platform default + app override | 🔲 | 🔲 | 🔲 | — | Multi-app pivot (uses postgres) |
-| UC-C6 | Platform default + env override | ✅ | ✅ | 🔲 | — | Demo ready, pending pipeline verification |
+| UC-C6 | Platform default + env override | ✅ | ✅ | ✅ | `uc-c6-platform-env-override` | Pipeline verified 2026-01-22 |
 | UC-D1 | Emergency hotfix to prod | 🔲 | 🔲 | 🔲 | — | Requires direct env MR support |
 | UC-D2 | Cherry-pick promotion (multi-app) | 🔲 | 🔲 | 🔲 | — | Requires multi-app promotion tooling |
 | UC-D3 | Environment rollback | 🔲 | 🔲 | 🔲 | — | GitOps rollback pattern |
