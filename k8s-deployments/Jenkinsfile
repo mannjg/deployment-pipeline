@@ -192,11 +192,13 @@ def validateManifests(String targetEnv) {
             """
 
             // Server-side dry-run validation against the cluster
+            // Note: Manifests are organized by app name (manifests/exampleApp/, manifests/postgres/),
+            // not by environment. The environment is baked into the manifest content via CUE.
             sh """
                 echo "Running server-side dry-run validation..."
 
-                # Find all manifest files for this environment
-                MANIFEST_DIR="manifests/${targetEnv}"
+                # Find all manifest files (organized by app name, not environment)
+                MANIFEST_DIR="manifests"
                 if [ ! -d "\$MANIFEST_DIR" ]; then
                     echo "ERROR: Manifest directory not found: \$MANIFEST_DIR"
                     exit 1
