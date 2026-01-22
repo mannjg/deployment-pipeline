@@ -322,11 +322,12 @@ def createPromotionMR(String sourceEnv) {
                 echo "Git hash: ${gitHash}"
 
                 // Promote artifacts (Maven + Docker) and get new image tag
+                // Note: Use 'bash' explicitly since GitLab API doesn't preserve execute permissions
                 def newImageTag = ''
                 if (gitHash) {
                     newImageTag = sh(
                         script: """
-                            ./scripts/promote-artifact.sh \
+                            bash ./scripts/promote-artifact.sh \
                                 --source-env ${sourceEnv} \
                                 --target-env ${targetEnv} \
                                 --app-name example-app \
