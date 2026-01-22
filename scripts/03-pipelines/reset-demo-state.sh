@@ -554,6 +554,7 @@ sync_scripts_to_env_branches() {
 
         log_info "Syncing $file_path..."
         for branch in dev stage prod; do
+            # Try PUT first (update existing file)
             local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
                 -H "Content-Type: application/json" \
                 -d "{\"branch\": \"$branch\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: sync $file_path from main\"}" \
@@ -563,7 +564,20 @@ sync_scripts_to_env_branches() {
                 log_info "  $branch: synced"
             else
                 local error=$(echo "$result" | jq -r '.message // "unknown error"' 2>/dev/null)
-                if [[ "$error" == *"already exists"* ]] || [[ "$error" == *"same content"* ]]; then
+                if [[ "$error" == *"doesn't exist"* ]] || [[ "$error" == *"does not exist"* ]]; then
+                    # File doesn't exist - use POST to create it
+                    result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+                        -H "Content-Type: application/json" \
+                        -d "{\"branch\": \"$branch\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: add $file_path from main\"}" \
+                        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
+
+                    if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
+                        log_info "  $branch: created"
+                    else
+                        local create_error=$(echo "$result" | jq -r '.message // "unknown error"' 2>/dev/null)
+                        log_warn "  $branch: failed to create - $create_error"
+                    fi
+                elif [[ "$error" == *"already exists"* ]] || [[ "$error" == *"same content"* ]]; then
                     log_info "  $branch: already up to date"
                 else
                     log_warn "  $branch: $error"
