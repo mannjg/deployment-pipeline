@@ -1,10 +1,11 @@
-// Simplified k8s-deployments Pipeline
-// Single workflow that handles all branches:
-// - Feature branches: validate CUE, generate manifests, commit back
-// - Environment branches (dev/stage/prod): + deploy via ArgoCD + auto-promote
+// k8s-deployments Pipeline
 //
-// Pre-merge validation works via GitLab commit status - MRs are blocked
-// until the source branch build passes.
+// Two distinct workflows:
+// 1. Feature branches (with open MR): validate CUE, generate manifests, commit back, validate, dry-run
+// 2. Environment branches (post-merge): validate CUE, validate existing manifests, dry-run, deploy, auto-promote
+//
+// Key principle: Manifests are generated ONLY in feature branches (pre-merge).
+// Environment branches receive manifests via merge - no regeneration needed.
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -45,10 +46,6 @@ def getTargetEnvironment(String branchName) {
  * This enables MR-preview manifest generation: branches can generate manifests
  * using the target environment's env.cue when an MR exists.
  *
- * Supports two scenarios:
- * 1. Feature branch → environment (feature → dev/stage/prod)
- * 2. Environment → environment promotion (dev → stage, stage → prod)
- *
  * @param branchName The source branch name
  * @param gitlabToken GitLab API token
  * @param gitlabUrl GitLab server URL
@@ -67,7 +64,7 @@ def getMRTargetEnvironment(String branchName, String gitlabToken, String gitlabU
         // URL-encode the project path
         def encodedProject = projectPath.replace('/', '%2F')
 
-        // Query GitLab API for open MRs with this source branch and extract target_branch using jq
+        // Query GitLab API for open MRs with this source branch
         def targetBranch = sh(
             script: """
                 curl -sf -H "PRIVATE-TOKEN: ${gitlabToken}" \
@@ -97,7 +94,7 @@ def getMRTargetEnvironment(String branchName, String gitlabToken, String gitlabU
 
 /**
  * Merges the target environment branch into the current feature branch for MR-preview.
- * This ensures the feature branch has the latest env.cue and manifests from the target,
+ * This ensures the feature branch has the latest env.cue from the target,
  * so that the generated manifests will merge cleanly when the MR is accepted.
  * @param targetEnv The target environment branch (dev, stage, or prod)
  * @return true if merge was successful, false otherwise
@@ -113,11 +110,9 @@ def mergeTargetBranchForPreview(String targetEnv) {
             git config user.email "jenkins@local"
 
             # Merge target branch into feature branch
-            # Use --no-commit so we can resolve conflicts before committing
             git merge origin/${targetEnv} --no-commit --no-edit || true
 
-            # Handle add/delete conflicts for env.cue
-            # If env.cue exists on target but not on feature, take target's version
+            # Handle add/delete conflicts for env.cue - take target's version
             if git diff --name-only --diff-filter=U | grep -q "^env.cue\$"; then
                 echo "Resolving env.cue conflict (taking version from ${targetEnv})"
                 git show origin/${targetEnv}:env.cue > env.cue
@@ -130,7 +125,7 @@ def mergeTargetBranchForPreview(String targetEnv) {
                 git add -A manifests/ 2>/dev/null || true
             fi
 
-            # Resolve .mr-trigger conflicts (this is just a trigger file, keep ours)
+            # Resolve .mr-trigger conflicts (keep ours)
             if git diff --name-only --diff-filter=U | grep -q "^.mr-trigger\$"; then
                 echo "Resolving .mr-trigger conflict (keeping current version)"
                 git checkout --ours .mr-trigger
@@ -138,7 +133,6 @@ def mergeTargetBranchForPreview(String targetEnv) {
             fi
 
             # Resolve services/ conflicts by keeping feature branch version (ours)
-            # Feature branch has the actual changes (e.g., new annotations) that we want
             SERVICE_CONFLICTS=\$(git diff --name-only --diff-filter=U 2>/dev/null | grep "^services/" || true)
             if [ -n "\$SERVICE_CONFLICTS" ]; then
                 echo "Resolving services/ conflicts (keeping feature branch version):"
@@ -178,10 +172,61 @@ def mergeTargetBranchForPreview(String targetEnv) {
 }
 
 /**
+ * Validates manifest YAML files using static checks and server-side dry-run
+ * @param targetEnv The target environment (dev, stage, or prod)
+ * @return true if validation passes, false otherwise
+ */
+def validateManifests(String targetEnv) {
+    container('pipeline') {
+        script {
+            echo "=== Validating Manifests for ${targetEnv} ==="
+
+            // Static validation (YAML syntax, required fields, security checks)
+            sh """
+                echo "Running static manifest validation..."
+                ./scripts/validate-manifests.sh ${targetEnv} || {
+                    echo "ERROR: Static manifest validation failed"
+                    exit 1
+                }
+                echo "Static validation passed"
+            """
+
+            // Server-side dry-run validation against the cluster
+            sh """
+                echo "Running server-side dry-run validation..."
+
+                # Find all manifest files for this environment
+                MANIFEST_DIR="manifests/${targetEnv}"
+                if [ ! -d "\$MANIFEST_DIR" ]; then
+                    echo "ERROR: Manifest directory not found: \$MANIFEST_DIR"
+                    exit 1
+                fi
+
+                # Validate each manifest with kubectl dry-run
+                FAILED=0
+                for manifest in \$(find "\$MANIFEST_DIR" -name "*.yaml" -o -name "*.yml"); do
+                    echo "  Validating: \$manifest"
+                    if ! kubectl apply --dry-run=server -f "\$manifest" 2>&1; then
+                        echo "  ERROR: Dry-run failed for \$manifest"
+                        FAILED=1
+                    fi
+                done
+
+                if [ \$FAILED -ne 0 ]; then
+                    echo "ERROR: Server-side dry-run validation failed"
+                    exit 1
+                fi
+
+                echo "Server-side dry-run validation passed"
+            """
+        }
+    }
+}
+
+/**
  * Waits for ArgoCD application to sync and become healthy
  * @param appName ArgoCD application name
  * @param timeoutSeconds Maximum time to wait (default: 300)
- * @return true if sync successful and healthy, false otherwise
  */
 def waitForArgoCDSync(String appName, int timeoutSeconds = 300) {
     container('pipeline') {
@@ -189,16 +234,12 @@ def waitForArgoCDSync(String appName, int timeoutSeconds = 300) {
             echo "Waiting for ${appName} to sync and become healthy..."
 
             sh """
-                # Wait for sync with timeout
                 argocd app wait ${appName} \
                     --timeout ${timeoutSeconds} \
                     --health \
                     --sync || {
                     echo "ERROR: ${appName} failed to sync or become healthy"
-
-                    # Show app status for debugging
                     argocd app get ${appName}
-
                     exit 1
                 }
 
@@ -253,15 +294,14 @@ def createPromotionMR(String sourceEnv) {
                 }
 
                 sh '''
-                    # Setup git credentials
                     git config --global user.name "Jenkins CI"
                     git config --global user.email "jenkins@local"
                     git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
                 '''
 
                 sh """
-                    # Fetch target branch
-                    git fetch origin ${targetEnv}
+                    # Fetch both branches
+                    git fetch origin ${sourceEnv} ${targetEnv}
 
                     # Create promotion branch from target
                     TIMESTAMP=\$(date +%Y%m%d-%H%M%S)
@@ -271,8 +311,6 @@ def createPromotionMR(String sourceEnv) {
                     git checkout -b "\${PROMOTION_BRANCH}"
 
                     # Promote app config from source to target
-                    # This performs semantic merge: app config from source,
-                    # env-specific fields (namespace, replicas, etc.) preserved from target
                     ./scripts/promote-app-config.sh ${sourceEnv} ${targetEnv} || {
                         echo "ERROR: App config promotion failed"
                         exit 1
@@ -296,11 +334,6 @@ def createPromotionMR(String sourceEnv) {
 
 Automated promotion after successful ${sourceEnv} deployment.
 
-This MR promotes app-specific configuration while preserving
-environment-specific settings (namespace, replicas, resources).
-
-Review the changes below and revert any that should not be promoted.
-
 Source: ${sourceEnv}
 Target: ${targetEnv}
 Build: ${env.BUILD_URL}"
@@ -317,32 +350,23 @@ Build: ${env.BUILD_URL}"
                         "Promote ${sourceEnv} to ${targetEnv}" \\
                         "Automated promotion MR after successful ${sourceEnv} deployment.
 
-## What's Promoted (App-Specific)
+## What's Promoted
 - Container images (CI/CD managed)
 - Application environment variables
 - ConfigMap data
-- Other app-level configuration
 
-## What's Preserved (Environment-Specific)
+## What's Preserved
 - Namespace: ${targetEnv}
 - Replicas, resources, debug flags
-
-## Review Instructions
-1. Review the diff below
-2. **Revert any changes that should NOT be promoted** (e.g., dev-specific debug settings)
-3. Approve and merge when ready
 
 ---
 **Source:** ${sourceEnv}
 **Target:** ${targetEnv}
-**Jenkins Build:** ${env.BUILD_URL}
-
-Auto-generated by k8s-deployments CI/CD pipeline"
+**Jenkins Build:** ${env.BUILD_URL}"
 
                     echo "Created promotion MR: \${PROMOTION_BRANCH} -> ${targetEnv}"
                 """
 
-                // Cleanup git credentials
                 sh 'git config --global --unset credential.helper || true'
             }
         }
@@ -353,10 +377,9 @@ Auto-generated by k8s-deployments CI/CD pipeline"
 // MAIN PIPELINE
 // ============================================================================
 
-// Agent image from environment (ConfigMap) - required, no fallback
 def agentImage = System.getenv('JENKINS_AGENT_IMAGE')
 if (!agentImage) {
-    error "JENKINS_AGENT_IMAGE environment variable is required but not set. Configure it in the pipeline-config ConfigMap."
+    error "JENKINS_AGENT_IMAGE environment variable is required but not set."
 }
 
 pipeline {
@@ -390,22 +413,17 @@ spec:
     }
 
     environment {
-        // GitLab configuration (from pipeline-config ConfigMap)
         GITLAB_URL = System.getenv('GITLAB_URL_INTERNAL')
         GITLAB_GROUP = System.getenv('GITLAB_GROUP')
         DEPLOYMENTS_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
-
-        // ArgoCD configuration
         ARGOCD_SERVER = 'argocd-server.argocd.svc.cluster.local:80'
         ARGOCD_OPTS = '--plaintext --grpc-web'
-
-        // Environment branches
         ENV_BRANCHES = 'dev,stage,prod'
         PROMOTE_BRANCHES = 'dev,stage'
     }
 
     stages {
-        stage('Validate & Generate Manifests') {
+        stage('Initialize') {
             steps {
                 container('pipeline') {
                     script {
@@ -417,76 +435,66 @@ Branch: ${env.BRANCH_NAME}
 Build: ${env.BUILD_URL}
 =======================================================
 """
-
-                        // Capture original commit SHA before any merges
-                        // This is the SHA we need to report status to GitLab
                         env.ORIGINAL_COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
-                        echo "Original commit SHA: ${env.ORIGINAL_COMMIT_SHA}"
+                        echo "Commit SHA: ${env.ORIGINAL_COMMIT_SHA}"
 
-                        // Validate required environment variables
                         if (!env.GITLAB_URL) {
                             error "GITLAB_URL_INTERNAL not set. Configure pipeline-config ConfigMap."
                         }
 
-                        // Check if env.cue exists (environment branches have it)
-                        def hasEnvCue = fileExists('env.cue')
-                        def mrTargetEnv = null
-                        def isMRPreview = false
-                        def isEnvBranch = env.BRANCH_NAME in ['dev', 'stage', 'prod']
+                        // Determine branch type and MR status
+                        env.IS_ENV_BRANCH = (env.BRANCH_NAME in ['dev', 'stage', 'prod']) ? 'true' : 'false'
+                        env.HAS_OPEN_MR = 'false'
+                        env.MR_TARGET_ENV = ''
 
-                        // First, always check for open MRs (for both feature and environment branches)
-                        echo "Checking for open MRs..."
                         withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                             def projectPath = env.GITLAB_GROUP ? "${env.GITLAB_GROUP}/k8s-deployments" : "p2c/k8s-deployments"
-                            mrTargetEnv = getMRTargetEnvironment(env.BRANCH_NAME, GITLAB_TOKEN, env.GITLAB_URL, projectPath)
+                            def mrTarget = getMRTargetEnvironment(env.BRANCH_NAME, GITLAB_TOKEN, env.GITLAB_URL, projectPath)
+                            if (mrTarget) {
+                                env.HAS_OPEN_MR = 'true'
+                                env.MR_TARGET_ENV = mrTarget
+                            }
                         }
 
-                        // Handle different scenarios
-                        if (mrTargetEnv && !isEnvBranch) {
-                            // Feature branch → env MR: use MR-preview mode
-                            // This brings in target's env.cue for manifest generation
-                            echo "MR-Preview Mode: Found MR targeting ${mrTargetEnv}"
-                            isMRPreview = true
+                        // Determine target environment
+                        def targetEnv = getTargetEnvironment(env.BRANCH_NAME)
+                        if (env.HAS_OPEN_MR == 'true' && env.IS_ENV_BRANCH == 'false') {
+                            targetEnv = env.MR_TARGET_ENV
+                        }
+                        env.TARGET_ENV = targetEnv ?: ''
 
+                        echo """
+Branch Type: ${env.IS_ENV_BRANCH == 'true' ? 'Environment' : 'Feature'}
+Has Open MR: ${env.HAS_OPEN_MR}
+Target Environment: ${env.TARGET_ENV ?: 'N/A'}
+"""
+                    }
+                }
+            }
+        }
+
+        stage('Validate CUE') {
+            when {
+                expression { env.TARGET_ENV != '' }
+            }
+            steps {
+                container('pipeline') {
+                    script {
+                        // For feature branches with MR, merge target to get env.cue
+                        if (env.HAS_OPEN_MR == 'true' && env.IS_ENV_BRANCH == 'false') {
+                            echo "MR-Preview Mode: Merging ${env.MR_TARGET_ENV} for env.cue"
                             withCredentials([
                                 usernamePassword(credentialsId: 'gitlab-credentials',
                                                 usernameVariable: 'GIT_USERNAME',
                                                 passwordVariable: 'GIT_PASSWORD')
                             ]) {
-                                sh '''
-                                    git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
-                                '''
-                                // Merge target branch into current branch for clean MR
-                                // This brings in target's env.cue for manifest generation
-                                if (!mergeTargetBranchForPreview(mrTargetEnv)) {
-                                    echo "Could not merge ${mrTargetEnv} into current branch - skipping manifest generation"
-                                    env.HAS_ENV_CUE = 'false'
-                                    sh 'git config --global --unset credential.helper || true'
-                                    return
+                                sh 'git config --global credential.helper \'!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f\''
+                                if (!mergeTargetBranchForPreview(env.MR_TARGET_ENV)) {
+                                    error "Could not merge ${env.MR_TARGET_ENV} - cannot proceed"
                                 }
                                 sh 'git config --global --unset credential.helper || true'
                             }
-                            hasEnvCue = true
-                        } else if (mrTargetEnv && isEnvBranch) {
-                            // Env → env MR (promotion): build normally with source env's config
-                            // No MR-preview needed - the MR just shows the diff between environments
-                            // The manifests on each env branch are already correct for their env
-                            echo "Env-to-env promotion MR (${env.BRANCH_NAME} → ${mrTargetEnv}): Building normally"
-                            // hasEnvCue is already true for env branches
-                        } else if (!hasEnvCue) {
-                            // No MR and no env.cue - can't generate manifests
-                            echo "No open MR found and no env.cue present"
-                            echo "Skipping manifest generation (this is expected for main or branches without MRs)"
-                            env.HAS_ENV_CUE = 'false'
-                            return
-                        } else {
-                            // No MR but has env.cue - normal environment branch build
-                            echo "Building environment branch ${env.BRANCH_NAME} with its own env.cue"
                         }
-
-                        env.HAS_ENV_CUE = 'true'
-                        env.IS_MR_PREVIEW = isMRPreview ? 'true' : 'false'
-                        env.MR_TARGET_ENV = mrTargetEnv ?: ''
 
                         // Validate CUE configuration
                         echo "Validating CUE configuration..."
@@ -497,7 +505,6 @@ Build: ${env.BUILD_URL}
                                     exit 1
                                 }
                             else
-                                # Fallback: validate env.cue only
                                 cue vet ./env.cue || {
                                     echo "CUE validation failed"
                                     exit 1
@@ -505,32 +512,31 @@ Build: ${env.BUILD_URL}
                             fi
                             echo "CUE configuration is valid"
                         '''
+                    }
+                }
+            }
+        }
 
-                        // Generate manifests
-                        // Determine target environment from branch name or MR target
-                        def targetEnv = getTargetEnvironment(env.BRANCH_NAME)
-                        if (isMRPreview && mrTargetEnv) {
-                            // In MR-preview mode (feature→env MRs), use the MR target environment
-                            // Note: env→env MRs don't use MR-preview, they build with their own config
-                            targetEnv = mrTargetEnv
-                            echo "Using MR target environment for manifest generation: ${targetEnv}"
-                        }
-                        if (!targetEnv) {
-                            echo "WARNING: Could not determine target environment for branch ${env.BRANCH_NAME}"
-                            echo "Skipping manifest generation"
-                            return
-                        }
-
-                        echo "Generating manifests for environment: ${targetEnv}..."
+        stage('Generate Manifests') {
+            when {
+                expression {
+                    // Only generate manifests for feature branches with open MRs
+                    // Environment branches receive manifests via merge - no regeneration
+                    env.TARGET_ENV != '' && env.HAS_OPEN_MR == 'true' && env.IS_ENV_BRANCH == 'false'
+                }
+            }
+            steps {
+                container('pipeline') {
+                    script {
+                        echo "Generating manifests for ${env.TARGET_ENV}..."
                         sh """
-                            ./scripts/generate-manifests.sh ${targetEnv} || {
+                            ./scripts/generate-manifests.sh ${env.TARGET_ENV} || {
                                 echo "Manifest generation failed"
                                 exit 1
                             }
-                            echo "Manifest generation completed"
                         """
 
-                        // Commit and push generated manifests back to branch
+                        // Commit and push manifests back to feature branch
                         withCredentials([
                             usernamePassword(credentialsId: 'gitlab-credentials',
                                             usernameVariable: 'GIT_USERNAME',
@@ -543,10 +549,8 @@ Build: ${env.BUILD_URL}
                             '''
 
                             sh """
-                                # Stage all manifests first (handles both modified and untracked files)
                                 git add manifests/ 2>/dev/null || true
 
-                                # Check if there are staged changes to manifests
                                 if git diff --cached --quiet manifests/ 2>/dev/null && \
                                    [ -z "\$(git status --porcelain manifests/ 2>/dev/null)" ]; then
                                     echo "No manifest changes to commit"
@@ -561,18 +565,24 @@ Build: ${env.BUILD_URL}"
                                     echo "Manifests committed and pushed"
                                 fi
 
-                                # Cleanup credentials
                                 git config --global --unset credential.helper || true
                             """
                         }
 
-                        echo "Validation and manifest generation complete"
-
-                        // Capture final commit SHA for status reporting
-                        // This must be done BEFORE createPromotionMR which switches branches
+                        // Capture final commit SHA
                         env.FINAL_COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
-                        echo "Final commit SHA for status reporting: ${env.FINAL_COMMIT_SHA}"
                     }
+                }
+            }
+        }
+
+        stage('Validate Manifests') {
+            when {
+                expression { env.TARGET_ENV != '' }
+            }
+            steps {
+                script {
+                    validateManifests(env.TARGET_ENV)
                 }
             }
         }
@@ -580,7 +590,8 @@ Build: ${env.BUILD_URL}"
         stage('Deploy to Environment') {
             when {
                 expression {
-                    env.BRANCH_NAME in env.ENV_BRANCHES.split(',') && env.HAS_ENV_CUE == 'true'
+                    // Only deploy for environment branches (post-merge)
+                    env.IS_ENV_BRANCH == 'true' && env.TARGET_ENV != ''
                 }
             }
             stages {
@@ -589,7 +600,6 @@ Build: ${env.BUILD_URL}"
                         container('pipeline') {
                             script {
                                 echo "=== Logging into ArgoCD ==="
-
                                 withCredentials([
                                     usernamePassword(credentialsId: 'argocd-credentials',
                                                     usernameVariable: 'ARGOCD_USERNAME',
@@ -600,8 +610,6 @@ Build: ${env.BUILD_URL}"
                                             --username \${ARGOCD_USERNAME} \
                                             --password \${ARGOCD_PASSWORD} \
                                             ${env.ARGOCD_OPTS}
-
-                                        echo "Logged into ArgoCD"
                                     """
                                 }
                             }
@@ -609,35 +617,28 @@ Build: ${env.BUILD_URL}"
                     }
                 }
 
-                stage('Refresh & Sync ArgoCD') {
+                stage('Refresh & Sync') {
                     steps {
                         container('pipeline') {
                             script {
-                                def environment = env.BRANCH_NAME
-                                def appName = "example-app-${environment}"
-
+                                def appName = "example-app-${env.BRANCH_NAME}"
                                 echo "=== Refreshing ArgoCD Application: ${appName} ==="
 
                                 sh """
-                                    # Refresh the app (reload from Git)
                                     argocd app get ${appName} --refresh || {
                                         echo "WARNING: Failed to refresh ${appName}"
                                         exit 1
                                     }
-
-                                    echo "Refreshed ${appName}"
                                 """
                             }
                         }
                     }
                 }
 
-                stage('Wait for Sync & Health') {
+                stage('Wait for Health') {
                     steps {
                         script {
-                            def environment = env.BRANCH_NAME
-                            def appName = "example-app-${environment}"
-
+                            def appName = "example-app-${env.BRANCH_NAME}"
                             waitForArgoCDSync(appName, 300)
                         }
                     }
@@ -646,22 +647,14 @@ Build: ${env.BUILD_URL}"
                 stage('Deployment Summary') {
                     steps {
                         container('pipeline') {
-                            script {
-                                echo """
+                            echo """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DEPLOYMENT SUCCESSFUL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Environment: ${env.BRANCH_NAME}
-
-Application has been:
-  - Refreshed in ArgoCD
-  - Synced to latest Git state
-  - Verified as healthy
-
 Build: ${env.BUILD_URL}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-                            }
                         }
                     }
                 }
@@ -671,7 +664,8 @@ Build: ${env.BUILD_URL}
         stage('Create Promotion MR') {
             when {
                 expression {
-                    env.BRANCH_NAME in env.PROMOTE_BRANCHES.split(',') && env.HAS_ENV_CUE == 'true'
+                    // Only create promotion MR for dev/stage after successful deployment
+                    env.BRANCH_NAME in env.PROMOTE_BRANCHES.split(',') && env.IS_ENV_BRANCH == 'true'
                 }
             }
             steps {
@@ -693,10 +687,6 @@ Branch: ${env.BRANCH_NAME}
 Build: ${env.BUILD_URL}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-
-                // Update GitLab commit status for the source branch commit
-                // Use FINAL_COMMIT_SHA (captured before createPromotionMR switches branches)
-                // Falls back to ORIGINAL_COMMIT_SHA if pipeline exited early
                 container('pipeline') {
                     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
@@ -721,14 +711,9 @@ Build: ${env.BUILD_URL}
 PIPELINE FAILED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Branch: ${env.BRANCH_NAME}
-
 Check logs above for error details.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-
-                // Update GitLab commit status for the source branch commit
-                // Use FINAL_COMMIT_SHA (captured before createPromotionMR switches branches)
-                // Falls back to ORIGINAL_COMMIT_SHA if pipeline exited early
                 container('pipeline') {
                     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
