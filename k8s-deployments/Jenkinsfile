@@ -235,6 +235,23 @@ def createPromotionMR(String sourceEnv) {
                                 passwordVariable: 'GIT_PASSWORD'),
                 string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')
             ]) {
+                // Check if there's already an open promotion MR to the target
+                def projectPath = env.GITLAB_GROUP ? "${env.GITLAB_GROUP}/k8s-deployments" : "p2c/k8s-deployments"
+                def encodedProject = projectPath.replace('/', '%2F')
+                def existingMR = sh(
+                    script: """
+                        curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                            "${env.GITLAB_URL}/api/v4/projects/${encodedProject}/merge_requests?state=opened&target_branch=${targetEnv}" \
+                            2>/dev/null | jq -r '[.[] | select(.source_branch | startswith("promote-${targetEnv}-"))] | first | .iid // empty'
+                    """,
+                    returnStdout: true
+                ).trim()
+
+                if (existingMR) {
+                    echo "Promotion MR !${existingMR} already exists for ${targetEnv} - skipping creation"
+                    return
+                }
+
                 sh '''
                     # Setup git credentials
                     git config --global user.name "Jenkins CI"
