@@ -241,7 +241,7 @@ demo_verify "Retrieved prod's env.cue"
 # Modify the content locally using cue-edit.py
 # Note: Create temp file in k8s-deployments so cue-edit.py can find CUE project context
 demo_action "Adding label override to env.cue..."
-TEMP_ENV_CUE="${K8S_DEPLOYMENTS_DIR}/.tmp-env-cue-$$"
+TEMP_ENV_CUE="${K8S_DEPLOYMENTS_DIR}/.tmp-env-cue-$$.cue"
 echo "$PROD_ENV_CUE" > "$TEMP_ENV_CUE"
 
 # Use cue-edit.py to add the label
