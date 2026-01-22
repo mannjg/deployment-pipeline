@@ -115,15 +115,28 @@ cleanup_jenkins_queue() {
 
     local jenkins_auth="$JENKINS_USER:$JENKINS_TOKEN"
 
-    # 1. Cancel all queued items for k8s-deployments
+    # Fetch Jenkins CRUMB for CSRF protection (required for POST operations)
+    local crumb_response=$(curl -sk -u "$jenkins_auth" "$JENKINS_URL/crumbIssuer/api/json" 2>/dev/null)
+    local crumb_field=$(echo "$crumb_response" | jq -r '.crumbRequestField // empty' 2>/dev/null)
+    local crumb_value=$(echo "$crumb_response" | jq -r '.crumb // empty' 2>/dev/null)
+
+    if [[ -z "$crumb_field" ]] || [[ -z "$crumb_value" ]]; then
+        log_warn "Could not fetch Jenkins CRUMB, POST operations may fail"
+        local crumb_header=""
+    else
+        local crumb_header="-H $crumb_field:$crumb_value"
+    fi
+
+    # 1. Cancel all queued items (not just k8s-deployments - clear entire queue)
     log_info "Canceling queued Jenkins jobs..."
     local queue_items=$(curl -sk -u "$jenkins_auth" "$JENKINS_URL/queue/api/json" 2>/dev/null | \
-        jq -r '.items[] | select(.task.name | test("k8s-deployments")) | .id' 2>/dev/null || true)
+        jq -r '.items[].id' 2>/dev/null || true)
 
     local canceled=0
     if [[ -n "$queue_items" ]]; then
         for item_id in $queue_items; do
-            curl -sk -X POST -u "$jenkins_auth" "$JENKINS_URL/queue/cancelItem?id=$item_id" >/dev/null 2>&1 && \
+            curl -sk -X POST -u "$jenkins_auth" $crumb_header \
+                "$JENKINS_URL/queue/cancelItem?id=$item_id" >/dev/null 2>&1 && \
                 canceled=$((canceled + 1))
         done
     fi
@@ -149,7 +162,7 @@ cleanup_jenkins_queue() {
 
             for build_num in $builds; do
                 if [[ -n "$build_num" ]]; then
-                    curl -sk -X POST -u "$jenkins_auth" \
+                    curl -sk -X POST -u "$jenkins_auth" $crumb_header \
                         "$JENKINS_URL/job/k8s-deployments/job/$encoded_job/$build_num/stop" >/dev/null 2>&1 && \
                         aborted=$((aborted + 1))
                 fi
