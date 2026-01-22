@@ -178,16 +178,29 @@ get_current_image_tag() {
     local api_url="${GITLAB_URL}/api/v4/projects/${encoded_project}/repository/files/env.cue?ref=${env}"
     log_debug "Fetching env.cue from: $api_url"
 
-    env_cue_content=$(curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "$api_url" 2>/dev/null | \
-        jq -r '.content' | base64 -d) || {
-        log_error "Failed to fetch env.cue from GitLab for branch: $env"
+    local http_response
+    http_response=$(curl -sf -w "%{http_code}" -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "$api_url" 2>/dev/null) || {
+        log_error "Failed to fetch env.cue from GitLab for branch: $env (curl error)"
+        return 1
+    }
+
+    local http_code="${http_response: -3}"
+    local response_body="${http_response:0:-3}"
+
+    if [[ "$http_code" != "200" ]]; then
+        log_error "Failed to fetch env.cue from GitLab for branch: $env (HTTP $http_code)"
+        return 1
+    fi
+
+    env_cue_content=$(echo "$response_body" | jq -r '.content' | base64 -d) || {
+        log_error "Failed to parse env.cue content from GitLab response"
         return 1
     }
 
     # Extract image tag from env.cue
     # Look for pattern: image: "registry/path/app:TAG"
     local full_image
-    full_image=$(echo "$env_cue_content" | grep -oP 'image:\s*"\K[^"]+' | head -1) || {
+    full_image=$(echo "$env_cue_content" | grep 'image:' | sed -E 's/.*image:\s*"([^"]+)".*/\1/' | head -1) || {
         log_error "Could not extract image from env.cue"
         return 1
     }
@@ -227,7 +240,7 @@ get_next_rc_number() {
     log_debug "Searching for existing RCs: $search_url"
 
     local existing_rcs
-    existing_rcs=$(curl -sf "$search_url" 2>/dev/null | jq -r '.items[].version' 2>/dev/null | grep -oP 'rc\K[0-9]+' | sort -n | tail -1) || true
+    existing_rcs=$(curl -sf "$search_url" 2>/dev/null | jq -r '.items[].version' 2>/dev/null | grep -o 'rc[0-9]\+' | sed 's/rc//' | sort -n | tail -1) || true
 
     if [[ -z "$existing_rcs" ]]; then
         echo "1"
@@ -393,7 +406,7 @@ main() {
     # Create temp directory for JAR
     local tmp_dir
     tmp_dir=$(mktemp -d)
-    trap "rm -rf $tmp_dir" EXIT
+    trap 'rm -rf "$tmp_dir"' EXIT
 
     # Download source JAR
     local jar_file="$tmp_dir/${APP_NAME}.jar"
