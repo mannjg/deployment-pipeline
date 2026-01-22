@@ -404,12 +404,13 @@ main() {
     log_info "Target image tag: $target_image_tag"
 
     # Create temp directory for JAR
-    local tmp_dir
-    tmp_dir=$(mktemp -d)
-    trap 'rm -rf "$tmp_dir"' EXIT
+    # Note: Using global variable and double quotes so trap captures the value at definition time
+    # (local variables go out of scope when function exits, causing unbound variable error in trap)
+    TMP_DIR_PROMOTE=$(mktemp -d)
+    trap "rm -rf \"$TMP_DIR_PROMOTE\"" EXIT
 
     # Download source JAR
-    local jar_file="$tmp_dir/${APP_NAME}.jar"
+    local jar_file="$TMP_DIR_PROMOTE/${APP_NAME}.jar"
     download_jar "$source_version" "$source_repo" "$jar_file"
 
     # Deploy with new version
