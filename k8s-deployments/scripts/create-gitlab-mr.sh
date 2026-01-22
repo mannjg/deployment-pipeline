@@ -69,7 +69,7 @@ TITLE_ESCAPED=$(escape_json "$TITLE")
 DESC_ESCAPED=$(escape_json "$DESCRIPTION")
 
 # Construct JSON payload
-JSON_PAYLOAD="{\"source_branch\":\"$SOURCE_ESCAPED\",\"target_branch\":\"$TARGET_ESCAPED\",\"title\":\"$TITLE_ESCAPED\",\"description\":\"$DESC_ESCAPED\",\"remove_source_branch\":false,\"squash\":false}"
+JSON_PAYLOAD="{\"source_branch\":\"$SOURCE_ESCAPED\",\"target_branch\":\"$TARGET_ESCAPED\",\"title\":\"$TITLE_ESCAPED\",\"description\":\"$DESC_ESCAPED\",\"remove_source_branch\":true,\"squash\":false}"
 
 MR_RESPONSE=$(curl -s -w "\n%{http_code}" \
     --request POST \
