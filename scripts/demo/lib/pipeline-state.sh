@@ -298,11 +298,24 @@ cleanup_pipeline_state() {
         local encoded_branch
         encoded_branch=$(echo "$branch" | sed 's/\//%2F/g')
 
-        curl -sk -X DELETE -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-            "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_repo}/repository/branches/${encoded_branch}" 2>/dev/null || true
-        echo "    Deleted branch ${branch}"
-        cleaned=$((cleaned + 1))
+        local http_code
+        http_code=$(curl -sk -X DELETE -w "%{http_code}" -o /dev/null -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_repo}/repository/branches/${encoded_branch}" 2>/dev/null) || true
+
+        if [[ "$http_code" == "204" ]]; then
+            echo "    Deleted branch ${branch}"
+            cleaned=$((cleaned + 1))
+        elif [[ "$http_code" == "404" ]]; then
+            echo "    Branch ${branch} already deleted (404)"
+        else
+            echo "    Failed to delete branch ${branch} (HTTP $http_code)"
+        fi
     done
+
+    # Give GitLab time to update its branch index after deletions
+    if [[ ${#STATE_LINGERING_BRANCHES[@]} -gt 0 ]]; then
+        sleep 2
+    fi
 
     echo "  Cleaned up ${cleaned} items"
     return 0
