@@ -330,3 +330,106 @@ assert_image_contains() {
     assert_field_contains "$namespace" "deployment" "$deployment" \
         "{.spec.template.spec.containers[0].image}" "$substring"
 }
+
+# ============================================================================
+# VERSION LIFECYCLE ASSERTIONS
+# ============================================================================
+
+# Assert image tag matches a glob pattern
+# Usage: assert_image_tag_matches <namespace> <deployment_name> <pattern> [description]
+# Pattern examples: "*-SNAPSHOT-*", "*-rc[0-9]*-*", "!*-SNAPSHOT-*" (negation with !)
+assert_image_tag_matches() {
+    local namespace="$1"
+    local deployment="$2"
+    local pattern="$3"
+    local description="${4:-Image tag matches pattern}"
+
+    local actual=$(kubectl get deployment "$deployment" -n "$namespace" \
+        -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
+    local tag=$(echo "$actual" | sed 's/.*://')
+
+    local negate=false
+    if [[ "$pattern" == !* ]]; then
+        negate=true
+        pattern="${pattern:1}"
+    fi
+
+    # Use bash pattern matching
+    if [[ "$tag" == $pattern ]]; then
+        if $negate; then
+            demo_fail "$description: tag '$tag' should NOT match '$pattern'"
+            return 1
+        else
+            demo_verify "$description: tag '$tag' matches '$pattern'"
+            return 0
+        fi
+    else
+        if $negate; then
+            demo_verify "$description: tag '$tag' does not match '$pattern' (expected)"
+            return 0
+        else
+            demo_fail "$description: tag '$tag' does not match '$pattern'"
+            return 1
+        fi
+    fi
+}
+
+# Extract git hash from image tag
+# Usage: extract_git_hash_from_image <image_or_tag>
+extract_git_hash_from_image() {
+    local input="$1"
+    # Extract last component that looks like a git hash (6+ hex chars)
+    echo "$input" | grep -oE '[a-f0-9]{6,}$' || echo ""
+}
+
+# Assert all environments have the same git hash (same binary)
+# Usage: assert_same_git_hash_across_envs <env1> <env2> [env3...]
+assert_same_git_hash_across_envs() {
+    local deployment="example-app"
+    local first_hash=""
+    local first_env=""
+
+    for env in "$@"; do
+        local image=$(kubectl get deployment "$deployment" -n "$env" \
+            -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
+        local hash=$(extract_git_hash_from_image "$image")
+
+        if [[ -z "$hash" ]]; then
+            demo_fail "Could not extract git hash from $env image: $image"
+            return 1
+        fi
+
+        if [[ -z "$first_hash" ]]; then
+            first_hash="$hash"
+            first_env="$env"
+        elif [[ "$hash" != "$first_hash" ]]; then
+            demo_fail "Git hash mismatch: $first_env=$first_hash, $env=$hash"
+            return 1
+        fi
+    done
+
+    demo_verify "Same git hash ($first_hash) across all environments: $*"
+    return 0
+}
+
+# Assert artifact exists in Nexus repository
+# Usage: assert_nexus_artifact_exists <app_name> <version> <repository>
+assert_nexus_artifact_exists() {
+    local app_name="$1"
+    local version="$2"
+    local repository="$3"
+
+    local nexus_url="${NEXUS_URL:-http://nexus.nexus.svc.cluster.local:8081}"
+    local group_id="${MAVEN_GROUP_ID:-com.example}"
+
+    local search_url="${nexus_url}/service/rest/v1/search?repository=${repository}&group=${group_id}&name=${app_name}&version=${version}"
+    local result=$(curl -sf "$search_url" 2>/dev/null | jq -r '.items | length')
+
+    if [[ "$result" -gt 0 ]]; then
+        demo_verify "Nexus artifact exists: ${app_name}:${version} in ${repository}"
+        return 0
+    else
+        demo_fail "Nexus artifact not found: ${app_name}:${version} in ${repository}"
+        return 1
+    fi
+}
