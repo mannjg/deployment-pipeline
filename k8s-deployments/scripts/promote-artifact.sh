@@ -249,22 +249,35 @@ get_next_rc_number() {
     fi
 }
 
-# Download JAR from Nexus
+# Download JAR from Nexus using Maven (handles SNAPSHOT resolution automatically)
 download_jar() {
     local version="$1"
     local repository="$2"
     local output_file="$3"
 
-    # Convert group ID to path format (com.example -> com/example)
-    local group_path="${MAVEN_GROUP_ID//./\/}"
+    local output_dir
+    output_dir=$(dirname "$output_file")
 
-    local download_url="${NEXUS_URL}/repository/${repository}/${group_path}/${APP_NAME}/${version}/${APP_NAME}-${version}.jar"
+    log_info "Downloading ${MAVEN_GROUP_ID}:${APP_NAME}:${version} from ${repository}"
 
-    log_info "Downloading JAR from: $download_url"
-    if ! curl -sf -o "$output_file" "$download_url"; then
-        log_error "Failed to download JAR: $download_url"
+    # Use Maven to resolve and copy the artifact
+    # Maven handles SNAPSHOT timestamp resolution via maven-metadata.xml
+    if ! mvn dependency:copy \
+        -Dartifact="${MAVEN_GROUP_ID}:${APP_NAME}:${version}:jar" \
+        -DoutputDirectory="$output_dir" \
+        -Dmdep.stripVersion=true \
+        -DremoteRepositories="${repository}::default::${NEXUS_URL}/repository/${repository}/" \
+        -q 2>/dev/null; then
+        log_error "Failed to download artifact via Maven"
         return 1
     fi
+
+    # Maven outputs as APP_NAME.jar (due to stripVersion), rename to expected location
+    local maven_output="$output_dir/${APP_NAME}.jar"
+    if [[ "$maven_output" != "$output_file" ]]; then
+        mv "$maven_output" "$output_file"
+    fi
+
     log_info "Downloaded to: $output_file"
 }
 
