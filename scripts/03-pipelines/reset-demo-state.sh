@@ -431,6 +431,56 @@ wait_for_build() {
 }
 
 # =============================================================================
+# Merge a GitLab MR with retry logic for async mergeability (405 handling)
+# =============================================================================
+# GitLab's merge API can return 405 even when the merge succeeds due to
+# async mergeability checking. This function handles that by checking the
+# actual MR state after getting an error response.
+merge_gitlab_mr() {
+    local encoded_project="$1"
+    local mr_iid="$2"
+    local max_retries="${3:-3}"
+    local retry_delay="${4:-2}"
+
+    for ((i=1; i<=max_retries; i++)); do
+        # Attempt the merge
+        local merge_result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests/$mr_iid/merge" 2>/dev/null)
+
+        # Check if merge response indicates success
+        if echo "$merge_result" | jq -e '.state == "merged"' > /dev/null 2>&1; then
+            return 0
+        fi
+
+        # Got an error response - check actual MR state (might have merged despite 405)
+        sleep 1
+        local mr_state=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests/$mr_iid" 2>/dev/null | \
+            jq -r '.state // empty')
+
+        if [[ "$mr_state" == "merged" ]]; then
+            return 0
+        fi
+
+        # If still not merged and we have retries left, wait and try again
+        if [[ $i -lt $max_retries ]]; then
+            sleep "$retry_delay"
+        fi
+    done
+
+    # Final check of MR state
+    local final_state=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests/$mr_iid" 2>/dev/null | \
+        jq -r '.state // empty')
+
+    if [[ "$final_state" == "merged" ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+# =============================================================================
 # Wait for promotion MR to appear and merge it
 # =============================================================================
 wait_and_merge_promotion_mr() {
@@ -460,16 +510,12 @@ wait_and_merge_promotion_mr() {
 
             log_info "  Found MR !$mr_iid ($source_branch → $target_branch)"
 
-            # Merge the MR
-            local merge_result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-                "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests/$mr_iid/merge" 2>/dev/null)
-
-            if echo "$merge_result" | jq -e '.state == "merged"' > /dev/null 2>&1; then
+            # Merge the MR (with retry logic for 405 handling)
+            if merge_gitlab_mr "$encoded_project" "$mr_iid"; then
                 log_info "  MR !$mr_iid merged successfully"
                 return 0
             else
-                local error=$(echo "$merge_result" | jq -r '.message // "unknown error"' 2>/dev/null)
-                log_warn "  Failed to merge MR !$mr_iid: $error"
+                log_warn "  Failed to merge MR !$mr_iid"
                 return 1
             fi
         fi
@@ -577,14 +623,10 @@ sync_via_promotion_workflow() {
 
     log_info "Created MR !$mr_iid"
 
-    # Merge the MR to dev
+    # Merge the MR to dev (with retry logic for 405 handling)
     log_info "Merging MR !$mr_iid to dev..."
-    local merge_result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-        "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests/$mr_iid/merge" 2>/dev/null)
-
-    if ! echo "$merge_result" | jq -e '.state == "merged"' > /dev/null 2>&1; then
-        local error=$(echo "$merge_result" | jq -r '.message // "unknown error"' 2>/dev/null)
-        log_error "Failed to merge MR to dev: $error"
+    if ! merge_gitlab_mr "$encoded_project" "$mr_iid"; then
+        log_error "Failed to merge MR !$mr_iid to dev"
         return 1
     fi
 
