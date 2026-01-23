@@ -494,23 +494,12 @@ wait_and_merge_promotion_mr() {
 #   - manifests/* (generated per environment)
 #
 sync_via_promotion_workflow() {
-    log_step "Syncing files via promotion workflow..."
+    log_step "Syncing shared files via promotion workflow..."
 
     local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
     local sync_branch="sync-main-$(date +%s)"
 
-    # Check if dev branch matches main for key files
-    local main_jenkinsfile=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/Jenkinsfile?ref=main" 2>/dev/null | jq -r '.content_sha256 // empty')
-    local dev_jenkinsfile=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/Jenkinsfile?ref=dev" 2>/dev/null | jq -r '.content_sha256 // empty')
-
-    if [[ "$main_jenkinsfile" == "$dev_jenkinsfile" ]] && [[ -n "$main_jenkinsfile" ]]; then
-        log_info "Environment branches already in sync with main (Jenkinsfile matches)"
-        return 0
-    fi
-
-    log_info "Dev branch needs sync with main"
+    # Create sync branch from dev (so it has dev's env.cue and manifests)
     log_info "Creating sync branch from dev: $sync_branch"
 
     # Create branch FROM DEV (so it has dev's env.cue and manifests)
