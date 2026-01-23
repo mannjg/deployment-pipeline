@@ -592,7 +592,10 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                 expression {
                     // Only generate manifests for feature branches with open MRs
                     // Environment branches receive manifests via merge - no regeneration
-                    env.TARGET_ENV != '' && env.HAS_OPEN_MR == 'true' && env.IS_ENV_BRANCH == 'false'
+                    // Exclude promote-* branches - they carry already-generated manifests from source env
+                    // (regenerating would cause feedback loop: build -> push -> webhook -> build)
+                    env.TARGET_ENV != '' && env.HAS_OPEN_MR == 'true' && env.IS_ENV_BRANCH == 'false' &&
+                    !env.BRANCH_NAME.startsWith('promote-')
                 }
             }
             steps {
