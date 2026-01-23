@@ -65,6 +65,8 @@ Version Progression:
 
 Environment Variables:
   NEXUS_URL         Nexus base URL (default: http://nexus.nexus.svc.cluster.local:8081)
+  NEXUS_USER        Nexus username (optional, for authenticated repos)
+  NEXUS_PASSWORD    Nexus password (optional, for authenticated repos)
   DOCKER_REGISTRY   Docker registry URL (default: nexus.nexus.svc.cluster.local:5000)
   MAVEN_GROUP_ID    Maven group ID (default: com.example)
   GITLAB_URL        GitLab URL for fetching env.cue (default: from GITLAB_URL_INTERNAL)
@@ -141,6 +143,87 @@ log_debug "  DOCKER_REGISTRY: $DOCKER_REGISTRY"
 log_debug "  MAVEN_GROUP_ID: $MAVEN_GROUP_ID"
 log_debug "  GITLAB_URL: $GITLAB_URL"
 log_debug "  GITLAB_PROJECT: $GITLAB_PROJECT"
+
+# =============================================================================
+# Maven Settings Management
+# =============================================================================
+
+# Global variable for settings file path (set by create_maven_settings)
+MAVEN_SETTINGS_FILE=""
+
+# Create Maven settings.xml with Nexus repository definitions
+# This enables Maven to resolve SNAPSHOT artifacts from Nexus
+create_maven_settings() {
+    MAVEN_SETTINGS_FILE=$(mktemp --suffix="-maven-settings.xml")
+
+    # Build server credentials block if credentials are provided
+    local servers_block=""
+    if [[ -n "${NEXUS_USER:-}" && -n "${NEXUS_PASSWORD:-}" ]]; then
+        servers_block="<servers>
+    <server>
+      <id>nexus-snapshots</id>
+      <username>${NEXUS_USER}</username>
+      <password>${NEXUS_PASSWORD}</password>
+    </server>
+    <server>
+      <id>nexus-releases</id>
+      <username>${NEXUS_USER}</username>
+      <password>${NEXUS_PASSWORD}</password>
+    </server>
+    <server>
+      <id>nexus</id>
+      <username>${NEXUS_USER}</username>
+      <password>${NEXUS_PASSWORD}</password>
+    </server>
+  </servers>"
+    fi
+
+    cat > "$MAVEN_SETTINGS_FILE" << SETTINGS_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                              https://maven.apache.org/xsd/settings-1.0.0.xsd">
+  ${servers_block}
+  <profiles>
+    <profile>
+      <id>nexus</id>
+      <repositories>
+        <repository>
+          <id>nexus-snapshots</id>
+          <url>${NEXUS_URL}/repository/maven-snapshots/</url>
+          <releases><enabled>false</enabled></releases>
+          <snapshots><enabled>true</enabled><updatePolicy>always</updatePolicy></snapshots>
+        </repository>
+        <repository>
+          <id>nexus-releases</id>
+          <url>${NEXUS_URL}/repository/maven-releases/</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+      </repositories>
+    </profile>
+  </profiles>
+  <activeProfiles>
+    <activeProfile>nexus</activeProfile>
+  </activeProfiles>
+</settings>
+SETTINGS_EOF
+
+    log_debug "Created Maven settings at: $MAVEN_SETTINGS_FILE"
+}
+
+# Cleanup temporary files (Maven settings and temp directory)
+cleanup_temp_files() {
+    if [[ -n "${MAVEN_SETTINGS_FILE:-}" && -f "$MAVEN_SETTINGS_FILE" ]]; then
+        rm -f "$MAVEN_SETTINGS_FILE"
+        log_debug "Cleaned up Maven settings"
+    fi
+    if [[ -n "${TMP_DIR_PROMOTE:-}" && -d "$TMP_DIR_PROMOTE" ]]; then
+        rm -rf "$TMP_DIR_PROMOTE"
+        log_debug "Cleaned up temp directory"
+    fi
+}
 
 # =============================================================================
 # Version Parsing Functions
@@ -260,15 +343,17 @@ download_jar() {
 
     log_info "Downloading ${MAVEN_GROUP_ID}:${APP_NAME}:${version} from ${repository}"
 
-    # Use Maven to resolve and copy the artifact
-    # Maven handles SNAPSHOT timestamp resolution via maven-metadata.xml
+    # Use Maven with settings.xml to resolve the artifact
+    # Settings file contains repository definitions for SNAPSHOT resolution
     if ! mvn dependency:copy \
+        -s "$MAVEN_SETTINGS_FILE" \
         -Dartifact="${MAVEN_GROUP_ID}:${APP_NAME}:${version}:jar" \
         -DoutputDirectory="$output_dir" \
         -Dmdep.stripVersion=true \
-        -DremoteRepositories="${repository}::default::${NEXUS_URL}/repository/${repository}/" \
-        -q 2>/dev/null; then
+        -q; then
         log_error "Failed to download artifact via Maven"
+        log_error "Artifact: ${MAVEN_GROUP_ID}:${APP_NAME}:${version}"
+        log_error "Check that the artifact exists in Nexus and settings are correct"
         return 1
     fi
 
@@ -291,7 +376,9 @@ deploy_jar() {
 
     local deploy_url="${NEXUS_URL}/repository/${repository}"
 
+    # Use settings.xml for credentials (repositoryId=nexus matches server id)
     mvn deploy:deploy-file \
+        -s "$MAVEN_SETTINGS_FILE" \
         -DgroupId="${MAVEN_GROUP_ID}" \
         -DartifactId="${APP_NAME}" \
         -Dversion="${new_version}" \
@@ -349,6 +436,10 @@ retag_docker_image() {
 main() {
     log_info "=== Artifact Promotion: $SOURCE_ENV -> $TARGET_ENV ==="
     log_info "App: $APP_NAME, Git Hash: $GIT_HASH"
+
+    # Create Maven settings for Nexus access
+    create_maven_settings
+    trap cleanup_temp_files EXIT
 
     # Get source image tag
     local source_image_tag
@@ -417,10 +508,8 @@ main() {
     log_info "Target image tag: $target_image_tag"
 
     # Create temp directory for JAR
-    # Note: Using global variable and double quotes so trap captures the value at definition time
-    # (local variables go out of scope when function exits, causing unbound variable error in trap)
+    # Note: Using global variable so cleanup function can access it
     TMP_DIR_PROMOTE=$(mktemp -d)
-    trap "rm -rf \"$TMP_DIR_PROMOTE\"" EXIT
 
     # Download source JAR
     local jar_file="$TMP_DIR_PROMOTE/${APP_NAME}.jar"

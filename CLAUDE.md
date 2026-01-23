@@ -130,15 +130,28 @@ kubectl get pods -A | grep -E 'gitlab|jenkins|nexus|argocd'
 
 ## Common Operations
 
-### Trigger a Build
+### Jenkins Operations (ALWAYS use jenkins-cli.sh)
+
+**IMPORTANT:** Always use `scripts/04-operations/jenkins-cli.sh` for Jenkins operations. Do not write ad-hoc curl commands - extend the CLI if needed.
+
 ```bash
-curl -X POST http://jenkins.local/job/example-app-ci/build
+# Get build status (JSON output)
+./scripts/04-operations/jenkins-cli.sh status example-app/main
+./scripts/04-operations/jenkins-cli.sh status k8s-deployments/dev
+
+# Get console output
+./scripts/04-operations/jenkins-cli.sh console example-app/main
+./scripts/04-operations/jenkins-cli.sh console example-app/main 138  # specific build
+
+# Wait for build to complete
+./scripts/04-operations/jenkins-cli.sh wait example-app/main --timeout 600
 ```
 
-### Check Build Status
+Job notation uses slash format: `example-app/main` → `example-app/job/main`
+
+### Trigger a Build
 ```bash
-curl -s "http://jenkins.local/job/example-app-ci/lastBuild/api/json" | \
-  python3 -c "import sys, json; d=json.load(sys.stdin); print(f\"Build #{d['number']}: {d['result'] or 'BUILDING'}\")"
+./scripts/04-operations/trigger-build.sh example-app
 ```
 
 ### Check Deployment Status
