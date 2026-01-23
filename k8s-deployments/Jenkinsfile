@@ -497,6 +497,13 @@ spec:
       limits:
         memory: "1Gi"
         cpu: "1000m"
+    volumeMounts:
+    - name: docker-sock
+      mountPath: /var/run/docker.sock
+  volumes:
+  - name: docker-sock
+    hostPath:
+      path: /var/run/docker.sock
 """
         }
     }
