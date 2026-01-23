@@ -383,13 +383,15 @@ wait_for_build() {
     local job_path="$1"  # e.g., "k8s-deployments/job/dev"
     local timeout_seconds="${2:-300}"
     local jenkins_auth="$JENKINS_USER:$JENKINS_TOKEN"
+    local tmp_file="/tmp/jenkins_build_$$_$(echo "$job_path" | tr '/' '_').json"
 
     local start_time=$(date +%s)
     local last_build=""
 
-    # Get current last build number
-    local initial_build=$(curl -sk -u "$jenkins_auth" \
-        "$JENKINS_URL/job/$job_path/lastBuild/api/json" 2>/dev/null | jq -r '.number // empty')
+    # Get current last build number (save to file to avoid jq pipe issues)
+    curl -sk -u "$jenkins_auth" \
+        "$JENKINS_URL/job/$job_path/lastBuild/api/json" > "$tmp_file" 2>/dev/null
+    local initial_build=$(cat "$tmp_file" | jq -r '.number // empty' 2>/dev/null)
 
     log_info "  Waiting for new build on $job_path (current: #${initial_build:-none})..."
 
@@ -397,23 +399,26 @@ wait_for_build() {
         local elapsed=$(($(date +%s) - start_time))
         if [[ $elapsed -gt $timeout_seconds ]]; then
             log_warn "  Timeout waiting for build on $job_path"
+            rm -f "$tmp_file"
             return 1
         fi
 
-        # Check for new build
-        local build_info=$(curl -sk -u "$jenkins_auth" \
-            "$JENKINS_URL/job/$job_path/lastBuild/api/json" 2>/dev/null)
-        local build_num=$(echo "$build_info" | jq -r '.number // empty')
-        local building=$(echo "$build_info" | jq -r '.building // empty')
-        local result=$(echo "$build_info" | jq -r '.result // empty')
+        # Check for new build (save to file to avoid jq pipe issues)
+        curl -sk -u "$jenkins_auth" \
+            "$JENKINS_URL/job/$job_path/lastBuild/api/json" > "$tmp_file" 2>/dev/null
+        local build_num=$(cat "$tmp_file" | jq -r '.number // empty' 2>/dev/null)
+        local building=$(cat "$tmp_file" | jq -r '.building // empty' 2>/dev/null)
+        local result=$(cat "$tmp_file" | jq -r '.result // empty' 2>/dev/null)
 
         # If we have a new build that's finished
         if [[ -n "$build_num" ]] && [[ "$build_num" != "$initial_build" ]] && [[ "$building" == "false" ]]; then
             if [[ "$result" == "SUCCESS" ]]; then
                 log_info "  Build #$build_num completed successfully"
+                rm -f "$tmp_file"
                 return 0
             else
                 log_warn "  Build #$build_num failed with result: $result"
+                rm -f "$tmp_file"
                 return 1
             fi
         fi
@@ -422,6 +427,7 @@ wait_for_build() {
         if [[ -n "$build_num" ]] && [[ "$build_num" == "$initial_build" ]] && [[ "$building" == "false" ]]; then
             if [[ "$result" == "SUCCESS" ]]; then
                 log_info "  Build #$build_num already completed successfully"
+                rm -f "$tmp_file"
                 return 0
             fi
         fi
