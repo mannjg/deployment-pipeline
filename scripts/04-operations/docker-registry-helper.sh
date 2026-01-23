@@ -72,7 +72,7 @@ check_status() {
     log_info "Checking Nexus Docker registry status..."
 
     # Check Nexus pod
-    if microk8s kubectl get pods -n nexus -l app=nexus | grep -q "Running"; then
+    if kubectl get pods -n nexus -l app=nexus | grep -q "Running"; then
         log_info "✓ Nexus pod is running"
     else
         log_error "✗ Nexus pod is not running"
@@ -81,7 +81,7 @@ check_status() {
 
     # Check services
     log_info "Services:"
-    microk8s kubectl get svc -n nexus
+    kubectl get svc -n nexus
 
     # Check NodePort connectivity
     if curl -sf http://localhost:30500/v2/ > /dev/null 2>&1; then
@@ -107,7 +107,7 @@ start_forward() {
     fi
 
     log_info "Starting port-forward on localhost:5000..."
-    microk8s kubectl port-forward -n nexus svc/nexus 5000:5000 > /dev/null 2>&1 &
+    kubectl port-forward -n nexus svc/nexus 5000:5000 > /dev/null 2>&1 &
 
     sleep 2
 
@@ -156,7 +156,7 @@ test_registry() {
     # Test from cluster
     echo ""
     log_info "Testing from inside cluster (nexus.local:5000)..."
-    microk8s kubectl run -n nexus test-registry --rm -i --restart=Never \
+    kubectl run -n nexus test-registry --rm -i --restart=Never \
         --image=curlimages/curl:latest \
         -- curl -sf http://nexus.nexus.svc.cluster.local:5000/v2/ && \
         log_info "✓ Cluster internal: OK" || \

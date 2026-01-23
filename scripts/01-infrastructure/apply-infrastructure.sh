@@ -46,7 +46,7 @@ apply_manifest() {
     local description="${2:-$manifest}"
 
     echo "Applying $description..."
-    envsubst < "$manifest" | ssh "$REMOTE_USER@$REMOTE_HOST" "microk8s kubectl apply -f -"
+    envsubst < "$manifest" | ssh "$REMOTE_USER@$REMOTE_HOST" "kubectl apply -f -"
 }
 
 # Function to wait for pods
@@ -57,7 +57,7 @@ wait_for_pods() {
 
     echo "Waiting for pods in $namespace with label $label..."
     ssh "$REMOTE_USER@$REMOTE_HOST" \
-        "microk8s kubectl wait --for=condition=ready pod -l $label -n $namespace --timeout=${timeout}s" || {
+        "kubectl wait --for=condition=ready pod -l $label -n $namespace --timeout=${timeout}s" || {
         echo "Warning: Pods not ready within timeout, continuing..."
     }
 }
@@ -65,20 +65,20 @@ wait_for_pods() {
 # 1. cert-manager (if not already installed)
 echo ""
 echo "=== Step 1: cert-manager ==="
-if ssh "$REMOTE_USER@$REMOTE_HOST" "microk8s kubectl get namespace cert-manager" &>/dev/null; then
+if ssh "$REMOTE_USER@$REMOTE_HOST" "kubectl get namespace cert-manager" &>/dev/null; then
     echo "cert-manager namespace exists, checking pods..."
-    if ssh "$REMOTE_USER@$REMOTE_HOST" "microk8s kubectl get pods -n cert-manager -l app.kubernetes.io/instance=cert-manager" 2>/dev/null | grep -q Running; then
+    if ssh "$REMOTE_USER@$REMOTE_HOST" "kubectl get pods -n cert-manager -l app.kubernetes.io/instance=cert-manager" 2>/dev/null | grep -q Running; then
         echo "cert-manager already running, skipping..."
     else
         echo "Applying cert-manager..."
         scp "$PROJECT_DIR/k8s/cert-manager/cert-manager.yaml" "$REMOTE_USER@$REMOTE_HOST:/tmp/"
-        ssh "$REMOTE_USER@$REMOTE_HOST" "microk8s kubectl apply -f /tmp/cert-manager.yaml"
+        ssh "$REMOTE_USER@$REMOTE_HOST" "kubectl apply -f /tmp/cert-manager.yaml"
         wait_for_pods "cert-manager" "app.kubernetes.io/instance=cert-manager" 120
     fi
 else
     echo "Applying cert-manager..."
     scp "$PROJECT_DIR/k8s/cert-manager/cert-manager.yaml" "$REMOTE_USER@$REMOTE_HOST:/tmp/"
-    ssh "$REMOTE_USER@$REMOTE_HOST" "microk8s kubectl apply -f /tmp/cert-manager.yaml"
+    ssh "$REMOTE_USER@$REMOTE_HOST" "kubectl apply -f /tmp/cert-manager.yaml"
     wait_for_pods "cert-manager" "app.kubernetes.io/instance=cert-manager" 120
 fi
 
@@ -108,12 +108,12 @@ echo "=== Step 5: ArgoCD ==="
 # ArgoCD uses the upstream manifest directly
 echo "Applying ArgoCD from upstream..."
 ssh "$REMOTE_USER@$REMOTE_HOST" \
-    "microk8s kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml" || {
+    "kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml" || {
     # If upstream fails, try local copy
     echo "Upstream failed, trying local copy..."
     if [[ -f "$PROJECT_DIR/k8s/argocd/install.yaml" ]]; then
         scp "$PROJECT_DIR/k8s/argocd/install.yaml" "$REMOTE_USER@$REMOTE_HOST:/tmp/"
-        ssh "$REMOTE_USER@$REMOTE_HOST" "microk8s kubectl apply -n argocd -f /tmp/install.yaml"
+        ssh "$REMOTE_USER@$REMOTE_HOST" "kubectl apply -n argocd -f /tmp/install.yaml"
     fi
 }
 apply_manifest "$PROJECT_DIR/k8s/argocd/ingress.yaml" "ArgoCD Ingress"
@@ -131,7 +131,7 @@ wait_for_pods "argocd" "app.kubernetes.io/name=argocd-server" 180
 
 echo ""
 echo "=== Infrastructure Status ==="
-ssh "$REMOTE_USER@$REMOTE_HOST" "microk8s kubectl get pods -A | grep -E 'gitlab|jenkins|nexus|argocd|cert-manager'"
+ssh "$REMOTE_USER@$REMOTE_HOST" "kubectl get pods -A | grep -E 'gitlab|jenkins|nexus|argocd|cert-manager'"
 
 echo ""
 echo "=== Next Steps ==="

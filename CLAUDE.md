@@ -81,7 +81,7 @@ deployment-pipeline/
 │   ├── gitlab/            # GitLab deployment
 │   ├── jenkins/           # Jenkins Helm values and manifests
 │   │   └── agent/         # Custom Jenkins agent (Dockerfile, build script, CA cert)
-│   ├── microk8s/          # Cluster config (kubeconfig)
+│   ├── cluster-config/    # Optional cluster-specific configs (e.g., kubeconfig)
 │   └── nexus/             # Nexus deployment
 ├── config/                # Centralized configuration
 │   └── infra.env          # Infrastructure URLs (GitLab, Jenkins, ArgoCD, Nexus)
@@ -186,8 +186,9 @@ pkill -f "port-forward.*example-app"
 ## Infrastructure Notes
 
 **Kubernetes Cluster:**
-- Local cluster with standard `kubectl` access
-- Addons: dns, storage, ingress
+- **Distribution-agnostic**: Works with any K8s cluster (microk8s, kind, k3s, EKS, GKE, etc.)
+- **Prerequisite**: User must configure `kubectl` to access their target cluster
+- Scripts use standard `kubectl` commands - no distribution-specific tooling
 
 **Namespaces:**
 | Namespace | Purpose |

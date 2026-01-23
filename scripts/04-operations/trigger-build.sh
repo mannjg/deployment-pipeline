@@ -10,7 +10,7 @@ shift  # Remove job name from arguments
 
 # Get Jenkins admin password from Kubernetes secret
 echo "Getting Jenkins credentials..."
-JENKINS_PASSWORD=$(microk8s kubectl get secret jenkins -n jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
+JENKINS_PASSWORD=$(kubectl get secret jenkins -n jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
 
 # Create temporary files for cookies and crumb
 COOKIE_JAR="/tmp/jenkins-cookies-$$.txt"

@@ -6,7 +6,7 @@ set -e
 JENKINS_URL="http://jenkins.local"
 
 echo "Getting Jenkins credentials..."
-JENKINS_PASSWORD=$(microk8s kubectl get secret jenkins -n jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
+JENKINS_PASSWORD=$(kubectl get secret jenkins -n jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
 
 echo "Checking GitLab plugin installation..."
 GITLAB_PLUGINS=$(curl -s -u "admin:${JENKINS_PASSWORD}" "${JENKINS_URL}/pluginManager/api/json?depth=1" | \

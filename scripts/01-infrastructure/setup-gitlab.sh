@@ -33,9 +33,9 @@ check_prerequisites() {
         exit 1
     fi
 
-    if ! microk8s kubectl get namespace gitlab &> /dev/null; then
+    if ! kubectl get namespace gitlab &> /dev/null; then
         log_warn "GitLab namespace doesn't exist. Creating..."
-        microk8s kubectl create namespace gitlab
+        kubectl create namespace gitlab
     fi
 
     log_info "Prerequisites check passed"
@@ -60,13 +60,13 @@ deploy_gitlab() {
         log_info "Using lightweight GitLab deployment"
 
         # Check if already deployed
-        if microk8s kubectl get deployment -n gitlab gitlab &> /dev/null; then
+        if kubectl get deployment -n gitlab gitlab &> /dev/null; then
             log_warn "GitLab is already deployed"
             read -p "Do you want to redeploy? (y/N): " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
                 log_info "Deleting existing GitLab deployment..."
-                microk8s kubectl delete -f "$PROJECT_ROOT/k8s/gitlab/gitlab-lightweight.yaml" || true
+                kubectl delete -f "$PROJECT_ROOT/k8s/gitlab/gitlab-lightweight.yaml" || true
                 sleep 10
             else
                 log_info "Skipping deployment"
@@ -75,7 +75,7 @@ deploy_gitlab() {
         fi
 
         log_info "Deploying GitLab (this may take several minutes)..."
-        microk8s kubectl apply -f "$PROJECT_ROOT/k8s/gitlab/gitlab-lightweight.yaml"
+        kubectl apply -f "$PROJECT_ROOT/k8s/gitlab/gitlab-lightweight.yaml"
     else
         # Use Helm deployment
         log_info "Using Helm-based GitLab deployment"
@@ -113,22 +113,22 @@ wait_for_gitlab() {
     if [[ "$USE_LIGHTWEIGHT" == "true" ]]; then
         # Wait for lightweight deployment
         log_info "Waiting for GitLab pod..."
-        microk8s kubectl wait --for=condition=ready pod \
+        kubectl wait --for=condition=ready pod \
             -l app=gitlab \
             -n gitlab \
             --timeout=600s || {
             log_warn "GitLab pod may still be starting. Checking status..."
-            microk8s kubectl get pods -n gitlab -l app=gitlab
+            kubectl get pods -n gitlab -l app=gitlab
         }
     else
         # Wait for Helm deployment
         log_info "Waiting for GitLab webservice..."
-        microk8s kubectl wait --for=condition=ready pod \
+        kubectl wait --for=condition=ready pod \
             -l app=webservice \
             -n gitlab \
             --timeout=600s || {
             log_warn "Webservice pods may still be starting. Checking status..."
-            microk8s kubectl get pods -n gitlab -l app=webservice
+            kubectl get pods -n gitlab -l app=webservice
         }
     fi
 
@@ -140,7 +140,7 @@ create_ingress() {
 
     if [[ "$USE_LIGHTWEIGHT" == "true" ]]; then
         # Ingress is created by the lightweight manifest
-        if microk8s kubectl get ingress -n gitlab gitlab &> /dev/null; then
+        if kubectl get ingress -n gitlab gitlab &> /dev/null; then
             log_info "GitLab Ingress exists"
         else
             log_error "GitLab Ingress not found. Check deployment."
@@ -148,12 +148,12 @@ create_ingress() {
         fi
     else
         # GitLab Helm chart should create ingress automatically
-        if microk8s kubectl get ingress -n gitlab gitlab-webservice-default &> /dev/null; then
+        if kubectl get ingress -n gitlab gitlab-webservice-default &> /dev/null; then
             log_info "GitLab Ingress already exists"
         else
             log_warn "GitLab Ingress not found, creating manually..."
 
-            cat <<EOF | microk8s kubectl apply -f -
+            cat <<EOF | kubectl apply -f -
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -196,8 +196,8 @@ get_root_password() {
         # Wait for secret to be created by Helm
         sleep 10
 
-        if microk8s kubectl get secret -n gitlab gitlab-gitlab-initial-root-password &> /dev/null; then
-            ROOT_PASSWORD=$(microk8s kubectl get secret -n gitlab gitlab-gitlab-initial-root-password -o jsonpath='{.data.password}' | base64 -d)
+        if kubectl get secret -n gitlab gitlab-gitlab-initial-root-password &> /dev/null; then
+            ROOT_PASSWORD=$(kubectl get secret -n gitlab gitlab-gitlab-initial-root-password -o jsonpath='{.data.password}' | base64 -d)
             echo "$ROOT_PASSWORD" > "$PROJECT_ROOT/k8s/gitlab/root-password.txt"
             chmod 600 "$PROJECT_ROOT/k8s/gitlab/root-password.txt"
             log_info "Root password saved to: $PROJECT_ROOT/k8s/gitlab/root-password.txt"
@@ -221,14 +221,14 @@ print_info() {
         echo "  Password: $(cat $PROJECT_ROOT/k8s/gitlab/root-password.txt)"
     else
         echo "  Password: Check $PROJECT_ROOT/k8s/gitlab/root-password.txt (will be created)"
-        echo "  Or run: microk8s kubectl get secret -n gitlab gitlab-gitlab-initial-root-password -o jsonpath='{.data.password}' | base64 -d"
+        echo "  Or run: kubectl get secret -n gitlab gitlab-gitlab-initial-root-password -o jsonpath='{.data.password}' | base64 -d"
     fi
     echo ""
     echo "GitLab pods:"
-    microk8s kubectl get pods -n gitlab
+    kubectl get pods -n gitlab
     echo ""
     echo "Ingress:"
-    microk8s kubectl get ingress -n gitlab
+    kubectl get ingress -n gitlab
     echo ""
     echo "Next steps:"
     echo "  1. Login to GitLab at http://gitlab.local"

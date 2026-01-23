@@ -47,9 +47,9 @@ delete_namespaces() {
     namespaces=("dev" "stage" "prod")
 
     for ns in "${namespaces[@]}"; do
-        if microk8s kubectl get namespace "$ns" &> /dev/null; then
+        if kubectl get namespace "$ns" &> /dev/null; then
             log_warn "Deleting namespace: $ns"
-            microk8s kubectl delete namespace "$ns" --timeout=60s
+            kubectl delete namespace "$ns" --timeout=60s
         fi
     done
 }
@@ -58,27 +58,27 @@ delete_infrastructure() {
     log_info "Deleting infrastructure components..."
 
     # Delete ArgoCD
-    if microk8s kubectl get namespace argocd &> /dev/null; then
+    if kubectl get namespace argocd &> /dev/null; then
         log_warn "Deleting ArgoCD..."
-        microk8s kubectl delete namespace argocd --timeout=60s
+        kubectl delete namespace argocd --timeout=60s
     fi
 
     # Delete Nexus
-    if microk8s kubectl get namespace nexus &> /dev/null; then
+    if kubectl get namespace nexus &> /dev/null; then
         log_warn "Deleting Nexus..."
-        microk8s kubectl delete namespace nexus --timeout=60s
+        kubectl delete namespace nexus --timeout=60s
     fi
 
     # Delete Jenkins
-    if microk8s kubectl get namespace jenkins &> /dev/null; then
+    if kubectl get namespace jenkins &> /dev/null; then
         log_warn "Deleting Jenkins..."
-        microk8s kubectl delete namespace jenkins --timeout=60s
+        kubectl delete namespace jenkins --timeout=60s
     fi
 
     # Delete GitLab
-    if microk8s kubectl get namespace gitlab &> /dev/null; then
+    if kubectl get namespace gitlab &> /dev/null; then
         log_warn "Deleting GitLab..."
-        microk8s kubectl delete namespace gitlab --timeout=60s
+        kubectl delete namespace gitlab --timeout=60s
     fi
 }
 
@@ -86,7 +86,7 @@ delete_pvcs() {
     log_info "Checking for remaining PVCs..."
 
     # List all PVCs
-    pvcs=$(microk8s kubectl get pvc --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}')
+    pvcs=$(kubectl get pvc --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}')
 
     if [[ -n "$pvcs" ]]; then
         log_warn "Found PVCs that need manual cleanup:"
@@ -95,7 +95,7 @@ delete_pvcs() {
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             while IFS='/' read -r ns name; do
-                microk8s kubectl delete pvc -n "$ns" "$name"
+                kubectl delete pvc -n "$ns" "$name"
             done <<< "$pvcs"
         fi
     fi
@@ -122,7 +122,7 @@ print_summary() {
     log_info "Teardown complete!"
     echo ""
     echo "Remaining resources:"
-    microk8s kubectl get all --all-namespaces
+    kubectl get all --all-namespaces
     echo ""
     echo "To completely remove MicroK8s:"
     echo "  sudo snap remove microk8s"
