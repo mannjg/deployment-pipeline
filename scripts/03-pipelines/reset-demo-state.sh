@@ -13,9 +13,7 @@
 #   - No stale local demo branches (uc-*, update-dev-*, promote-*)
 #   - No orphaned GitLab demo branches
 #   - No open MRs targeting dev, stage, or prod branches
-#   - Jenkinsfile and scripts/ on all env branches synced from main
-#   - CUE configuration on all env branches matches main (no demo modifications)
-#   - Manifests on all env branches have no demo-specific labels
+#   - Shared files (Jenkinsfile, scripts/, CUE definitions) synced via promotion workflow
 #   - App version at 1.0.0-SNAPSHOT
 #
 # What it does:
@@ -23,15 +21,12 @@
 #   2. Deletes Jenkins agent pods to prevent stale job completion
 #   3. Cleans up stale local demo branches (uc-*, update-dev-*, promote-*)
 #   4. Closes ALL open MRs targeting environment branches (dev, stage, prod)
-#      - Feature branch MRs (uc-*, update-dev-*, etc.)
-#      - Promotion MRs (promote-stage-*, promote-prod-*)
-#      - GitOps promotion MRs (dev→stage, stage→prod)
 #   5. Deletes orphaned GitLab demo branches (those without MRs)
-#   6. Syncs Jenkinsfile from main to all env branches
-#   7. Syncs scripts/ directory from main to all env branches
-#   8. Resets CUE configuration files on all env branches to match main
-#   9. Removes demo-specific labels (cost-center) from all env branch manifests
-#   10. Resets example-app/pom.xml version to 1.0.0-SNAPSHOT
+#   6. Syncs shared files via proper promotion workflow:
+#      - Creates feature branch from dev with updates from main
+#      - Merges to dev → auto-promotes to stage → auto-promotes to prod
+#      - Respects the GitOps workflow (changes flow through promotion chain)
+#   7. Resets example-app/pom.xml version to 1.0.0-SNAPSHOT
 #
 # What it preserves:
 #   - env.cue files (they have valid CI/CD-managed images)
@@ -382,45 +377,247 @@ close_mrs_matching() {
 }
 
 # =============================================================================
-# Sync file from main to environment branches
+# Wait for Jenkins build to complete
 # =============================================================================
-sync_file_to_env_branches() {
-    local file_path="$1"
-    local commit_message="${2:-chore: sync $file_path from main}"
+wait_for_build() {
+    local job_path="$1"  # e.g., "k8s-deployments/job/dev"
+    local timeout_seconds="${2:-300}"
+    local jenkins_auth="$JENKINS_USER:$JENKINS_TOKEN"
+
+    local start_time=$(date +%s)
+    local last_build=""
+
+    # Get current last build number
+    local initial_build=$(curl -sk -u "$jenkins_auth" \
+        "$JENKINS_URL/job/$job_path/lastBuild/api/json" 2>/dev/null | jq -r '.number // empty')
+
+    log_info "  Waiting for new build on $job_path (current: #${initial_build:-none})..."
+
+    while true; do
+        local elapsed=$(($(date +%s) - start_time))
+        if [[ $elapsed -gt $timeout_seconds ]]; then
+            log_warn "  Timeout waiting for build on $job_path"
+            return 1
+        fi
+
+        # Check for new build
+        local build_info=$(curl -sk -u "$jenkins_auth" \
+            "$JENKINS_URL/job/$job_path/lastBuild/api/json" 2>/dev/null)
+        local build_num=$(echo "$build_info" | jq -r '.number // empty')
+        local building=$(echo "$build_info" | jq -r '.building // empty')
+        local result=$(echo "$build_info" | jq -r '.result // empty')
+
+        # If we have a new build that's finished
+        if [[ -n "$build_num" ]] && [[ "$build_num" != "$initial_build" ]] && [[ "$building" == "false" ]]; then
+            if [[ "$result" == "SUCCESS" ]]; then
+                log_info "  Build #$build_num completed successfully"
+                return 0
+            else
+                log_warn "  Build #$build_num failed with result: $result"
+                return 1
+            fi
+        fi
+
+        # If initial build is still running, wait for it
+        if [[ -n "$build_num" ]] && [[ "$build_num" == "$initial_build" ]] && [[ "$building" == "false" ]]; then
+            if [[ "$result" == "SUCCESS" ]]; then
+                log_info "  Build #$build_num already completed successfully"
+                return 0
+            fi
+        fi
+
+        sleep 5
+    done
+}
+
+# =============================================================================
+# Wait for promotion MR to appear and merge it
+# =============================================================================
+wait_and_merge_promotion_mr() {
+    local target_branch="$1"  # stage or prod
+    local timeout_seconds="${2:-180}"
+    local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
+
+    local start_time=$(date +%s)
+
+    log_info "  Waiting for promotion MR to $target_branch..."
+
+    while true; do
+        local elapsed=$(($(date +%s) - start_time))
+        if [[ $elapsed -gt $timeout_seconds ]]; then
+            log_warn "  Timeout waiting for promotion MR to $target_branch"
+            return 1
+        fi
+
+        # Check for open MR targeting this branch from a promote-* branch
+        local mr_info=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests?state=opened&target_branch=$target_branch" 2>/dev/null | \
+            jq -r '.[] | select(.source_branch | startswith("promote-")) | "\(.iid):\(.source_branch)"' | head -1)
+
+        if [[ -n "$mr_info" ]]; then
+            local mr_iid=$(echo "$mr_info" | cut -d: -f1)
+            local source_branch=$(echo "$mr_info" | cut -d: -f2)
+
+            log_info "  Found MR !$mr_iid ($source_branch → $target_branch)"
+
+            # Merge the MR
+            local merge_result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+                "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests/$mr_iid/merge" 2>/dev/null)
+
+            if echo "$merge_result" | jq -e '.state == "merged"' > /dev/null 2>&1; then
+                log_info "  MR !$mr_iid merged successfully"
+                return 0
+            else
+                local error=$(echo "$merge_result" | jq -r '.message // "unknown error"' 2>/dev/null)
+                log_warn "  Failed to merge MR !$mr_iid: $error"
+                return 1
+            fi
+        fi
+
+        sleep 5
+    done
+}
+
+# =============================================================================
+# Sync files via proper promotion workflow (main → dev → stage → prod)
+# =============================================================================
+# Creates a feature branch from dev, updates shared files to match main,
+# then lets the promotion workflow carry changes through stage and prod.
+#
+# Files synced (shared infrastructure):
+#   - Jenkinsfile
+#   - scripts/*
+#   - services/core/app.cue, services/resources/deployment.cue
+#
+# Files NOT synced (environment-specific):
+#   - env.cue (each env has its own images/config)
+#   - manifests/* (generated per environment)
+#
+sync_via_promotion_workflow() {
+    log_step "Syncing files via promotion workflow..."
 
     local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
-    local encoded_file=$(echo "$file_path" | sed 's/\//%2F/g')
+    local sync_branch="sync-main-$(date +%s)"
 
-    # Get file content from main branch
-    local main_content=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file?ref=main" 2>/dev/null)
+    # Check if dev branch matches main for key files
+    local main_jenkinsfile=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/Jenkinsfile?ref=main" 2>/dev/null | jq -r '.content_sha256 // empty')
+    local dev_jenkinsfile=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/Jenkinsfile?ref=dev" 2>/dev/null | jq -r '.content_sha256 // empty')
 
-    if [[ -z "$main_content" ]] || ! echo "$main_content" | jq -e '.content' > /dev/null 2>&1; then
-        log_warn "Could not get $file_path from main branch"
+    if [[ "$main_jenkinsfile" == "$dev_jenkinsfile" ]] && [[ -n "$main_jenkinsfile" ]]; then
+        log_info "Environment branches already in sync with main (Jenkinsfile matches)"
+        return 0
+    fi
+
+    log_info "Dev branch needs sync with main"
+    log_info "Creating sync branch from dev: $sync_branch"
+
+    # Create branch FROM DEV (so it has dev's env.cue and manifests)
+    local create_result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"branch\": \"$sync_branch\", \"ref\": \"dev\"}" \
+        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/branches" 2>/dev/null)
+
+    if ! echo "$create_result" | jq -e '.name' > /dev/null 2>&1; then
+        log_error "Failed to create sync branch"
         return 1
     fi
 
-    local content_b64=$(echo "$main_content" | jq -r '.content')
+    # Files to sync from main (shared infrastructure, not env-specific)
+    local files_to_sync=(
+        "Jenkinsfile"
+        "services/core/app.cue"
+        "services/resources/deployment.cue"
+    )
 
-    # Update on each environment branch
-    for branch in dev stage prod; do
+    # Also sync all scripts
+    local script_files=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/tree?ref=main&path=scripts&recursive=true&per_page=100" 2>/dev/null | \
+        jq -r '.[] | select(.type == "blob") | .path')
+
+    # Update each file on the sync branch to match main
+    log_info "Updating shared files to match main..."
+
+    for file_path in "${files_to_sync[@]}" $script_files; do
+        local encoded_file=$(echo "$file_path" | sed 's/\//%2F/g')
+
+        # Get content from main
+        local main_content=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file?ref=main" 2>/dev/null)
+
+        if [[ -z "$main_content" ]] || ! echo "$main_content" | jq -e '.content' > /dev/null 2>&1; then
+            continue
+        fi
+
+        local content_b64=$(echo "$main_content" | jq -r '.content')
+
+        # Update file on sync branch
         local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"branch\": \"$branch\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"$commit_message\"}" \
+            -d "{\"branch\": \"$sync_branch\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: sync $file_path from main\"}" \
             "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
 
         if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
-            log_info "  $branch: synced"
-        else
-            local error=$(echo "$result" | jq -r '.message // "unknown error"' 2>/dev/null)
-            # "A file with this name doesn't exist" means branch doesn't have this file yet
-            if [[ "$error" == *"doesn't exist"* ]]; then
-                log_info "  $branch: file doesn't exist (skipping)"
-            else
-                log_warn "  $branch: $error"
-            fi
+            log_info "  $file_path: updated"
         fi
     done
+
+    # Create MR from sync branch to dev
+    log_info "Creating MR: $sync_branch → dev"
+    local mr_result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"source_branch\": \"$sync_branch\", \"target_branch\": \"dev\", \"title\": \"Sync shared files from main\", \"remove_source_branch\": true}" \
+        "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests" 2>/dev/null)
+
+    local mr_iid=$(echo "$mr_result" | jq -r '.iid // empty')
+    if [[ -z "$mr_iid" ]]; then
+        local error=$(echo "$mr_result" | jq -r '.message // "unknown error"' 2>/dev/null)
+        # If no changes, that's fine
+        if [[ "$error" == *"no commits"* ]] || [[ "$error" == *"no changes"* ]]; then
+            log_info "No changes to sync - branches already match"
+            curl -sk -X DELETE -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+                "$GITLAB_URL/api/v4/projects/$encoded_project/repository/branches/$sync_branch" >/dev/null 2>&1
+            return 0
+        fi
+        log_error "Failed to create MR to dev: $error"
+        curl -sk -X DELETE -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/branches/$sync_branch" >/dev/null 2>&1
+        return 1
+    fi
+
+    log_info "Created MR !$mr_iid"
+
+    # Merge the MR to dev
+    log_info "Merging MR !$mr_iid to dev..."
+    local merge_result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests/$mr_iid/merge" 2>/dev/null)
+
+    if ! echo "$merge_result" | jq -e '.state == "merged"' > /dev/null 2>&1; then
+        local error=$(echo "$merge_result" | jq -r '.message // "unknown error"' 2>/dev/null)
+        log_error "Failed to merge MR to dev: $error"
+        return 1
+    fi
+
+    log_info "MR merged to dev"
+
+    # Wait for dev build to complete
+    wait_for_build "k8s-deployments/job/dev" 300 || return 1
+
+    # Wait for promotion MR to stage and merge it
+    wait_and_merge_promotion_mr "stage" 180 || return 1
+
+    # Wait for stage build to complete
+    wait_for_build "k8s-deployments/job/stage" 300 || return 1
+
+    # Wait for promotion MR to prod and merge it
+    wait_and_merge_promotion_mr "prod" 180 || return 1
+
+    # Wait for prod build to complete
+    wait_for_build "k8s-deployments/job/prod" 300 || return 1
+
+    log_info "Promotion workflow completed - all environments synced"
+    return 0
 }
 
 # =============================================================================
@@ -690,10 +887,7 @@ main() {
     echo "  - No stale local demo branches"
     echo "  - No orphaned GitLab demo branches"
     echo "  - No open MRs targeting dev, stage, or prod branches"
-    echo "  - Jenkinsfile synced from main to all env branches"
-    echo "  - CUE configuration on ALL env branches matches main (no demo modifications)"
-    echo "  - Manifests on ALL env branches have no demo-specific labels"
-    echo "  - env.cue files preserved (valid CI/CD-managed images)"
+    echo "  - Shared files synced via promotion workflow (main → dev → stage → prod)"
     echo "  - App version at 1.0.0-SNAPSHOT"
     echo ""
 
@@ -717,14 +911,9 @@ main() {
     # Clean up orphaned GitLab demo branches (those without MRs)
     cleanup_gitlab_orphan_branches "$DEPLOYMENTS_REPO_PATH"
 
-    # Sync Jenkinsfile to ensure all env branches have latest pipeline logic
-    sync_jenkinsfile_to_env_branches
-
-    # Sync scripts directory to ensure all env branches have latest tooling
-    sync_scripts_to_env_branches
-
-    # Reset CUE configuration on environment branches
-    reset_cue_config
+    # Sync files via proper promotion workflow (main → dev → stage → prod)
+    # This replaces direct syncs and respects the GitOps promotion flow
+    sync_via_promotion_workflow
 
     # Reset app version
     reset_app_version "1.0.0-SNAPSHOT"
@@ -737,18 +926,14 @@ main() {
     log_info "  - Local demo branches cleaned up"
     log_info "  - All env-targeting MRs closed"
     log_info "  - Orphaned GitLab demo branches deleted"
-    log_info "  - Jenkinsfile synced to all env branches"
-    log_info "  - scripts/ directory synced to all env branches"
-    log_info "  - CUE config synced from main to dev/stage/prod"
-    log_info "  - Manifests cleaned on dev/stage/prod"
+    log_info "  - Shared files synced via promotion workflow (main → dev → stage → prod)"
     log_info "  - App version at 1.0.0-SNAPSHOT"
     echo ""
     log_info "Next steps:"
     log_info "  1. Commit any local changes: git add -A && git commit -m 'chore: reset demo state'"
     log_info "  2. Push to GitHub: git push origin main"
-    log_info "  3. Run demo: ./scripts/demo/demo-uc-c1-default-label.sh"
-    echo ""
-    log_info "Note: env.cue files (with CI/CD-managed images) were preserved."
+    log_info "  3. Run validation: ./scripts/test/validate-pipeline.sh"
+    log_info "  4. Run demo: ./scripts/demo/demo-uc-c1-default-label.sh"
 }
 
 main "$@"
