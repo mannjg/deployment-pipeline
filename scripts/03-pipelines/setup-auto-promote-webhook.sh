@@ -140,8 +140,10 @@ setup_webhook_for_branch() {
         log_info "Webhook for $branch already exists (id: $existing_id), updating..."
 
         local update_result
+        # Note: merge_requests_events must be FALSE to prevent feedback loops
+        # When CI creates a promotion MR, we don't want that MR event to trigger another build
         update_result=$(gitlab_api PUT "/projects/${encoded_path}/hooks/${existing_id}" \
-            -d "{\"url\": \"${webhook_url}\", \"push_events\": true, \"merge_requests_events\": true, \"push_events_branch_filter\": \"${branch}\", \"enable_ssl_verification\": false}")
+            -d "{\"url\": \"${webhook_url}\", \"push_events\": true, \"merge_requests_events\": false, \"push_events_branch_filter\": \"${branch}\", \"enable_ssl_verification\": false}")
 
         if echo "$update_result" | jq -e '.id' &>/dev/null; then
             log_pass "Webhook for $branch updated successfully"
@@ -154,8 +156,10 @@ setup_webhook_for_branch() {
         log_step "Creating new webhook for $branch..."
 
         local create_result
+        # Note: merge_requests_events must be FALSE to prevent feedback loops
+        # When CI creates a promotion MR, we don't want that MR event to trigger another build
         create_result=$(gitlab_api POST "/projects/${encoded_path}/hooks" \
-            -d "{\"url\": \"${webhook_url}\", \"push_events\": true, \"merge_requests_events\": true, \"push_events_branch_filter\": \"${branch}\", \"enable_ssl_verification\": false}")
+            -d "{\"url\": \"${webhook_url}\", \"push_events\": true, \"merge_requests_events\": false, \"push_events_branch_filter\": \"${branch}\", \"enable_ssl_verification\": false}")
 
         if echo "$create_result" | jq -e '.id' &>/dev/null; then
             local new_id
