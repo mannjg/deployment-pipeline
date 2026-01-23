@@ -129,7 +129,8 @@ esac
 
 # Configuration (from environment or defaults)
 NEXUS_URL="${NEXUS_URL:-http://nexus.nexus.svc.cluster.local:8081}"
-DOCKER_REGISTRY="${DOCKER_REGISTRY:-nexus.nexus.svc.cluster.local:5000}"
+# Prefer external registry (HTTPS) for Docker operations - Docker daemon may not trust internal HTTP registry
+DOCKER_REGISTRY="${DOCKER_REGISTRY_EXTERNAL:-${DOCKER_REGISTRY:-nexus.nexus.svc.cluster.local:5000}}"
 MAVEN_GROUP_ID="${MAVEN_GROUP_ID:-com.example}"
 GITLAB_URL="${GITLAB_URL:-${GITLAB_URL_INTERNAL:-http://gitlab.gitlab.svc.cluster.local}}"
 GITLAB_PROJECT="${GITLAB_PROJECT:-p2c/k8s-deployments}"
@@ -427,7 +428,7 @@ retag_docker_image() {
     log_debug "Target: $target_image"
 
     # Pull source image
-    if ! docker pull "$source_image" 2>/dev/null; then
+    if ! docker pull "$source_image"; then
         log_error "Failed to pull source image: $source_image"
         return 1
     fi
@@ -436,7 +437,7 @@ retag_docker_image() {
     docker tag "$source_image" "$target_image"
 
     # Push new tag
-    if ! docker push "$target_image" 2>/dev/null; then
+    if ! docker push "$target_image"; then
         log_error "Failed to push target image: $target_image"
         return 1
     fi
