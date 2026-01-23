@@ -184,6 +184,21 @@ create_maven_settings() {
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
                               https://maven.apache.org/xsd/settings-1.0.0.xsd">
+  <!--
+    Maven 3.8.1+ blocks HTTP repositories by default for security.
+    We explicitly allow HTTP here because:
+    - Nexus is on an internal/airgapped network with no external exposure
+    - TLS termination happens at the ingress layer (if applicable)
+    To use HTTPS instead, update NEXUS_URL to https:// and remove this mirror.
+  -->
+  <mirrors>
+    <mirror>
+      <id>internal-nexus-http-allowed</id>
+      <mirrorOf>external:http:*</mirrorOf>
+      <url>${NEXUS_URL}/repository/maven-public/</url>
+      <blocked>false</blocked>
+    </mirror>
+  </mirrors>
   ${servers_block}
   <profiles>
     <profile>
