@@ -103,3 +103,34 @@ require_gitlab_user() {
     echo "Provide via: export GITLAB_USER=... or ensure K8s secret exists" >&2
     exit 1
 }
+
+# Fetch Nexus credentials - fails if not available
+# Returns: username:password (for basic auth)
+require_nexus_credentials() {
+    local user password
+
+    # Check environment variables first
+    if [[ -n "${NEXUS_USER:-}" && -n "${NEXUS_PASSWORD:-}" ]]; then
+        echo "${NEXUS_USER}:${NEXUS_PASSWORD}"
+        return 0
+    fi
+
+    # Try K8s secret
+    user=$(kubectl get secret "$NEXUS_ADMIN_SECRET" -n "$NEXUS_NAMESPACE" \
+        -o jsonpath="{.data.${NEXUS_ADMIN_USER_KEY}}" 2>/dev/null | base64 -d) || true
+    password=$(kubectl get secret "$NEXUS_ADMIN_SECRET" -n "$NEXUS_NAMESPACE" \
+        -o jsonpath="{.data.${NEXUS_ADMIN_PASSWORD_KEY}}" 2>/dev/null | base64 -d) || true
+
+    if [[ -n "$user" && -n "$password" ]]; then
+        echo "${user}:${password}"
+        return 0
+    fi
+
+    # Fail fast with clear instructions
+    log_error "Nexus credentials not available."
+    echo "" >&2
+    echo "Provide credentials via one of:" >&2
+    echo "  1. Environment: export NEXUS_USER=... NEXUS_PASSWORD=..." >&2
+    echo "  2. K8s secret:  kubectl get secret $NEXUS_ADMIN_SECRET -n $NEXUS_NAMESPACE" >&2
+    exit 1
+}

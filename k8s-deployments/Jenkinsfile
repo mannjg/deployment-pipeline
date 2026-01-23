@@ -297,7 +297,10 @@ def createPromotionMR(String sourceEnv) {
                 usernamePassword(credentialsId: 'gitlab-credentials',
                                 usernameVariable: 'GIT_USERNAME',
                                 passwordVariable: 'GIT_PASSWORD'),
-                string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')
+                string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN'),
+                usernamePassword(credentialsId: 'nexus-credentials',
+                                usernameVariable: 'NEXUS_USER',
+                                passwordVariable: 'NEXUS_PASSWORD')
             ]) {
                 // Check if there's already an open promotion MR to the target
                 def projectPath = env.GITLAB_GROUP ? "${env.GITLAB_GROUP}/k8s-deployments" : "p2c/k8s-deployments"
