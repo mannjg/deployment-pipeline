@@ -518,6 +518,8 @@ spec:
         GITLAB_URL = System.getenv('GITLAB_URL_INTERNAL')
         GITLAB_GROUP = System.getenv('GITLAB_GROUP')
         DEPLOYMENTS_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
+        // External Docker registry (HTTPS) for Docker daemon operations
+        DOCKER_REGISTRY_EXTERNAL = System.getenv('DOCKER_REGISTRY_EXTERNAL')
         ARGOCD_SERVER = 'argocd-server.argocd.svc.cluster.local:80'
         ARGOCD_OPTS = '--plaintext --grpc-web'
         ENV_BRANCHES = 'dev,stage,prod'
