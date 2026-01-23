@@ -96,10 +96,18 @@ def getMRTargetEnvironment(String branchName, String gitlabToken, String gitlabU
  * Merges the target environment branch into the current feature branch for MR-preview.
  * This ensures the feature branch has the latest env.cue from the target,
  * so that the generated manifests will merge cleanly when the MR is accepted.
+ *
+ * Conflict resolution strategy:
+ * - For promote-* branches: keep OURS for env.cue and manifests (they have promoted versions)
+ * - For other feature branches: take THEIRS for env.cue (we need target's config)
+ * - Manifests: always keep OURS (they're derivative - will be regenerated if needed)
+ * - Services: keep OURS (feature branch changes)
+ *
  * @param targetEnv The target environment branch (dev, stage, or prod)
+ * @param isPromoteBranch Whether this is a promote-* branch
  * @return true if merge was successful, false otherwise
  */
-def mergeTargetBranchForPreview(String targetEnv) {
+def mergeTargetBranchForPreview(String targetEnv, boolean isPromoteBranch = false) {
     try {
         sh """
             echo "Merging ${targetEnv} into feature branch for clean MR-preview..."
@@ -112,17 +120,30 @@ def mergeTargetBranchForPreview(String targetEnv) {
             # Merge target branch into feature branch
             git merge origin/${targetEnv} --no-commit --no-edit || true
 
-            # Handle add/delete conflicts for env.cue - take target's version
+            # Handle env.cue conflicts
             if git diff --name-only --diff-filter=U | grep -q "^env.cue\$"; then
-                echo "Resolving env.cue conflict (taking version from ${targetEnv})"
-                git show origin/${targetEnv}:env.cue > env.cue
+                if [ "${isPromoteBranch}" = "true" ]; then
+                    # Promote branches: keep OURS (has promoted image tags)
+                    echo "Resolving env.cue conflict (keeping promote branch version with promoted images)"
+                    git checkout --ours env.cue
+                else
+                    # Feature branches: take THEIRS (need target's env config)
+                    echo "Resolving env.cue conflict (taking version from ${targetEnv})"
+                    git show origin/${targetEnv}:env.cue > env.cue
+                fi
                 git add env.cue
             fi
 
-            # Resolve manifest conflicts by deleting manifests/ (we regenerate anyway)
-            if [ -d "manifests" ]; then
-                git rm -rf manifests/ 2>/dev/null || rm -rf manifests/
-                git add -A manifests/ 2>/dev/null || true
+            # Handle manifest conflicts - always keep OURS
+            # Manifests are derivative (generated from CUE). For non-promote branches,
+            # they'll be regenerated. For promote branches, they're already correct.
+            MANIFEST_CONFLICTS=\$(git diff --name-only --diff-filter=U 2>/dev/null | grep "^manifests/" || true)
+            if [ -n "\$MANIFEST_CONFLICTS" ]; then
+                echo "Resolving manifests/ conflicts (keeping current version - derivative files)"
+                for file in \$MANIFEST_CONFLICTS; do
+                    git checkout --ours "\$file" 2>/dev/null || true
+                    git add "\$file" 2>/dev/null || true
+                done
             fi
 
             # Resolve .mr-trigger conflicts (keep ours)
@@ -543,6 +564,39 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
             }
         }
 
+        stage('Prepare Merge Preview') {
+            when {
+                expression {
+                    // Only for feature branches with open MRs (need to merge target for env.cue)
+                    env.TARGET_ENV != '' && env.HAS_OPEN_MR == 'true' && env.IS_ENV_BRANCH == 'false'
+                }
+            }
+            steps {
+                container('pipeline') {
+                    script {
+                        echo "=== Preparing MR Preview: Merging ${env.MR_TARGET_ENV} ==="
+
+                        def isPromoteBranch = env.BRANCH_NAME.startsWith('promote-')
+                        if (isPromoteBranch) {
+                            echo "Promote branch detected - will preserve promoted image versions"
+                        }
+
+                        withCredentials([
+                            usernamePassword(credentialsId: 'gitlab-credentials',
+                                            usernameVariable: 'GIT_USERNAME',
+                                            passwordVariable: 'GIT_PASSWORD')
+                        ]) {
+                            sh 'git config --global credential.helper \'!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f\''
+                            if (!mergeTargetBranchForPreview(env.MR_TARGET_ENV, isPromoteBranch)) {
+                                error "Could not merge ${env.MR_TARGET_ENV} - cannot proceed"
+                            }
+                            sh 'git config --global --unset credential.helper || true'
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Validate CUE') {
             when {
                 expression { env.TARGET_ENV != '' }
@@ -550,23 +604,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
             steps {
                 container('pipeline') {
                     script {
-                        // For feature branches with MR, merge target to get env.cue
-                        if (env.HAS_OPEN_MR == 'true' && env.IS_ENV_BRANCH == 'false') {
-                            echo "MR-Preview Mode: Merging ${env.MR_TARGET_ENV} for env.cue"
-                            withCredentials([
-                                usernamePassword(credentialsId: 'gitlab-credentials',
-                                                usernameVariable: 'GIT_USERNAME',
-                                                passwordVariable: 'GIT_PASSWORD')
-                            ]) {
-                                sh 'git config --global credential.helper \'!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f\''
-                                if (!mergeTargetBranchForPreview(env.MR_TARGET_ENV)) {
-                                    error "Could not merge ${env.MR_TARGET_ENV} - cannot proceed"
-                                }
-                                sh 'git config --global --unset credential.helper || true'
-                            }
-                        }
-
-                        // Validate CUE configuration
+                        // Pure validation - no side effects
                         echo "Validating CUE configuration..."
                         sh '''
                             if [ -x "./scripts/validate-cue-config.sh" ]; then
