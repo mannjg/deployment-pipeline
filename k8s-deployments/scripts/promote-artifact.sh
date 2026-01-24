@@ -160,6 +160,7 @@ create_maven_settings() {
     # Build server credentials block if credentials are provided
     local servers_block=""
     if [[ -n "${NEXUS_USER:-}" && -n "${NEXUS_PASSWORD:-}" ]]; then
+        log_debug "Nexus credentials available: user=${NEXUS_USER}"
         servers_block="<servers>
     <server>
       <id>nexus-snapshots</id>
@@ -177,6 +178,8 @@ create_maven_settings() {
       <password>${NEXUS_PASSWORD}</password>
     </server>
   </servers>"
+    else
+        log_warn "Nexus credentials NOT available - deployment will fail!"
     fi
 
     cat > "$MAVEN_SETTINGS_FILE" << SETTINGS_EOF
