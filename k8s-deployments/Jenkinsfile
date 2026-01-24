@@ -507,6 +507,8 @@ spec:
     env:
     - name: DOCKER_TLS_CERTDIR
       value: ""
+    args:
+    - --insecure-registry=docker.jmann.local
     resources:
       requests:
         memory: "512Mi"
