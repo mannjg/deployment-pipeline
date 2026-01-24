@@ -1067,10 +1067,11 @@ verify_version_lifecycle() {
     local group_id="com.example"
     local app_name="example-app"
 
-    # Check SNAPSHOT
-    local snapshot_check=$(curl -sf "${nexus_url}/service/rest/v1/search?repository=maven-snapshots&group=${group_id}&name=${app_name}&version=${dev_version}" 2>/dev/null | jq -r '.items | length')
+    # Check SNAPSHOT (Maven stores SNAPSHOTs with timestamps like 1.0.2-20260124.205201-1)
+    # Search for any version starting with the base version in maven-snapshots
+    local snapshot_check=$(curl -sf "${nexus_url}/service/rest/v1/search?repository=maven-snapshots&group=${group_id}&name=${app_name}&version=${base_version}*" 2>/dev/null | jq -r '.items | length')
     if [[ "$snapshot_check" -gt 0 ]]; then
-        log_pass "SNAPSHOT artifact exists in Nexus"
+        log_pass "SNAPSHOT artifact exists in Nexus (${base_version}-SNAPSHOT)"
     else
         log_fail "SNAPSHOT artifact not found in Nexus: ${dev_version}"
         return 1
