@@ -319,7 +319,9 @@ cmd_file_get() {
 
 cmd_file_update() {
     if [[ $# -lt 2 ]]; then
-        log_error "Usage: gitlab-cli.sh file update <project> <path> --ref <branch> --content <content> --message <msg>"
+        log_error "Usage: gitlab-cli.sh file update <project> <path> --ref <branch> --message <msg> [--content <content> | --stdin]"
+        log_error "  --content <text>  Content as argument (for small files)"
+        log_error "  --stdin           Read content from stdin (for large/binary files)"
         exit 1
     fi
 
@@ -330,19 +332,26 @@ cmd_file_update() {
     local ref=""
     local content=""
     local message=""
+    local use_stdin=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --ref) ref="$2"; shift 2 ;;
             --content) content="$2"; shift 2 ;;
+            --stdin) use_stdin=true; shift ;;
             --message) message="$2"; shift 2 ;;
             *) log_error "Unknown option: $1"; exit 1 ;;
         esac
     done
 
+    # Read from stdin if requested
+    if [[ "$use_stdin" == "true" ]]; then
+        content=$(cat)
+    fi
+
     # Validate required options
     [[ -z "$ref" ]] && { log_error "--ref is required"; exit 1; }
-    [[ -z "$content" ]] && { log_error "--content is required"; exit 1; }
+    [[ -z "$content" ]] && { log_error "--content or --stdin is required"; exit 1; }
     [[ -z "$message" ]] && { log_error "--message is required"; exit 1; }
 
     local encoded_project encoded_path
