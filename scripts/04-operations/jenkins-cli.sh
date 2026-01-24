@@ -44,7 +44,13 @@ Usage:
 Commands:
   console <job> [build]     Get console output (default: lastBuild)
   status <job> [build]      Get build status as JSON (default: lastBuild)
-  wait <job> [--timeout N]  Wait for build to complete (default: 300s)
+  wait <job> [options]      Wait for build to complete
+
+Wait Options:
+  --timeout N     Timeout in seconds (default: 300)
+  --after N       Only accept builds started after timestamp (ms since epoch)
+                  Useful to avoid race conditions with fast builds
+  --interval N    Poll interval in seconds (default: 10)
 
 Job Notation:
   Use slash notation: example-app/main, k8s-deployments/dev
@@ -55,10 +61,11 @@ Examples:
   jenkins-cli.sh console example-app/main 138
   jenkins-cli.sh status k8s-deployments/dev
   jenkins-cli.sh wait example-app/main --timeout 600
+  jenkins-cli.sh wait k8s-deployments/dev --after 1737750000000
 
 Exit Codes:
   0 - Success
-  1 - Error (network, auth, job not found)
+  1 - Error (network, auth, job not found, build failed)
   2 - Timeout (wait command)
 EOF
     exit 0
@@ -108,7 +115,7 @@ cmd_status() {
 
 cmd_wait() {
     if [[ $# -lt 1 ]]; then
-        log_error "Usage: jenkins-cli.sh wait <job> [--timeout N]"
+        log_error "Usage: jenkins-cli.sh wait <job> [--timeout N] [--after TIMESTAMP]"
         exit 1
     fi
 
@@ -117,11 +124,13 @@ cmd_wait() {
 
     local timeout=300
     local interval=10
+    local after_timestamp=0
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --timeout) timeout="$2"; shift 2 ;;
             --interval) interval="$2"; shift 2 ;;
+            --after) after_timestamp="$2"; shift 2 ;;
             *) log_error "Unknown option: $1"; exit 1 ;;
         esac
     done
@@ -129,19 +138,36 @@ cmd_wait() {
     local elapsed=0
     local status_json
 
-    echo "Waiting for ${job} to complete (timeout: ${timeout}s)..." >&2
+    if [[ $after_timestamp -gt 0 ]]; then
+        echo "Waiting for ${job} build started after $(date -d @$((after_timestamp/1000)) '+%H:%M:%S' 2>/dev/null || date -r $((after_timestamp/1000)) '+%H:%M:%S' 2>/dev/null || echo "timestamp $after_timestamp") (timeout: ${timeout}s)..." >&2
+    else
+        echo "Waiting for ${job} to complete (timeout: ${timeout}s)..." >&2
+    fi
 
     while (( elapsed < timeout )); do
         # Try to get status, continue on failure (build might not exist yet)
         if status_json=$(cmd_status "$job" 2>/dev/null); then
-            local building result
+            local building result build_timestamp
             building=$(echo "$status_json" | jq -r '.building')
             result=$(echo "$status_json" | jq -r '.result // "BUILDING"')
+            build_timestamp=$(echo "$status_json" | jq -r '.timestamp // 0')
+
+            # If --after specified, skip builds that started before that time
+            if [[ $after_timestamp -gt 0 ]] && [[ $build_timestamp -lt $after_timestamp ]]; then
+                echo "Current build started before trigger, waiting for new build... (${elapsed}s elapsed)" >&2
+                sleep "$interval"
+                ((elapsed += interval))
+                continue
+            fi
 
             if [[ "$building" == "false" ]]; then
                 echo "Build complete: $result" >&2
                 echo "$status_json"
-                return 0
+                if [[ "$result" == "SUCCESS" ]]; then
+                    return 0
+                else
+                    return 1
+                fi
             fi
 
             local build_num

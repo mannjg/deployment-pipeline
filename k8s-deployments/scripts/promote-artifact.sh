@@ -230,14 +230,13 @@ SETTINGS_EOF
 }
 
 # Cleanup temporary files (Maven settings and temp directory)
+# Note: Silent cleanup to avoid interfering with stdout output that Jenkinsfile captures
 cleanup_temp_files() {
     if [[ -n "${MAVEN_SETTINGS_FILE:-}" && -f "$MAVEN_SETTINGS_FILE" ]]; then
         rm -f "$MAVEN_SETTINGS_FILE"
-        log_debug "Cleaned up Maven settings"
     fi
     if [[ -n "${TMP_DIR_PROMOTE:-}" && -d "$TMP_DIR_PROMOTE" ]]; then
         rm -rf "$TMP_DIR_PROMOTE"
-        log_debug "Cleaned up temp directory"
     fi
 }
 
@@ -464,6 +463,8 @@ main() {
 
     # Create Maven settings for Nexus access
     create_maven_settings
+    # Cleanup on early exit (errors) - for success path, cleanup is called manually
+    # before final output to ensure the image tag is the absolute last line of stdout
     trap cleanup_temp_files EXIT
 
     # Get source image tag
@@ -550,8 +551,11 @@ main() {
     log_info "=== Promotion Complete ==="
     log_info "New image tag: $target_image_tag"
 
+    # Cleanup before final output to ensure tag is the last line
+    cleanup_temp_files
+
     # Output the new image tag (for caller to capture)
-    # This is the ONLY line that goes to stdout
+    # MUST be the absolute last line of output for Jenkinsfile to capture
     echo "$target_image_tag"
 }
 

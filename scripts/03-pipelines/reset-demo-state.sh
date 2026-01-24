@@ -217,43 +217,24 @@ cleanup_local_branches() {
 # Removes GitLab branches matching demo patterns that don't have open MRs
 cleanup_gitlab_orphan_branches() {
     local project_path="$1"
-    local encoded_project=$(echo "$project_path" | sed 's/\//%2F/g')
+    local gitlab_cli="$SCRIPT_DIR/../04-operations/gitlab-cli.sh"
 
     log_step "Cleaning up orphaned GitLab demo branches..."
 
-    local patterns=("uc-" "update-dev-" "promote-")
+    local patterns=("uc-" "update-dev-" "promote-" "sync-main-")
     local deleted=0
 
-    # Get all branches from GitLab
-    local branches_url="$GITLAB_URL/api/v4/projects/$encoded_project/repository/branches?per_page=100"
-    local all_branches=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$branches_url" 2>/dev/null | jq -r '.[].name')
-
-    if [[ -z "$all_branches" ]]; then
-        log_info "No branches found"
-        return 0
-    fi
-
-    for branch in $all_branches; do
-        # Skip environment branches
-        if [[ "$branch" == "main" || "$branch" == "dev" || "$branch" == "stage" || "$branch" == "prod" ]]; then
-            continue
-        fi
-
-        # Check if branch matches any demo pattern
-        local is_demo_branch=false
-        for pattern in "${patterns[@]}"; do
-            if [[ "$branch" == ${pattern}* ]]; then
-                is_demo_branch=true
-                break
-            fi
-        done
-
-        if [[ "$is_demo_branch" == true ]]; then
-            # Delete the orphan branch
-            local encoded_branch=$(echo "$branch" | jq -sRr @uri)
-            curl -sk -X DELETE -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-                "$GITLAB_URL/api/v4/projects/$encoded_project/repository/branches/$encoded_branch" \
-                >/dev/null 2>&1 && deleted=$((deleted + 1))
+    # Get all demo branches from GitLab
+    for pattern in "${patterns[@]}"; do
+        local branches
+        if branches=$("$gitlab_cli" branch list "$project_path" --pattern "${pattern}*" 2>/dev/null); then
+            while IFS= read -r branch; do
+                if [[ -n "$branch" ]]; then
+                    if "$gitlab_cli" branch delete "$project_path" "$branch" >/dev/null 2>&1; then
+                        deleted=$((deleted + 1))
+                    fi
+                fi
+            done <<< "$branches"
         fi
     done
 
@@ -274,22 +255,20 @@ cleanup_gitlab_orphan_branches() {
 # All of these need to be closed for a clean reset.
 close_all_env_mrs() {
     local project_path="$1"
-    local encoded_project=$(echo "$project_path" | sed 's/\//%2F/g')
+    local gitlab_cli="$SCRIPT_DIR/../04-operations/gitlab-cli.sh"
 
     log_info "Closing ALL open MRs targeting environment branches..."
 
     # Close MRs targeting each environment branch
     for target_branch in dev stage prod; do
-        local api_url="$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests?state=opened&target_branch=$target_branch"
-        local mrs=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$api_url" 2>/dev/null)
-
-        if [[ -z "$mrs" ]] || [[ "$mrs" == "[]" ]]; then
+        local mr_list
+        if ! mr_list=$("$gitlab_cli" mr list "$project_path" --state opened --target "$target_branch" 2>/dev/null); then
             log_info "  $target_branch: no open MRs"
             continue
         fi
 
         # Get all MRs (no pattern filtering)
-        local all_mrs=$(echo "$mrs" | jq -r '.[] | "\(.iid):\(.source_branch)"')
+        local all_mrs=$(echo "$mr_list" | jq -r '"\(.iid):\(.source_branch)"' 2>/dev/null)
 
         if [[ -z "$all_mrs" ]]; then
             log_info "  $target_branch: no open MRs"
@@ -301,16 +280,12 @@ close_all_env_mrs() {
             if [[ -n "$mr_iid" ]]; then
                 log_info "  Closing MR !$mr_iid ($source_branch → $target_branch)..."
 
-                # Close the MR
-                curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-                    "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests/$mr_iid" \
-                    -d "state_event=close" >/dev/null 2>&1 || true
+                # Close the MR using gitlab-cli.sh
+                "$gitlab_cli" mr close "$project_path" "$mr_iid" >/dev/null 2>&1 || true
 
                 # Delete the source branch ONLY if it's not an environment branch
                 if [[ "$source_branch" != "dev" && "$source_branch" != "stage" && "$source_branch" != "prod" && "$source_branch" != "main" ]]; then
-                    curl -sk -X DELETE -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-                        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/branches/$source_branch" \
-                        >/dev/null 2>&1 || true
+                    "$gitlab_cli" branch delete "$project_path" "$source_branch" >/dev/null 2>&1 || true
                 fi
 
                 count=$((count + 1))
@@ -377,63 +352,33 @@ close_mrs_matching() {
 }
 
 # =============================================================================
-# Wait for Jenkins build to complete
+# Wait for Jenkins build to complete (using jenkins-cli.sh)
 # =============================================================================
+# Uses --after timestamp to ensure we wait for builds triggered AFTER an event,
+# avoiding race conditions where a fast build completes before we start watching.
 wait_for_build() {
-    local job_path="$1"  # e.g., "k8s-deployments/job/dev"
+    local job="$1"  # e.g., "k8s-deployments/dev" (slash notation)
     local timeout_seconds="${2:-300}"
-    local jenkins_auth="$JENKINS_USER:$JENKINS_TOKEN"
-    local tmp_file="/tmp/jenkins_build_$$_$(echo "$job_path" | tr '/' '_').json"
+    local after_timestamp="${3:-0}"  # milliseconds since epoch
 
-    local start_time=$(date +%s)
-    local last_build=""
+    local cli_args=("$job" --timeout "$timeout_seconds")
+    if [[ $after_timestamp -gt 0 ]]; then
+        cli_args+=(--after "$after_timestamp")
+    fi
 
-    # Get current last build number (save to file to avoid jq pipe issues)
-    curl -sk -u "$jenkins_auth" \
-        "$JENKINS_URL/job/$job_path/lastBuild/api/json" > "$tmp_file" 2>/dev/null
-    local initial_build=$(cat "$tmp_file" | jq -r '.number // empty' 2>/dev/null)
+    log_info "  Waiting for build on $job..."
 
-    log_info "  Waiting for new build on $job_path (current: #${initial_build:-none})..."
-
-    while true; do
-        local elapsed=$(($(date +%s) - start_time))
-        if [[ $elapsed -gt $timeout_seconds ]]; then
-            log_warn "  Timeout waiting for build on $job_path"
-            rm -f "$tmp_file"
-            return 1
-        fi
-
-        # Check for new build (save to file to avoid jq pipe issues)
-        curl -sk -u "$jenkins_auth" \
-            "$JENKINS_URL/job/$job_path/lastBuild/api/json" > "$tmp_file" 2>/dev/null
-        local build_num=$(cat "$tmp_file" | jq -r '.number // empty' 2>/dev/null)
-        local building=$(cat "$tmp_file" | jq -r '.building // empty' 2>/dev/null)
-        local result=$(cat "$tmp_file" | jq -r '.result // empty' 2>/dev/null)
-
-        # If we have a new build that's finished
-        if [[ -n "$build_num" ]] && [[ "$build_num" != "$initial_build" ]] && [[ "$building" == "false" ]]; then
-            if [[ "$result" == "SUCCESS" ]]; then
-                log_info "  Build #$build_num completed successfully"
-                rm -f "$tmp_file"
-                return 0
-            else
-                log_warn "  Build #$build_num failed with result: $result"
-                rm -f "$tmp_file"
-                return 1
-            fi
-        fi
-
-        # If initial build is still running, wait for it
-        if [[ -n "$build_num" ]] && [[ "$build_num" == "$initial_build" ]] && [[ "$building" == "false" ]]; then
-            if [[ "$result" == "SUCCESS" ]]; then
-                log_info "  Build #$build_num already completed successfully"
-                rm -f "$tmp_file"
-                return 0
-            fi
-        fi
-
-        sleep 5
-    done
+    local result
+    if result=$("$SCRIPT_DIR/../04-operations/jenkins-cli.sh" wait "${cli_args[@]}" 2>&1); then
+        local build_num
+        build_num=$(echo "$result" | tail -1 | jq -r '.number // empty' 2>/dev/null)
+        log_info "  Build #${build_num:-?} completed successfully"
+        return 0
+    else
+        log_warn "  Build wait failed or timed out"
+        log_warn "  Output: $result"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -489,10 +434,27 @@ merge_gitlab_mr() {
 # =============================================================================
 # Wait for promotion MR to appear and merge it
 # =============================================================================
+# Handles the case where no promotion MR is created because environments are
+# already in sync (Jenkins build exits with "No changes to promote").
+#
+# Returns:
+#   0 - MR merged successfully (changes promoted)
+#   2 - No changes to promote (environments already in sync)
+#   1 - Error
 wait_and_merge_promotion_mr() {
     local target_branch="$1"  # stage or prod
     local timeout_seconds="${2:-180}"
+    local gitlab_cli="$SCRIPT_DIR/../04-operations/gitlab-cli.sh"
+    local jenkins_cli="$SCRIPT_DIR/../04-operations/jenkins-cli.sh"
     local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
+
+    # Determine the source branch for promotion
+    local source_branch
+    case "$target_branch" in
+        stage) source_branch="dev" ;;
+        prod) source_branch="stage" ;;
+        *) log_error "Unknown target branch: $target_branch"; return 1 ;;
+    esac
 
     local start_time=$(date +%s)
 
@@ -501,28 +463,55 @@ wait_and_merge_promotion_mr() {
     while true; do
         local elapsed=$(($(date +%s) - start_time))
         if [[ $elapsed -gt $timeout_seconds ]]; then
+            # Before failing, check if the build completed with "no changes"
+            # This happens when environments are already in sync
+            local build_console
+            if build_console=$("$jenkins_cli" console "k8s-deployments/$source_branch" 2>/dev/null); then
+                if echo "$build_console" | grep -q "No changes to promote"; then
+                    log_info "  No changes to promote - $source_branch and $target_branch already in sync"
+                    return 2  # Special code: no changes
+                fi
+            fi
             log_warn "  Timeout waiting for promotion MR to $target_branch"
             return 1
         fi
 
-        # Check for open MR targeting this branch from a promote-* branch
-        local mr_info=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-            "$GITLAB_URL/api/v4/projects/$encoded_project/merge_requests?state=opened&target_branch=$target_branch" 2>/dev/null | \
-            jq -r '.[] | select(.source_branch | startswith("promote-")) | "\(.iid):\(.source_branch)"' | head -1)
+        # Check for open MR targeting this branch from a promote-* branch using gitlab-cli.sh
+        local mr_list
+        if mr_list=$("$gitlab_cli" mr list "$DEPLOYMENTS_REPO_PATH" --state opened --target "$target_branch" 2>/dev/null); then
+            local mr_info=$(echo "$mr_list" | jq -r 'select(.source_branch | startswith("promote-")) | "\(.iid):\(.source_branch)"' 2>/dev/null | head -1)
 
-        if [[ -n "$mr_info" ]]; then
-            local mr_iid=$(echo "$mr_info" | cut -d: -f1)
-            local source_branch=$(echo "$mr_info" | cut -d: -f2)
+            if [[ -n "$mr_info" ]]; then
+                local mr_iid=$(echo "$mr_info" | cut -d: -f1)
+                local source_branch=$(echo "$mr_info" | cut -d: -f2)
 
-            log_info "  Found MR !$mr_iid ($source_branch → $target_branch)"
+                log_info "  Found MR !$mr_iid ($source_branch → $target_branch)"
 
-            # Merge the MR (with retry logic for 405 handling)
-            if merge_gitlab_mr "$encoded_project" "$mr_iid"; then
-                log_info "  MR !$mr_iid merged successfully"
-                return 0
-            else
-                log_warn "  Failed to merge MR !$mr_iid"
-                return 1
+                # Merge the MR using gitlab-cli.sh
+                if "$gitlab_cli" mr merge "$DEPLOYMENTS_REPO_PATH" "$mr_iid" >/dev/null 2>&1; then
+                    log_info "  MR !$mr_iid merged successfully"
+                    return 0
+                else
+                    # Fallback to direct API with retry logic
+                    if merge_gitlab_mr "$encoded_project" "$mr_iid"; then
+                        log_info "  MR !$mr_iid merged successfully (fallback)"
+                        return 0
+                    else
+                        log_warn "  Failed to merge MR !$mr_iid"
+                        return 1
+                    fi
+                fi
+            fi
+        fi
+
+        # Early check: if build already finished with "no changes", don't wait
+        if [[ $((elapsed % 30)) -eq 0 ]] && [[ $elapsed -gt 0 ]]; then
+            local build_console
+            if build_console=$("$jenkins_cli" console "k8s-deployments/$source_branch" 2>/dev/null); then
+                if echo "$build_console" | grep -q "No changes to promote"; then
+                    log_info "  No changes to promote - $source_branch and $target_branch already in sync"
+                    return 2  # Special code: no changes
+                fi
             fi
         fi
 
@@ -548,6 +537,7 @@ wait_and_merge_promotion_mr() {
 sync_via_promotion_workflow() {
     log_step "Syncing shared files via promotion workflow..."
 
+    local gitlab_cli="$SCRIPT_DIR/../04-operations/gitlab-cli.sh"
     local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
     local sync_branch="sync-main-$(date +%s)"
 
@@ -629,29 +619,61 @@ sync_via_promotion_workflow() {
 
     log_info "Created MR !$mr_iid"
 
-    # Merge the MR to dev (with retry logic for 405 handling)
+    # Capture timestamp BEFORE merge to track which builds we're waiting for
+    local merge_timestamp=$(($(date +%s) * 1000))
+
+    # Merge the MR to dev using gitlab-cli.sh
     log_info "Merging MR !$mr_iid to dev..."
-    if ! merge_gitlab_mr "$encoded_project" "$mr_iid"; then
-        log_error "Failed to merge MR !$mr_iid to dev"
-        return 1
+    if ! "$gitlab_cli" mr merge "$DEPLOYMENTS_REPO_PATH" "$mr_iid" >/dev/null 2>&1; then
+        # Fallback to direct API with retry logic
+        if ! merge_gitlab_mr "$encoded_project" "$mr_iid"; then
+            log_error "Failed to merge MR !$mr_iid to dev"
+            return 1
+        fi
     fi
 
     log_info "MR merged to dev"
 
-    # Wait for dev build to complete
-    wait_for_build "k8s-deployments/job/dev" 300 || return 1
+    # Wait for dev build to complete (only builds started after our merge)
+    wait_for_build "k8s-deployments/dev" 300 "$merge_timestamp" || return 1
+
+    # Capture timestamp before stage merge
+    merge_timestamp=$(($(date +%s) * 1000))
 
     # Wait for promotion MR to stage and merge it
-    wait_and_merge_promotion_mr "stage" 180 || return 1
+    # Returns: 0=merged, 2=no changes, 1=error
+    local stage_result=0
+    wait_and_merge_promotion_mr "stage" 180 || stage_result=$?
+    if [[ $stage_result -eq 1 ]]; then
+        return 1
+    fi
 
-    # Wait for stage build to complete
-    wait_for_build "k8s-deployments/job/stage" 300 || return 1
+    # Only wait for stage build if changes were promoted (result 0)
+    if [[ $stage_result -eq 0 ]]; then
+        wait_for_build "k8s-deployments/stage" 300 "$merge_timestamp" || return 1
+
+        # Capture timestamp before prod merge
+        merge_timestamp=$(($(date +%s) * 1000))
+    fi
 
     # Wait for promotion MR to prod and merge it
-    wait_and_merge_promotion_mr "prod" 180 || return 1
+    # Note: If stage had no changes (stage_result=2), prod also won't have a promotion MR
+    # because no stage build ran to create one. This is expected - shared files are in sync.
+    local prod_result=0
+    if [[ $stage_result -eq 0 ]]; then
+        # Only wait for prod MR if stage actually had changes and triggered a build
+        wait_and_merge_promotion_mr "prod" 180 || prod_result=$?
+        if [[ $prod_result -eq 1 ]]; then
+            return 1
+        fi
 
-    # Wait for prod build to complete
-    wait_for_build "k8s-deployments/job/prod" 300 || return 1
+        # Only wait for prod build if changes were promoted (result 0)
+        if [[ $prod_result -eq 0 ]]; then
+            wait_for_build "k8s-deployments/prod" 300 "$merge_timestamp" || return 1
+        fi
+    else
+        log_info "  Skipping prod promotion check - shared files already in sync across all environments"
+    fi
 
     log_info "Promotion workflow completed - all environments synced"
     return 0
