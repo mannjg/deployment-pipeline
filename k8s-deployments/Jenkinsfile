@@ -347,10 +347,13 @@ def createPromotionMR(String sourceEnv) {
 
                 // Promote artifacts (Maven + Docker) and get new image tag
                 // Note: Use 'bash' explicitly since GitLab API doesn't preserve execute permissions
+                // Note: Explicitly export NEXUS_USER/NEXUS_PASSWORD to ensure they're available to the script
                 def newImageTag = ''
                 if (gitHash) {
                     newImageTag = sh(
                         script: """
+                            export NEXUS_USER="\${NEXUS_USER}"
+                            export NEXUS_PASSWORD="\${NEXUS_PASSWORD}"
                             bash ./scripts/promote-artifact.sh \
                                 --source-env ${sourceEnv} \
                                 --target-env ${targetEnv} \

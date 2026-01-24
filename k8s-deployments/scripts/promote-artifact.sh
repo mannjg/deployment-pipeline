@@ -157,6 +157,11 @@ MAVEN_SETTINGS_FILE=""
 create_maven_settings() {
     MAVEN_SETTINGS_FILE=$(mktemp --suffix="-maven-settings.xml")
 
+    # Debug: Check what environment variables are set
+    log_debug "Checking environment for Nexus credentials..."
+    log_debug "  NEXUS_USER is set: $(if [[ -v NEXUS_USER ]]; then echo 'yes'; else echo 'no'; fi)"
+    log_debug "  NEXUS_PASSWORD is set: $(if [[ -v NEXUS_PASSWORD ]]; then echo 'yes'; else echo 'no'; fi)"
+
     # Build server credentials block if credentials are provided
     local servers_block=""
     if [[ -n "${NEXUS_USER:-}" && -n "${NEXUS_PASSWORD:-}" ]]; then
