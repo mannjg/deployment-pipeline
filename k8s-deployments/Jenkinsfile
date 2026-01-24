@@ -477,6 +477,9 @@ if (!agentImage) {
     error "JENKINS_AGENT_IMAGE environment variable is required but not set."
 }
 
+// Docker registry host for dind insecure-registry config (strip https:// prefix)
+def dockerRegistryHost = System.getenv('DOCKER_REGISTRY_EXTERNAL')?.replaceAll('^https?://', '')
+
 pipeline {
     agent {
         kubernetes {
@@ -508,7 +511,7 @@ spec:
     - name: DOCKER_TLS_CERTDIR
       value: ""
     args:
-    - --insecure-registry=docker.jmann.local
+    - --insecure-registry=${dockerRegistryHost}
     resources:
       requests:
         memory: "512Mi"
