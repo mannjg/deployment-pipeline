@@ -8,6 +8,8 @@
 #   gitlab-cli.sh branch list <project> [--pattern "update-*"]
 #   gitlab-cli.sh branch delete <project> <branch>
 #   gitlab-cli.sh file get <project> <path> [--ref main]
+#   gitlab-cli.sh file update <project> <path> --ref <branch> --content <content> --message <msg>
+#   gitlab-cli.sh commit list <project> [--ref main] [--limit 10]
 #   gitlab-cli.sh user
 #
 # Project notation: Use path like p2c/example-app (auto URL-encoded)
@@ -93,6 +95,15 @@ Commands:
   file get <project> <path> [opts]  Get file content
     --ref <branch>                  Branch/tag/commit (default: main)
 
+  file update <project> <path> [opts]  Update file content
+    --ref <branch>                  Branch to update (required)
+    --content <content>             New file content (required)
+    --message <msg>                 Commit message (required)
+
+  commit list <project> [options]   List recent commits
+    --ref <branch>                  Branch/tag (default: main)
+    --limit <n>                     Number of commits (default: 10)
+
   user                              Show authenticated user info
 
 Project Notation:
@@ -106,6 +117,7 @@ Examples:
   gitlab-cli.sh branch list p2c/k8s-deployments --pattern "promote-*"
   gitlab-cli.sh branch delete p2c/k8s-deployments promote-stage-20260124
   gitlab-cli.sh file get p2c/k8s-deployments env.cue --ref stage
+  gitlab-cli.sh commit list p2c/k8s-deployments --ref stage --limit 5
   gitlab-cli.sh user
 
 Exit Codes:
@@ -299,6 +311,106 @@ cmd_file_get() {
     echo "$response" | jq -r '.content' | base64 -d
 }
 
+cmd_file_update() {
+    if [[ $# -lt 2 ]]; then
+        log_error "Usage: gitlab-cli.sh file update <project> <path> --ref <branch> --content <content> --message <msg>"
+        exit 1
+    fi
+
+    local project="$1"
+    local filepath="$2"
+    shift 2
+
+    local ref=""
+    local content=""
+    local message=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --ref) ref="$2"; shift 2 ;;
+            --content) content="$2"; shift 2 ;;
+            --message) message="$2"; shift 2 ;;
+            *) log_error "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+
+    # Validate required options
+    [[ -z "$ref" ]] && { log_error "--ref is required"; exit 1; }
+    [[ -z "$content" ]] && { log_error "--content is required"; exit 1; }
+    [[ -z "$message" ]] && { log_error "--message is required"; exit 1; }
+
+    local encoded_project encoded_path
+    encoded_project=$(encode_project "$project")
+    encoded_path=$(encode_path "$filepath")
+
+    # First, get the current file to obtain its SHA (required for updates)
+    local current_file
+    current_file=$(gitlab_api GET "/projects/${encoded_project}/repository/files/${encoded_path}?ref=${ref}") || {
+        log_error "Failed to get current file (does it exist?)"
+        exit 1
+    }
+
+    # Base64 encode the new content
+    local encoded_content
+    encoded_content=$(echo -n "$content" | base64 -w0)
+
+    # Update the file via API
+    local response
+    response=$(gitlab_api PUT "/projects/${encoded_project}/repository/files/${encoded_path}" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"branch\": \"${ref}\",
+            \"content\": \"${encoded_content}\",
+            \"commit_message\": \"${message}\",
+            \"encoding\": \"base64\"
+        }") || exit 1
+
+    local file_path
+    file_path=$(echo "$response" | jq -r '.file_path // "unknown"')
+
+    if [[ "$file_path" != "null" && "$file_path" != "unknown" ]]; then
+        log_info "Updated file: $file_path on branch $ref"
+        echo "$response" | jq '{file_path, branch}'
+    else
+        log_error "Failed to update file"
+        echo "$response" | jq .
+        exit 1
+    fi
+}
+
+# =============================================================================
+# Commit Commands
+# =============================================================================
+
+cmd_commit_list() {
+    if [[ $# -lt 1 ]]; then
+        log_error "Usage: gitlab-cli.sh commit list <project> [--ref branch] [--limit n]"
+        exit 1
+    fi
+
+    local project="$1"
+    shift
+
+    local ref="main"
+    local limit=10
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --ref) ref="$2"; shift 2 ;;
+            --limit) limit="$2"; shift 2 ;;
+            *) log_error "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+
+    local encoded_project
+    encoded_project=$(encode_project "$project")
+
+    local response
+    response=$(gitlab_api GET "/projects/${encoded_project}/repository/commits?ref_name=${ref}&per_page=${limit}") || exit 1
+
+    echo "$response" | jq -r '.[] | "\(.short_id) \(.created_at | split("T")[0]) \(.title)"'
+}
+
 # =============================================================================
 # User Command
 # =============================================================================
@@ -363,7 +475,21 @@ case "$1" in
         shift
         case "$subcommand" in
             get) cmd_file_get "$@" ;;
+            update) cmd_file_update "$@" ;;
             *) log_error "Unknown file subcommand: $subcommand"; exit 1 ;;
+        esac
+        ;;
+    commit)
+        shift
+        if [[ $# -lt 1 ]]; then
+            log_error "Usage: gitlab-cli.sh commit <list> ..."
+            exit 1
+        fi
+        subcommand="$1"
+        shift
+        case "$subcommand" in
+            list) cmd_commit_list "$@" ;;
+            *) log_error "Unknown commit subcommand: $subcommand"; exit 1 ;;
         esac
         ;;
     user) cmd_user ;;
