@@ -2,6 +2,7 @@
 # Jenkins CLI - Centralized Jenkins operations
 #
 # Usage:
+#   jenkins-cli.sh trigger <job>           - Trigger a new build
 #   jenkins-cli.sh console <job> [build]   - Get console output
 #   jenkins-cli.sh status <job> [build]    - Get build status (JSON)
 #   jenkins-cli.sh wait <job> [--timeout]  - Wait for build to complete
@@ -42,6 +43,7 @@ Usage:
   jenkins-cli.sh <command> <job> [options]
 
 Commands:
+  trigger <job>             Trigger a new build
   console <job> [build]     Get console output (default: lastBuild)
   status <job> [build]      Get build status as JSON (default: lastBuild)
   wait <job> [options]      Wait for build to complete
@@ -57,6 +59,7 @@ Job Notation:
   Automatically converts to Jenkins path: example-app/job/main
 
 Examples:
+  jenkins-cli.sh trigger k8s-deployments/stage
   jenkins-cli.sh console example-app/main
   jenkins-cli.sh console example-app/main 138
   jenkins-cli.sh status k8s-deployments/dev
@@ -185,8 +188,47 @@ cmd_wait() {
     return 2
 }
 
+cmd_trigger() {
+    if [[ $# -lt 1 ]]; then
+        log_error "Usage: jenkins-cli.sh trigger <job>"
+        exit 1
+    fi
+
+    local job_path
+    job_path=$(to_jenkins_path "$1")
+
+    # Get CSRF crumb with session cookies
+    local cookie_jar
+    cookie_jar=$(mktemp)
+    trap "rm -f '$cookie_jar'" RETURN
+
+    local crumb_json crumb crumb_field
+    crumb_json=$(curl -sfk -u "$JENKINS_AUTH" -c "$cookie_jar" "${JENKINS_URL}/crumbIssuer/api/json" 2>/dev/null) || {
+        log_error "Failed to get Jenkins crumb"
+        exit 1
+    }
+    crumb=$(echo "$crumb_json" | jq -r '.crumb')
+    crumb_field=$(echo "$crumb_json" | jq -r '.crumbRequestField')
+
+    # Trigger the build
+    local http_code
+    http_code=$(curl -sk -o /dev/null -w "%{http_code}" -u "$JENKINS_AUTH" \
+        -b "$cookie_jar" \
+        -H "${crumb_field}: ${crumb}" \
+        -X POST "${JENKINS_URL}/job/${job_path}/build")
+
+    if [[ "$http_code" == "201" ]]; then
+        log_info "Build triggered for $1"
+        return 0
+    else
+        log_error "Failed to trigger build (HTTP $http_code)"
+        return 1
+    fi
+}
+
 # Main dispatch
 case "${1:-}" in
+    trigger) shift; cmd_trigger "$@" ;;
     console) shift; cmd_console "$@" ;;
     status)  shift; cmd_status "$@" ;;
     wait)    shift; cmd_wait "$@" ;;
@@ -199,7 +241,7 @@ case "${1:-}" in
     *)
         log_error "Unknown command: $1"
         echo "" >&2
-        echo "Available commands: console, status, wait" >&2
+        echo "Available commands: trigger, console, status, wait" >&2
         exit 1
         ;;
 esac
