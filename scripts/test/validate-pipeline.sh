@@ -922,8 +922,14 @@ verify_env_deployment() {
 
     log_step "Verifying deployment ($env_name)..."
 
-    # Expected image tag from the build (same as dev)
-    local expected_tag="$IMAGE_TAG"
+    # Get expected image tag from GitLab env.cue for this environment
+    # This respects version lifecycle: dev=SNAPSHOT, stage=RC, prod=Release
+    local expected_tag
+    expected_tag=$("$SCRIPT_DIR/../04-operations/gitlab-cli.sh" env image p2c/k8s-deployments "$env_name" 2>/dev/null) || {
+        log_error "Failed to get expected image tag from GitLab for $env_name"
+        exit 1
+    }
+
     local timeout=120
     local elapsed=0
     local poll_interval=5
@@ -931,9 +937,9 @@ verify_env_deployment() {
     while [[ $elapsed -lt $timeout ]]; do
         local pod_info=$(kubectl get pods -n "$namespace" -l "$APP_LABEL" -o json 2>/dev/null)
 
-        # Find running pods with the correct image tag
+        # Find running pods with the exact expected image tag
         local matching_pod=$(echo "$pod_info" | jq -r --arg tag "$expected_tag" \
-            '.items[] | select(.status.phase == "Running") | select(.spec.containers[0].image | contains($tag)) | .metadata.name' | head -1)
+            '.items[] | select(.status.phase == "Running") | select(.spec.containers[0].image | endswith($tag)) | .metadata.name' | head -1)
 
         if [[ -n "$matching_pod" ]]; then
             local deployed_image=$(echo "$pod_info" | jq -r --arg name "$matching_pod" \

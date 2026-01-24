@@ -10,6 +10,7 @@
 #   gitlab-cli.sh file get <project> <path> [--ref main]
 #   gitlab-cli.sh file update <project> <path> --ref <branch> --content <content> --message <msg>
 #   gitlab-cli.sh commit list <project> [--ref main] [--limit 10]
+#   gitlab-cli.sh env image <project> <environment> [--app exampleApp]
 #   gitlab-cli.sh user
 #
 # Project notation: Use path like p2c/example-app (auto URL-encoded)
@@ -104,6 +105,9 @@ Commands:
     --ref <branch>                  Branch/tag (default: main)
     --limit <n>                     Number of commits (default: 10)
 
+  env image <project> <env>         Get deployed image tag for an environment
+    --app <name>                    App name in CUE (default: exampleApp)
+
   user                              Show authenticated user info
 
 Project Notation:
@@ -118,6 +122,8 @@ Examples:
   gitlab-cli.sh branch delete p2c/k8s-deployments promote-stage-20260124
   gitlab-cli.sh file get p2c/k8s-deployments env.cue --ref stage
   gitlab-cli.sh commit list p2c/k8s-deployments --ref stage --limit 5
+  gitlab-cli.sh env image p2c/k8s-deployments dev
+  gitlab-cli.sh env image p2c/k8s-deployments stage --app exampleApp
   gitlab-cli.sh user
 
 Exit Codes:
@@ -412,6 +418,73 @@ cmd_commit_list() {
 }
 
 # =============================================================================
+# Environment Commands
+# =============================================================================
+
+cmd_env_image() {
+    if [[ $# -lt 2 ]]; then
+        log_error "Usage: gitlab-cli.sh env image <project> <environment> [--app name]"
+        exit 1
+    fi
+
+    local project="$1"
+    local environment="$2"
+    shift 2
+
+    local app_name="exampleApp"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --app) app_name="$2"; shift 2 ;;
+            *) log_error "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+
+    local encoded_project encoded_path
+    encoded_project=$(encode_project "$project")
+    encoded_path=$(encode_path "env.cue")
+
+    # Fetch env.cue from the environment branch
+    local response
+    response=$(gitlab_api GET "/projects/${encoded_project}/repository/files/${encoded_path}?ref=${environment}") || {
+        log_error "Failed to fetch env.cue from branch: $environment"
+        exit 1
+    }
+
+    # Decode and extract image for the specified app
+    local env_cue_content
+    env_cue_content=$(echo "$response" | jq -r '.content' | base64 -d) || {
+        log_error "Failed to decode env.cue content"
+        exit 1
+    }
+
+    # Extract the full image URL for the app
+    # Pattern: looks for the app section and extracts the image field
+    local full_image
+    full_image=$(echo "$env_cue_content" | \
+        awk -v env="$environment" -v app="$app_name" '
+            $0 ~ "^"env": "app":" { in_section=1 }
+            in_section && /image:/ {
+                match($0, /"[^"]+"/);
+                print substr($0, RSTART+1, RLENGTH-2);
+                exit
+            }
+            in_section && /^[a-zA-Z]/ && !($0 ~ app) { in_section=0 }
+        ') || true
+
+    if [[ -z "$full_image" ]]; then
+        log_error "Could not find image for app '$app_name' in environment '$environment'"
+        exit 1
+    fi
+
+    # Output just the tag (after the last colon)
+    local image_tag
+    image_tag=$(echo "$full_image" | sed 's/.*://')
+
+    echo "$image_tag"
+}
+
+# =============================================================================
 # User Command
 # =============================================================================
 
@@ -490,6 +563,19 @@ case "$1" in
         case "$subcommand" in
             list) cmd_commit_list "$@" ;;
             *) log_error "Unknown commit subcommand: $subcommand"; exit 1 ;;
+        esac
+        ;;
+    env)
+        shift
+        if [[ $# -lt 1 ]]; then
+            log_error "Usage: gitlab-cli.sh env <image> ..."
+            exit 1
+        fi
+        subcommand="$1"
+        shift
+        case "$subcommand" in
+            image) cmd_env_image "$@" ;;
+            *) log_error "Unknown env subcommand: $subcommand"; exit 1 ;;
         esac
         ;;
     user) cmd_user ;;
