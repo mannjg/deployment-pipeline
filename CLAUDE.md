@@ -149,6 +149,29 @@ kubectl get pods -A | grep -E 'gitlab|jenkins|nexus|argocd'
 
 Job notation uses slash format: `example-app/main` → `example-app/job/main`
 
+### GitLab Operations (ALWAYS use gitlab-cli.sh)
+
+**IMPORTANT:** Always use `scripts/04-operations/gitlab-cli.sh` for GitLab API operations. Do not write ad-hoc curl commands - extend the CLI if needed.
+
+```bash
+# List open MRs targeting dev
+./scripts/04-operations/gitlab-cli.sh mr list p2c/k8s-deployments --state opened --target dev
+
+# Merge an MR
+./scripts/04-operations/gitlab-cli.sh mr merge p2c/k8s-deployments 634
+
+# List branches matching pattern
+./scripts/04-operations/gitlab-cli.sh branch list p2c/k8s-deployments --pattern "promote-*"
+
+# Get file from specific branch
+./scripts/04-operations/gitlab-cli.sh file get p2c/k8s-deployments env.cue --ref stage
+
+# Verify authentication
+./scripts/04-operations/gitlab-cli.sh user
+```
+
+Project notation uses path format: `p2c/example-app` (auto URL-encoded)
+
 ### Trigger a Build
 ```bash
 ./scripts/04-operations/trigger-build.sh example-app
