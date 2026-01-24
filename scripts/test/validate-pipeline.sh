@@ -1063,13 +1063,14 @@ verify_version_lifecycle() {
     log_info "  Prod version:  $prod_version (maven-releases)"
 
     # 6. Verify artifacts exist in Nexus
-    local nexus_url="${NEXUS_URL_INTERNAL:-http://nexus.nexus.svc.cluster.local:8081}"
+    # Use external URL (accessible from outside cluster) with -k for self-signed certs
+    local nexus_url="${NEXUS_URL_EXTERNAL:-https://nexus.jmann.local}"
     local group_id="com.example"
     local app_name="example-app"
 
     # Check SNAPSHOT (Maven stores SNAPSHOTs with timestamps like 1.0.2-20260124.205201-1)
     # Search for any version starting with the base version in maven-snapshots
-    local snapshot_check=$(curl -sf "${nexus_url}/service/rest/v1/search?repository=maven-snapshots&group=${group_id}&name=${app_name}&version=${base_version}*" 2>/dev/null | jq -r '.items | length')
+    local snapshot_check=$(curl -sfk "${nexus_url}/service/rest/v1/search?repository=maven-snapshots&group=${group_id}&name=${app_name}&version=${base_version}*" 2>/dev/null | jq -r '.items | length')
     if [[ "$snapshot_check" -gt 0 ]]; then
         log_pass "SNAPSHOT artifact exists in Nexus (${base_version}-SNAPSHOT)"
     else
@@ -1078,7 +1079,7 @@ verify_version_lifecycle() {
     fi
 
     # Check RC
-    local rc_check=$(curl -sf "${nexus_url}/service/rest/v1/search?repository=maven-releases&group=${group_id}&name=${app_name}&version=${stage_version}" 2>/dev/null | jq -r '.items | length')
+    local rc_check=$(curl -sfk "${nexus_url}/service/rest/v1/search?repository=maven-releases&group=${group_id}&name=${app_name}&version=${stage_version}" 2>/dev/null | jq -r '.items | length')
     if [[ "$rc_check" -gt 0 ]]; then
         log_pass "RC artifact exists in Nexus"
     else
@@ -1087,7 +1088,7 @@ verify_version_lifecycle() {
     fi
 
     # Check Release
-    local release_check=$(curl -sf "${nexus_url}/service/rest/v1/search?repository=maven-releases&group=${group_id}&name=${app_name}&version=${prod_version}" 2>/dev/null | jq -r '.items | length')
+    local release_check=$(curl -sfk "${nexus_url}/service/rest/v1/search?repository=maven-releases&group=${group_id}&name=${app_name}&version=${prod_version}" 2>/dev/null | jq -r '.items | length')
     if [[ "$release_check" -gt 0 ]]; then
         log_pass "Release artifact exists in Nexus"
     else
