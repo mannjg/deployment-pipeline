@@ -427,6 +427,15 @@ retag_docker_image() {
     log_debug "Source: $source_image"
     log_debug "Target: $target_image"
 
+    # Login to Docker registry if credentials provided
+    if [[ -n "${NEXUS_USER:-}" && -n "${NEXUS_PASSWORD:-}" ]]; then
+        log_debug "Logging into Docker registry: $DOCKER_REGISTRY"
+        echo "$NEXUS_PASSWORD" | docker login "$DOCKER_REGISTRY" -u "$NEXUS_USER" --password-stdin || {
+            log_error "Failed to login to Docker registry"
+            return 1
+        }
+    fi
+
     # Pull source image
     if ! docker pull "$source_image"; then
         log_error "Failed to pull source image: $source_image"
