@@ -397,7 +397,8 @@ def createPromotionMR(String sourceEnv) {
                     # Update image tag in env.cue with promoted version (if we have one)
                     NEW_IMAGE_TAG="${newImageTag}"
                     if [ -n "\${NEW_IMAGE_TAG}" ]; then
-                        REGISTRY="\${DOCKER_REGISTRY:-nexus.nexus.svc.cluster.local:5000}"
+                        # Use external registry URL (HTTPS) - internal URL isn't resolvable from kubelet
+                        REGISTRY="\${DOCKER_REGISTRY_EXTERNAL:-docker.jmann.local}"
                         NEW_IMAGE="\${REGISTRY}/p2c/example-app:\${NEW_IMAGE_TAG}"
 
                         echo "Updating env.cue with new image: \${NEW_IMAGE}"
