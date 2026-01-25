@@ -385,18 +385,30 @@ Automated reset by reset-demo-state.sh"
     fi
 }
 
+# Get current build timestamp for a job (used as baseline before triggering new build)
+# Usage: get_build_baseline <env>
+# Returns: timestamp of last build (or 0 if none)
+get_build_baseline() {
+    local env="$1"
+    local jenkins_cli="$SCRIPT_DIR/../04-operations/jenkins-cli.sh"
+
+    local status_json=$("$jenkins_cli" status "k8s-deployments/$env" 2>/dev/null) || echo "{}"
+    echo "$status_json" | jq -r '.timestamp // 0'
+}
+
 # Wait for env branch build to complete and verify success
-# Usage: wait_and_verify_env_build <env> [timeout]
+# Usage: wait_and_verify_env_build <env> <baseline_timestamp> [timeout]
 # Returns: 0 if build succeeded, 1 if failed or timeout
 wait_and_verify_env_build() {
     local env="$1"
-    local timeout="${2:-300}"
+    local baseline_timestamp="$2"
+    local timeout="${3:-300}"
     local jenkins_cli="$SCRIPT_DIR/../04-operations/jenkins-cli.sh"
 
     log_info "  Waiting for $env branch build..."
 
-    # Wait for build, then check status separately for reliable parsing
-    if "$jenkins_cli" wait "k8s-deployments/$env" --timeout "$timeout" >/dev/null 2>&1; then
+    # Wait for a NEW build (started after baseline) using --after flag
+    if "$jenkins_cli" wait "k8s-deployments/$env" --timeout "$timeout" --after "$baseline_timestamp" >/dev/null 2>&1; then
         # Get clean JSON status after wait completes
         local status_json=$("$jenkins_cli" status "k8s-deployments/$env" 2>/dev/null)
         local build_result=$(echo "$status_json" | jq -r '.result // empty')
@@ -425,6 +437,9 @@ reset_cue_config() {
     local failed_envs=()
 
     for env in dev stage prod; do
+        # Capture baseline BEFORE merge (to wait for the NEW build, not an old one)
+        local baseline_timestamp=$(get_build_baseline "$env")
+
         # Step 1: Create MR and merge (waits for feature branch pipeline)
         if ! reset_env_via_mr "$env"; then
             failed_envs+=("$env")
@@ -433,7 +448,8 @@ reset_cue_config() {
 
         # Step 2: Wait for post-merge build on env branch and verify success
         # This is triggered by the merge and must complete before env is "ready"
-        if ! wait_and_verify_env_build "$env" 300; then
+        # Pass baseline to ensure we wait for the NEW build, not an old one
+        if ! wait_and_verify_env_build "$env" "$baseline_timestamp" 300; then
             failed_envs+=("$env")
         fi
     done
