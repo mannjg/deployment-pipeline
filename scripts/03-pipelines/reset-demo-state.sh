@@ -395,9 +395,12 @@ wait_and_verify_env_build() {
 
     log_info "  Waiting for $env branch build..."
 
-    local result
-    if result=$("$jenkins_cli" wait "k8s-deployments/$env" --timeout "$timeout" 2>&1); then
-        local build_result=$(echo "$result" | tail -1 | jq -r '.result // empty' 2>/dev/null)
+    # Wait for build, then check status separately for reliable parsing
+    if "$jenkins_cli" wait "k8s-deployments/$env" --timeout "$timeout" >/dev/null 2>&1; then
+        # Get clean JSON status after wait completes
+        local status_json=$("$jenkins_cli" status "k8s-deployments/$env" 2>/dev/null)
+        local build_result=$(echo "$status_json" | jq -r '.result // empty')
+
         if [[ "$build_result" == "SUCCESS" ]]; then
             log_info "  ✓ $env build succeeded"
             return 0
