@@ -346,7 +346,7 @@ reset_services_directory() {
         # Update file on env branch
         local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset $file_path from main for demo\"}" \
+            -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset $file_path from main [no-promote]\"}" \
             "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
 
         if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
@@ -380,7 +380,7 @@ reset_jenkinsfile() {
     # Update on env branch
     local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
         -H "Content-Type: application/json" \
-        -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset Jenkinsfile from main for demo\"}" \
+        -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset Jenkinsfile from main [no-promote]\"}" \
         "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
 
     if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
@@ -422,7 +422,7 @@ reset_scripts_directory() {
         # Try PUT first (update), fall back to POST (create) if file doesn't exist
         local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset $file_path from main for demo\"}" \
+            -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset $file_path from main [no-promote]\"}" \
             "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
 
         if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
@@ -431,7 +431,7 @@ reset_scripts_directory() {
             # Try POST for new files
             result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
                 -H "Content-Type: application/json" \
-                -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: add $file_path from main for demo\"}" \
+                -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: add $file_path from main [no-promote]\"}" \
                 "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
 
             if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
@@ -467,7 +467,7 @@ reset_env_cue_from_baseline() {
     # Update on GitLab
     local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
         -H "Content-Type: application/json" \
-        -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset env.cue to baseline for demo\"}" \
+        -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset env.cue to baseline [no-promote]\"}" \
         "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/env.cue" 2>/dev/null)
 
     if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
