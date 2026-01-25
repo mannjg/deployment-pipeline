@@ -92,8 +92,13 @@ mw_commit_files() {
     local gitlab_url="${GITLAB_URL_EXTERNAL}"
     local gitlab_token="${GITLAB_TOKEN}"
 
-    # Build actions array
-    local actions="["
+    # Use temp files to avoid "argument list too long" errors
+    local payload_file=$(mktemp)
+    local actions_file=$(mktemp)
+    trap "rm -f '$payload_file' '$actions_file'" RETURN
+
+    # Build actions array incrementally to temp file
+    echo "[" > "$actions_file"
     local first=true
 
     for file_spec in "$@"; do
@@ -117,27 +122,31 @@ mw_commit_files() {
             action="update"
         fi
 
-        [[ "$first" == "true" ]] || actions+=","
+        [[ "$first" == "true" ]] || echo "," >> "$actions_file"
         first=false
 
-        # Escape content for JSON
-        local escaped_content=$(echo "$content" | jq -Rs '.')
+        # Build action object and append to file
+        # Use a temp file for content to avoid argument size limits
+        local content_file=$(mktemp)
+        echo -n "$content" > "$content_file"
+        local escaped_content=$(jq -Rs '.' < "$content_file")
+        rm -f "$content_file"
 
-        actions+="{\"action\":\"$action\",\"file_path\":\"$file_path\",\"content\":$escaped_content,\"encoding\":\"$encoding\"}"
+        echo "{\"action\":\"$action\",\"file_path\":\"$file_path\",\"content\":$escaped_content,\"encoding\":\"$encoding\"}" >> "$actions_file"
     done
 
-    actions+="]"
+    echo "]" >> "$actions_file"
 
-    # Create commit
-    local payload=$(jq -n \
+    # Build payload using the actions file
+    jq -n \
         --arg branch "$branch" \
         --arg message "$commit_message" \
-        --argjson actions "$actions" \
-        '{branch: $branch, commit_message: $message, actions: $actions}')
+        --slurpfile actions "$actions_file" \
+        '{branch: $branch, commit_message: $message, actions: $actions[0]}' > "$payload_file"
 
     local result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $gitlab_token" \
         -H "Content-Type: application/json" \
-        -d "$payload" \
+        -d @"$payload_file" \
         "$gitlab_url/api/v4/projects/$encoded_project/repository/commits" 2>/dev/null)
 
     if echo "$result" | jq -e '.id' >/dev/null 2>&1; then
