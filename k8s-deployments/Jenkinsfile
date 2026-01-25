@@ -559,13 +559,26 @@ Build: ${env.BUILD_URL}
                         env.ORIGINAL_COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                         echo "Commit SHA: ${env.ORIGINAL_COMMIT_SHA}"
 
-                        // Check for [no-promote] flag in recent commits
-                        // Use last 5 commits because GitLab merge commits don't preserve the original message
-                        // The actual [no-promote] flag is in the merged commit, not the merge commit itself
-                        def commitMessages = sh(script: 'git log -5 --pretty=%B', returnStdout: true).trim()
+                        // Check for [no-promote] flag in the current merge only
+                        // For merge commits: check commits from the merged branch (HEAD^1..HEAD^2)
+                        // For direct pushes: check just HEAD
+                        // This ensures historical [no-promote] commits don't affect new merges
+                        def commitMessages = ''
+                        def isMergeCommit = sh(script: 'git rev-parse HEAD^2 >/dev/null 2>&1 && echo "true" || echo "false"', returnStdout: true).trim()
+                        if (isMergeCommit == 'true') {
+                            // Get commits from the merged branch only
+                            commitMessages = sh(script: 'git log HEAD^1..HEAD^2 --pretty=%B', returnStdout: true).trim()
+                            // Also check the merge commit message itself
+                            def mergeMsg = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
+                            commitMessages = mergeMsg + "\n" + commitMessages
+                            echo "Merge commit detected - checking merged branch commits for [no-promote]"
+                        } else {
+                            commitMessages = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
+                            echo "Direct push detected - checking HEAD commit for [no-promote]"
+                        }
                         env.NO_PROMOTE = commitMessages.contains('[no-promote]') ? 'true' : 'false'
                         if (env.NO_PROMOTE == 'true') {
-                            echo "INFO: [no-promote] flag detected in recent commits - skipping promotion MR creation"
+                            echo "INFO: [no-promote] flag detected - skipping promotion MR creation"
                         }
 
                         if (!env.GITLAB_URL) {
