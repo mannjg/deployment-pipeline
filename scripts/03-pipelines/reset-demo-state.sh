@@ -149,7 +149,7 @@ cleanup_jenkins_queue() {
 cleanup_local_branches() {
     log_info "Cleaning up local demo branches..."
 
-    local patterns=("uc-*" "update-dev-*" "promote-*" "sync-main-*")
+    local patterns=("uc-*" "update-dev-*" "promote-*" "sync-main-*" "reset-demo-*")
     local deleted=0
 
     for pattern in "${patterns[@]}"; do
@@ -176,7 +176,7 @@ cleanup_gitlab_orphan_branches() {
 
     log_info "Cleaning up orphaned GitLab demo branches..."
 
-    local patterns=("uc-" "update-dev-" "promote-" "sync-main-")
+    local patterns=("uc-" "update-dev-" "promote-" "sync-main-" "reset-demo-")
     local deleted=0
 
     for pattern in "${patterns[@]}"; do

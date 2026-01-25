@@ -141,7 +141,7 @@ _check_lingering_branches() {
     local encoded_repo=$(_ps_encode_project "$repo")
 
     # Get branches matching our patterns
-    local patterns=("update-" "promote-")
+    local patterns=("update-" "promote-" "reset-demo-")
 
     for pattern in "${patterns[@]}"; do
         local branches_response
