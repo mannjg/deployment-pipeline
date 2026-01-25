@@ -28,6 +28,27 @@ This repo uses **monorepo-with-subtree-publishing**:
 
 See `docs/GIT_REMOTE_STRATEGY.md` for subtree commands, troubleshooting, and full rationale.
 
+## Environment Branch Modification Invariant (Critical)
+
+**Environment branches (dev, stage, prod) are ONLY modified via merged MRs. No exceptions.**
+
+This invariant ensures:
+1. Jenkins regenerates manifests (it skips manifest generation on direct env branch commits)
+2. All changes are auditable via MR history
+3. Operational scripts follow the same workflow as development
+
+**Correct pattern:**
+```
+feature branch → commit changes → MR to env → Jenkins CI → merge
+```
+
+**Incorrect patterns (NEVER do these):**
+- Direct GitLab API file modifications to env branches
+- Git push directly to env branches
+- Any bypass of the MR workflow
+
+The reset-demo-state.sh script follows this pattern by creating MRs for each environment.
+
 ## Demo Setup: Environment Branches
 
 The k8s-deployments repo uses **branch-per-environment** (dev/stage/prod branches in GitLab).
