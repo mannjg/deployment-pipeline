@@ -531,8 +531,8 @@ main() {
             if nexus_artifact_exists "$target_version" "maven-releases"; then
                 # Release exists - check if this is a config-only change
                 # Config-only: same base version and git hash, just different manifests
-                local current_prod_image=$(get_env_image "prod")
-                local current_prod_tag=$(echo "$current_prod_image" | sed 's|.*/||')
+                local current_prod_tag=""
+                current_prod_tag=$(get_current_image_tag "prod" 2>/dev/null) || true
 
                 if [[ "$current_prod_tag" == "$target_image_tag" ]]; then
                     log_info "Config-only promotion detected (same image: $target_image_tag)"
