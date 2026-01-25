@@ -169,7 +169,27 @@ ensure_webhook() {
         '.[] | select(.url == $url) | .id' | head -1)
 
     if [[ -n "$correct_hook_id" ]]; then
-        log_pass "Correct webhook already exists (id: $correct_hook_id)"
+        # Check if merge_requests_events is incorrectly enabled
+        local mr_events_enabled
+        mr_events_enabled=$(echo "$existing_hooks" | jq -r --arg id "$correct_hook_id" \
+            '.[] | select(.id == ($id | tonumber)) | .merge_requests_events')
+
+        if [[ "$mr_events_enabled" == "true" ]]; then
+            log_info "Webhook has merge_requests_events=true (causes duplicates), fixing..."
+            # Update to disable merge_requests_events
+            local update_result
+            update_result=$(gitlab_api PUT "/projects/${encoded_path}/hooks/${correct_hook_id}" \
+                -d "{\"url\": \"${expected_webhook_url}\", \"push_events\": true, \"merge_requests_events\": false, \"enable_ssl_verification\": false}")
+
+            if echo "$update_result" | jq -e '.id' &>/dev/null; then
+                log_pass "Webhook updated: merge_requests_events disabled"
+            else
+                log_fail "Failed to update webhook"
+                echo "$update_result" | jq '.' 2>/dev/null || echo "$update_result"
+            fi
+        else
+            log_pass "Correct webhook already exists (id: $correct_hook_id)"
+        fi
         # Still cleanup any obsolete duplicates
         cleanup_old_webhooks "$project_path" "$expected_webhook_url"
         return 0
@@ -186,9 +206,12 @@ ensure_webhook() {
         log_step "Updating webhook to correct URL..."
 
         # Update the existing webhook
+        # Note: merge_requests_events must be FALSE to prevent duplicate builds
+        # When an MR is merged, GitLab sends both push_event AND merge_request_event
+        # Having both enabled causes Jenkins to receive two webhooks for one merge
         local update_result
         update_result=$(gitlab_api PUT "/projects/${encoded_path}/hooks/${old_id}" \
-            -d "{\"url\": \"${expected_webhook_url}\", \"push_events\": true, \"enable_ssl_verification\": false}")
+            -d "{\"url\": \"${expected_webhook_url}\", \"push_events\": true, \"merge_requests_events\": false, \"enable_ssl_verification\": false}")
 
         if echo "$update_result" | jq -e '.id' &>/dev/null; then
             log_pass "Webhook updated successfully"
@@ -203,9 +226,12 @@ ensure_webhook() {
         log_step "Creating new webhook..."
 
         # Create new webhook
+        # Note: merge_requests_events must be FALSE to prevent duplicate builds
+        # When an MR is merged, GitLab sends both push_event AND merge_request_event
+        # Having both enabled causes Jenkins to receive two webhooks for one merge
         local create_result
         create_result=$(gitlab_api POST "/projects/${encoded_path}/hooks" \
-            -d "{\"url\": \"${expected_webhook_url}\", \"push_events\": true, \"enable_ssl_verification\": false}")
+            -d "{\"url\": \"${expected_webhook_url}\", \"push_events\": true, \"merge_requests_events\": false, \"enable_ssl_verification\": false}")
 
         if echo "$create_result" | jq -e '.id' &>/dev/null; then
             local new_id

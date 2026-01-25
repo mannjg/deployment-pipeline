@@ -397,6 +397,7 @@ get_build_baseline() {
 }
 
 # Wait for env branch build to complete and verify success
+# Also waits for any follow-up builds (e.g., from branch deletion webhook)
 # Usage: wait_and_verify_env_build <env> <baseline_timestamp> [timeout]
 # Returns: 0 if build succeeded, 1 if failed or timeout
 wait_and_verify_env_build() {
@@ -408,22 +409,75 @@ wait_and_verify_env_build() {
     log_info "  Waiting for $env branch build..."
 
     # Wait for a NEW build (started after baseline) using --after flag
-    if "$jenkins_cli" wait "k8s-deployments/$env" --timeout "$timeout" --after "$baseline_timestamp" >/dev/null 2>&1; then
-        # Get clean JSON status after wait completes
-        local status_json=$("$jenkins_cli" status "k8s-deployments/$env" 2>/dev/null)
-        local build_result=$(echo "$status_json" | jq -r '.result // empty')
-
-        if [[ "$build_result" == "SUCCESS" ]]; then
-            log_info "  ✓ $env build succeeded"
-            return 0
-        else
-            log_error "  ✗ $env build failed (result: $build_result)"
-            return 1
-        fi
-    else
+    if ! "$jenkins_cli" wait "k8s-deployments/$env" --timeout "$timeout" --after "$baseline_timestamp" >/dev/null 2>&1; then
         log_error "  ✗ $env build wait timed out or failed"
         return 1
     fi
+
+    # Get build result
+    local status_json=$("$jenkins_cli" status "k8s-deployments/$env" 2>/dev/null)
+    local build_result=$(echo "$status_json" | jq -r '.result // empty')
+
+    if [[ "$build_result" != "SUCCESS" ]]; then
+        log_error "  ✗ $env build failed (result: $build_result)"
+        return 1
+    fi
+
+    log_info "  ✓ $env build succeeded"
+
+    # MR merge triggers two webhooks: (1) merge commit push, (2) source branch deletion
+    # Both trigger Jenkins scans, which may queue a second build for the same commit
+    # Wait for any follow-up build to complete before proceeding
+    wait_for_env_quiescence "$env" "$timeout"
+}
+
+# Wait for env branch to be quiescent (no queued or running builds)
+# Usage: wait_for_env_quiescence <env> [timeout]
+wait_for_env_quiescence() {
+    local env="$1"
+    local timeout="${2:-60}"
+    local jenkins_cli="$SCRIPT_DIR/../04-operations/jenkins-cli.sh"
+    local start_time=$(date +%s)
+
+    # Brief delay to allow branch deletion webhook to arrive
+    # GitLab deletes the source branch async after merge completes
+    sleep 3
+
+    while true; do
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+
+        if [[ $elapsed -ge $timeout ]]; then
+            log_warn "  Quiescence timeout for $env (continuing anyway)"
+            return 0
+        fi
+
+        # Check if build is running
+        local status_json=$("$jenkins_cli" status "k8s-deployments/$env" 2>/dev/null || echo '{}')
+        local building=$(echo "$status_json" | jq -r '.building // false')
+
+        # Check queue for this branch
+        local queue_json=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+            "$JENKINS_URL_EXTERNAL/queue/api/json" 2>/dev/null || echo '{"items":[]}')
+        local queued=$(echo "$queue_json" | jq -r --arg env "$env" \
+            '[.items[] | select(.task.name == $env)] | length')
+
+        if [[ "$building" == "false" ]] && [[ "$queued" == "0" ]]; then
+            # Verify the last build succeeded (in case a follow-up build ran)
+            local last_result=$(echo "$status_json" | jq -r '.result // empty')
+            if [[ "$last_result" != "SUCCESS" ]]; then
+                log_error "  ✗ Follow-up $env build failed (result: $last_result)"
+                return 1
+            fi
+            return 0
+        fi
+
+        if [[ "$queued" != "0" ]] || [[ "$building" == "true" ]]; then
+            log_info "  Waiting for follow-up $env build to complete..."
+        fi
+
+        sleep 5
+    done
 }
 
 # Main Phase 3 function: Reset all CUE configuration via MR workflow

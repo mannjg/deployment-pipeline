@@ -529,10 +529,22 @@ main() {
 
             # Check if release already exists
             if nexus_artifact_exists "$target_version" "maven-releases"; then
-                log_error "Release version $target_version already exists in Nexus"
-                log_error "Cannot promote to prod with existing release version."
-                log_error "Bump the base version in pom.xml (e.g., ${base_version}-SNAPSHOT -> next version)"
-                exit 1
+                # Release exists - check if this is a config-only change
+                # Config-only: same base version and git hash, just different manifests
+                local current_prod_image=$(get_env_image "prod")
+                local current_prod_tag=$(echo "$current_prod_image" | sed 's|.*/||')
+
+                if [[ "$current_prod_tag" == "$target_image_tag" ]]; then
+                    log_info "Config-only promotion detected (same image: $target_image_tag)"
+                    log_info "Skipping artifact operations - updating manifests only"
+                    CONFIG_ONLY_PROMOTION=true
+                else
+                    log_error "Release version $target_version already exists in Nexus"
+                    log_error "Cannot promote to prod with existing release version."
+                    log_error "Bump the base version in pom.xml (e.g., ${base_version}-SNAPSHOT -> next version)"
+                    log_error "Current prod image: $current_prod_tag, Trying to promote: $target_image_tag"
+                    exit 1
+                fi
             fi
             ;;
     esac
@@ -541,20 +553,25 @@ main() {
     log_info "Target version: $target_version ($target_repo)"
     log_info "Target image tag: $target_image_tag"
 
-    # Create temp directory for JAR
-    # Note: Using global variable so cleanup function can access it
-    TMP_DIR_PROMOTE=$(mktemp -d)
+    # Skip artifact operations for config-only promotions
+    if [[ "${CONFIG_ONLY_PROMOTION:-false}" != "true" ]]; then
+        # Create temp directory for JAR
+        # Note: Using global variable so cleanup function can access it
+        TMP_DIR_PROMOTE=$(mktemp -d)
 
-    # Download source JAR
-    local jar_file="$TMP_DIR_PROMOTE/${APP_NAME}.jar"
-    download_jar "$source_version" "$source_repo" "$jar_file"
+        # Download source JAR
+        local jar_file="$TMP_DIR_PROMOTE/${APP_NAME}.jar"
+        download_jar "$source_version" "$source_repo" "$jar_file"
 
-    # Deploy with new version
-    deploy_jar "$jar_file" "$target_version" "$target_repo"
+        # Deploy with new version
+        deploy_jar "$jar_file" "$target_version" "$target_repo"
 
-    # Re-tag Docker image
-    local source_docker_tag="${source_version}-${GIT_HASH}"
-    retag_docker_image "$source_docker_tag" "$target_image_tag"
+        # Re-tag Docker image
+        local source_docker_tag="${source_version}-${GIT_HASH}"
+        retag_docker_image "$source_docker_tag" "$target_image_tag"
+    else
+        log_info "Skipping artifact operations for config-only promotion"
+    fi
 
     log_info "=== Promotion Complete ==="
     log_info "New image tag: $target_image_tag"

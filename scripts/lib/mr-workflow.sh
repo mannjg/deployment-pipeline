@@ -214,13 +214,10 @@ mw_wait_for_mr_pipeline() {
     local encoded_project=$(_mw_encode_project "$project")
     local gitlab_url="${GITLAB_URL_EXTERNAL}"
     local gitlab_token="${GITLAB_TOKEN}"
-    local jenkins_url="${JENKINS_URL_EXTERNAL}"
-    local jenkins_user="${JENKINS_USER}"
-    local jenkins_token="${JENKINS_TOKEN}"
-
-    # Trigger Jenkins scan to discover the branch
-    curl -sk -X POST -u "$jenkins_user:$jenkins_token" \
-        "$jenkins_url/job/k8s-deployments/build?delay=0sec" >/dev/null 2>&1 || true
+    # Note: We do NOT trigger a full MultiBranch scan here.
+    # The GitLab push webhook triggers Jenkins automatically for the feature branch.
+    # Triggering a broad scan would cause duplicate builds for any recently-updated
+    # env branches (dev/stage/prod) that haven't finished processing yet.
 
     local poll_interval="${MR_WORKFLOW_POLL_INTERVAL}"
     local elapsed=0
