@@ -3,6 +3,8 @@
 #
 # Usage:
 #   gitlab-cli.sh mr list <project> [--state opened] [--target dev]
+#   gitlab-cli.sh mr get <project> <iid>
+#   gitlab-cli.sh mr diff <project> <iid> [--files-only]
 #   gitlab-cli.sh mr merge <project> <iid>
 #   gitlab-cli.sh mr close <project> <iid>
 #   gitlab-cli.sh branch list <project> [--pattern "update-*"]
@@ -83,6 +85,11 @@ Commands:
   mr list <project> [options]       List merge requests
     --state <state>                 Filter by state: opened, merged, closed, all (default: opened)
     --target <branch>               Filter by target branch: dev, stage, prod
+
+  mr get <project> <iid>            Get merge request details
+
+  mr diff <project> <iid> [opts]    Get merge request changes/diff
+    --files-only                    Only list changed file paths
 
   mr merge <project> <iid>          Merge a merge request
 
@@ -227,6 +234,56 @@ cmd_mr_close() {
     else
         log_error "Failed to close MR !${iid}"
         exit 1
+    fi
+}
+
+cmd_mr_get() {
+    if [[ $# -lt 2 ]]; then
+        log_error "Usage: gitlab-cli.sh mr get <project> <iid>"
+        exit 1
+    fi
+
+    local project="$1"
+    local iid="$2"
+
+    local encoded_project
+    encoded_project=$(encode_project "$project")
+
+    local response
+    response=$(gitlab_api GET "/projects/${encoded_project}/merge_requests/${iid}") || exit 1
+
+    echo "$response"
+}
+
+cmd_mr_diff() {
+    if [[ $# -lt 2 ]]; then
+        log_error "Usage: gitlab-cli.sh mr diff <project> <iid> [--files-only]"
+        exit 1
+    fi
+
+    local project="$1"
+    local iid="$2"
+    shift 2
+
+    local files_only=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --files-only) files_only=true; shift ;;
+            *) log_error "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+
+    local encoded_project
+    encoded_project=$(encode_project "$project")
+
+    local response
+    response=$(gitlab_api GET "/projects/${encoded_project}/merge_requests/${iid}/changes") || exit 1
+
+    if [[ "$files_only" == "true" ]]; then
+        echo "$response" | jq -r '.changes[].new_path'
+    else
+        echo "$response" | jq '.changes[] | {old_path, new_path, diff}'
     fi
 }
 
@@ -570,6 +627,8 @@ case "$1" in
         shift
         case "$subcommand" in
             list) cmd_mr_list "$@" ;;
+            get) cmd_mr_get "$@" ;;
+            diff) cmd_mr_diff "$@" ;;
             merge) cmd_mr_merge "$@" ;;
             close) cmd_mr_close "$@" ;;
             *) log_error "Unknown mr subcommand: $subcommand"; exit 1 ;;
