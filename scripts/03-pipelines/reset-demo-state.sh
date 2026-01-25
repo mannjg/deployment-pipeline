@@ -377,10 +377,36 @@ Automated reset by reset-demo-state.sh"
         "$title" \
         "$commit_message" \
         "${files_to_commit[@]}"; then
-        log_info "  ✓ $env reset complete (MR !$MW_RESULT_MR_IID merged)"
+        log_info "  ✓ MR !$MW_RESULT_MR_IID merged to $env"
         return 0
     else
-        log_error "  ✗ Failed to reset $env via MR workflow"
+        log_error "  ✗ Failed to create/merge MR for $env"
+        return 1
+    fi
+}
+
+# Wait for env branch build to complete and verify success
+# Usage: wait_and_verify_env_build <env> [timeout]
+# Returns: 0 if build succeeded, 1 if failed or timeout
+wait_and_verify_env_build() {
+    local env="$1"
+    local timeout="${2:-300}"
+    local jenkins_cli="$SCRIPT_DIR/../04-operations/jenkins-cli.sh"
+
+    log_info "  Waiting for $env branch build..."
+
+    local result
+    if result=$("$jenkins_cli" wait "k8s-deployments/$env" --timeout "$timeout" 2>&1); then
+        local build_result=$(echo "$result" | tail -1 | jq -r '.result // empty' 2>/dev/null)
+        if [[ "$build_result" == "SUCCESS" ]]; then
+            log_info "  ✓ $env build succeeded"
+            return 0
+        else
+            log_error "  ✗ $env build failed (result: $build_result)"
+            return 1
+        fi
+    else
+        log_error "  ✗ $env build wait timed out or failed"
         return 1
     fi
 }
@@ -390,13 +416,21 @@ reset_cue_config() {
     log_step "Phase 3: Resetting CUE configuration via MR workflow..."
     log_info ""
     log_info "This uses the standard MR workflow for each environment:"
-    log_info "  feature branch → commit changes → MR → Jenkins CI → merge"
+    log_info "  feature branch → commit changes → MR → Jenkins CI → merge → verify build"
     log_info ""
 
     local failed_envs=()
 
     for env in dev stage prod; do
+        # Step 1: Create MR and merge (waits for feature branch pipeline)
         if ! reset_env_via_mr "$env"; then
+            failed_envs+=("$env")
+            continue
+        fi
+
+        # Step 2: Wait for post-merge build on env branch and verify success
+        # This is triggered by the merge and must complete before env is "ready"
+        if ! wait_and_verify_env_build "$env" 300; then
             failed_envs+=("$env")
         fi
     done
@@ -407,7 +441,7 @@ reset_cue_config() {
     fi
 
     log_info ""
-    log_info "CUE configuration reset complete for all environments"
+    log_info "CUE configuration reset complete - all environments verified"
 }
 
 # =============================================================================
