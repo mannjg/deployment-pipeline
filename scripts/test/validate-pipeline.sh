@@ -185,6 +185,26 @@ preflight_checks() {
 # -----------------------------------------------------------------------------
 # Version Bump
 # -----------------------------------------------------------------------------
+
+# Check if a release version exists in Nexus
+# Returns 0 if exists, 1 if not
+check_nexus_release_exists() {
+    local version="$1"
+    local nexus_url="${NEXUS_URL_EXTERNAL:-https://nexus.jmann.local}"
+
+    # Query Nexus for the release artifact
+    local response=$(curl -sk "${nexus_url}/service/rest/v1/search?repository=maven-releases&group=com.example&name=example-app&version=${version}" 2>/dev/null)
+
+    # Check if any items were found
+    local item_count=$(echo "$response" | jq -r '.items | length // 0' 2>/dev/null)
+
+    if [[ "$item_count" -gt 0 ]]; then
+        return 0  # Exists
+    else
+        return 1  # Does not exist
+    fi
+}
+
 bump_version() {
     log_step "Bumping version in example-app/pom.xml..."
 
@@ -206,9 +226,29 @@ bump_version() {
     local major minor patch
     IFS='.' read -r major minor patch <<< "$base_version"
 
-    # Increment patch
-    patch=$((patch + 1))
-    local new_version="${major}.${minor}.${patch}${suffix}"
+    # Find next available version (not already released in Nexus)
+    local max_attempts=10
+    local attempt=0
+    local new_version=""
+
+    while [[ $attempt -lt $max_attempts ]]; do
+        patch=$((patch + 1))
+        local candidate="${major}.${minor}.${patch}"
+
+        if check_nexus_release_exists "$candidate"; then
+            log_info "Version $candidate already released in Nexus, trying next..."
+        else
+            new_version="${candidate}${suffix}"
+            break
+        fi
+
+        attempt=$((attempt + 1))
+    done
+
+    if [[ -z "$new_version" ]]; then
+        log_fail "Could not find available version after $max_attempts attempts"
+        exit 1
+    fi
 
     log_info "Version: $current_version -> $new_version"
 
