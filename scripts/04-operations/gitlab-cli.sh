@@ -91,6 +91,9 @@ Commands:
   branch list <project> [options]   List branches
     --pattern <glob>                Filter by pattern (e.g., "update-dev-*")
 
+  branch create <project> <branch> [opts]  Create a new branch
+    --from <ref>                    Source branch/tag/commit (default: main)
+
   branch delete <project> <branch>  Delete a branch
 
   file get <project> <path> [opts]  Get file content
@@ -279,6 +282,45 @@ cmd_branch_delete() {
         log_info "Deleted branch: $branch"
     else
         log_error "Failed to delete branch: $branch"
+        exit 1
+    fi
+}
+
+cmd_branch_create() {
+    if [[ $# -lt 2 ]]; then
+        log_error "Usage: gitlab-cli.sh branch create <project> <branch> [--from <ref>]"
+        exit 1
+    fi
+
+    local project="$1"
+    local branch="$2"
+    shift 2
+
+    local from_ref="main"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --from) from_ref="$2"; shift 2 ;;
+            *) log_error "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+
+    local encoded_project
+    encoded_project=$(encode_project "$project")
+
+    local response
+    response=$(gitlab_api POST "/projects/${encoded_project}/repository/branches?branch=${branch}&ref=${from_ref}") || exit 1
+
+    local created_branch
+    created_branch=$(echo "$response" | jq -r '.name // "unknown"')
+
+    if [[ "$created_branch" != "null" && "$created_branch" != "unknown" ]]; then
+        log_info "Created branch: $created_branch from $from_ref"
+        echo "$response" | jq '{name, commit: .commit.short_id}'
+    else
+        local error_msg
+        error_msg=$(echo "$response" | jq -r '.message // "Unknown error"')
+        log_error "Failed to create branch: $error_msg"
         exit 1
     fi
 }
@@ -536,13 +578,14 @@ case "$1" in
     branch)
         shift
         if [[ $# -lt 1 ]]; then
-            log_error "Usage: gitlab-cli.sh branch <list|delete> ..."
+            log_error "Usage: gitlab-cli.sh branch <list|create|delete> ..."
             exit 1
         fi
         subcommand="$1"
         shift
         case "$subcommand" in
             list) cmd_branch_list "$@" ;;
+            create) cmd_branch_create "$@" ;;
             delete) cmd_branch_delete "$@" ;;
             *) log_error "Unknown branch subcommand: $subcommand"; exit 1 ;;
         esac

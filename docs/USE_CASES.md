@@ -341,6 +341,7 @@ Env (env.cue per branch)
 |--------|----------|---------------------|
 | [`scripts/demo/demo-uc-c1-default-label.sh`](../scripts/demo/demo-uc-c1-default-label.sh) | UC-C1 | Platform-wide label propagates to all apps in all envs |
 | [`scripts/demo/demo-uc-c4-prometheus-annotations.sh`](../scripts/demo/demo-uc-c4-prometheus-annotations.sh) | UC-C4 | Platform-wide pod annotations propagate to all apps |
+| [`scripts/demo/demo-uc-c2-security-context.sh`](../scripts/demo/demo-uc-c2-security-context.sh) | UC-C2 | Platform-wide pod security context (runAsNonRoot) |
 | [`scripts/demo/demo-uc-c6-platform-env-override.sh`](../scripts/demo/demo-uc-c6-platform-env-override.sh) | UC-C6 | Platform default with environment override; prod can diverge |
 
 ### Future Demos (Phase 3+)
@@ -396,7 +397,7 @@ While preserving:
 | UC-B5 | App probe with env override | 🔲 | 🔲 | 🔲 | — | |
 | UC-B6 | App env var with env override | 🔲 | 🔲 | 🔲 | — | |
 | UC-C1 | Add default label | ✅ | ✅ | ✅ | `uc-c1-default-label` | Pipeline verified 2026-01-21 |
-| UC-C2 | Add security context | ⚠️ | 🔲 | 🔲 | — | Schema exists, disabled by default |
+| UC-C2 | Add security context | ✅ | ✅ | 🔲 | `uc-c2-security-context` | Demo script created, pending verification |
 | UC-C3 | Change deployment strategy | 🔲 | 🔲 | 🔲 | — | |
 | UC-C4 | Add standard pod annotation | ✅ | ✅ | ✅ | `uc-c4-prometheus-annotations` | Pipeline verified 2026-01-21 |
 | UC-C5 | Platform default + app override | 🔲 | 🔲 | 🔲 | — | Multi-app pivot (uses postgres) |

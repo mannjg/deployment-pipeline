@@ -81,6 +81,56 @@ demo_complete() {
 }
 
 # ============================================================================
+# GITLAB API OPERATIONS (avoid subtree push divergent history)
+# ============================================================================
+
+# Create a feature branch in GitLab from dev and update a file
+# This avoids subtree push which creates divergent commit history
+# Usage: gitlab_create_feature_branch <branch_name> <file_path> <commit_message>
+# The file content should be piped to stdin
+# Returns: 0 on success, 1 on failure
+gitlab_create_feature_branch() {
+    local branch_name="$1"
+    local file_path="$2"
+    local commit_message="$3"
+    local project="${GITLAB_PROJECT:-p2c/k8s-deployments}"
+    local base_branch="${4:-dev}"
+
+    local gitlab_cli="${SCRIPT_DIR}/../../04-operations/gitlab-cli.sh"
+
+    # Create branch from dev
+    demo_action "Creating branch '$branch_name' from $base_branch in GitLab..."
+    if ! "$gitlab_cli" branch create "$project" "$branch_name" --from "$base_branch" 2>/dev/null; then
+        demo_fail "Failed to create branch in GitLab"
+        return 1
+    fi
+
+    # Update the file (content from stdin)
+    demo_action "Updating $file_path in GitLab..."
+    if ! "$gitlab_cli" file update "$project" "$file_path" \
+        --ref "$branch_name" \
+        --message "$commit_message" \
+        --stdin; then
+        demo_fail "Failed to update file in GitLab"
+        return 1
+    fi
+
+    demo_verify "Feature branch '$branch_name' created in GitLab"
+    return 0
+}
+
+# Get file content from GitLab
+# Usage: gitlab_get_file <file_path> [--ref <branch>]
+gitlab_get_file() {
+    local file_path="$1"
+    shift
+    local project="${GITLAB_PROJECT:-p2c/k8s-deployments}"
+    local gitlab_cli="${SCRIPT_DIR}/../../04-operations/gitlab-cli.sh"
+
+    "$gitlab_cli" file get "$project" "$file_path" "$@"
+}
+
+# ============================================================================
 # GIT OPERATIONS
 # ============================================================================
 
