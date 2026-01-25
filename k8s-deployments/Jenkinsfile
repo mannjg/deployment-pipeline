@@ -367,11 +367,9 @@ def createPromotionMR(String sourceEnv) {
                     if (!newImageTag || newImageTag.contains("ERROR") || newImageTag.contains("[")) {
                         echo "Artifact promotion output:"
                         sh "cat /tmp/promote.log || true"
-                        echo "WARNING: Artifact promotion may have failed - continuing with MR creation"
-                        newImageTag = ''
-                    } else {
-                        echo "New image tag for ${targetEnv}: ${newImageTag}"
+                        error "Artifact promotion failed - cannot create promotion MR without valid image tag. If release version already exists in Nexus, bump the version in pom.xml."
                     }
+                    echo "New image tag for ${targetEnv}: ${newImageTag}"
                 }
 
                 sh '''
