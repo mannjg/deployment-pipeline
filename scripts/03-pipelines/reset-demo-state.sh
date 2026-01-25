@@ -51,41 +51,16 @@ else
     exit 1
 fi
 
-# =============================================================================
-# Get Credentials
-# =============================================================================
-get_credentials() {
-    log_step "Loading credentials..."
+# Set MR workflow configuration (required before sourcing library)
+export MR_WORKFLOW_TIMEOUT=600
+export MR_WORKFLOW_POLL_INTERVAL=15
 
-    # Get GITLAB_TOKEN (env var or K8s secret)
-    GITLAB_TOKEN="${GITLAB_TOKEN:-}"
-    if [[ -z "$GITLAB_TOKEN" ]]; then
-        GITLAB_TOKEN=$(kubectl get secret "${GITLAB_API_TOKEN_SECRET}" -n "${GITLAB_NAMESPACE}" \
-            -o jsonpath="{.data.${GITLAB_API_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
-    fi
+# Load MR workflow library
+source "$SCRIPT_DIR/../lib/mr-workflow.sh"
 
-    if [[ -z "$GITLAB_TOKEN" ]]; then
-        log_error "GITLAB_TOKEN not set and could not retrieve from K8s secret"
-        exit 1
-    fi
-
-    # Get Jenkins credentials
-    JENKINS_USER="${JENKINS_USER:-}"
-    JENKINS_TOKEN="${JENKINS_TOKEN:-}"
-    if [[ -z "$JENKINS_USER" ]]; then
-        JENKINS_USER=$(kubectl get secret "${JENKINS_ADMIN_SECRET}" -n "${JENKINS_NAMESPACE}" \
-            -o jsonpath="{.data.${JENKINS_ADMIN_USER_KEY}}" 2>/dev/null | base64 -d) || true
-    fi
-    if [[ -z "$JENKINS_TOKEN" ]]; then
-        JENKINS_TOKEN=$(kubectl get secret "${JENKINS_ADMIN_SECRET}" -n "${JENKINS_NAMESPACE}" \
-            -o jsonpath="{.data.${JENKINS_ADMIN_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
-    fi
-
-    GITLAB_URL="https://${GITLAB_HOST_EXTERNAL}"
-    JENKINS_URL="${JENKINS_URL_EXTERNAL:-http://jenkins.local}"
-    log_info "GitLab: $GITLAB_URL"
-    log_info "Jenkins: $JENKINS_URL"
-}
+# Credentials are loaded by mr-workflow.sh via require_* functions
+# GITLAB_TOKEN, JENKINS_USER, JENKINS_TOKEN are now set
+# GITLAB_URL_EXTERNAL, JENKINS_URL_EXTERNAL are set by infra.sh
 
 # =============================================================================
 # Phase 1: Clean up Jenkins queue and running jobs
@@ -101,7 +76,7 @@ cleanup_jenkins_queue() {
     local jenkins_auth="$JENKINS_USER:$JENKINS_TOKEN"
 
     # Fetch Jenkins CRUMB for CSRF protection
-    local crumb_response=$(curl -sk -u "$jenkins_auth" "$JENKINS_URL/crumbIssuer/api/json" 2>/dev/null)
+    local crumb_response=$(curl -sk -u "$jenkins_auth" "$JENKINS_URL_EXTERNAL/crumbIssuer/api/json" 2>/dev/null)
     local crumb_field=$(echo "$crumb_response" | jq -r '.crumbRequestField // empty' 2>/dev/null)
     local crumb_value=$(echo "$crumb_response" | jq -r '.crumb // empty' 2>/dev/null)
 
@@ -114,14 +89,14 @@ cleanup_jenkins_queue() {
 
     # 1. Cancel all queued items
     log_info "Canceling queued Jenkins jobs..."
-    local queue_items=$(curl -sk -u "$jenkins_auth" "$JENKINS_URL/queue/api/json" 2>/dev/null | \
+    local queue_items=$(curl -sk -u "$jenkins_auth" "$JENKINS_URL_EXTERNAL/queue/api/json" 2>/dev/null | \
         jq -r '.items[].id' 2>/dev/null || true)
 
     local canceled=0
     if [[ -n "$queue_items" ]]; then
         for item_id in $queue_items; do
             curl -sk -X POST -u "$jenkins_auth" $crumb_header \
-                "$JENKINS_URL/queue/cancelItem?id=$item_id" >/dev/null 2>&1 && \
+                "$JENKINS_URL_EXTERNAL/queue/cancelItem?id=$item_id" >/dev/null 2>&1 && \
                 canceled=$((canceled + 1))
         done
     fi
@@ -131,20 +106,20 @@ cleanup_jenkins_queue() {
     log_info "Aborting running Jenkins builds..."
     local aborted=0
 
-    local jobs=$(curl -sk -u "$jenkins_auth" "$JENKINS_URL/job/k8s-deployments/api/json" 2>/dev/null | \
+    local jobs=$(curl -sk -u "$jenkins_auth" "$JENKINS_URL_EXTERNAL/job/k8s-deployments/api/json" 2>/dev/null | \
         jq -r '.jobs[].name' 2>/dev/null || true)
 
     if [[ -n "$jobs" ]]; then
         for job_name in $jobs; do
             local encoded_job=$(echo "$job_name" | jq -sRr @uri)
             local builds=$(curl -sk -u "$jenkins_auth" \
-                "$JENKINS_URL/job/k8s-deployments/job/$encoded_job/api/json" 2>/dev/null | \
+                "$JENKINS_URL_EXTERNAL/job/k8s-deployments/job/$encoded_job/api/json" 2>/dev/null | \
                 jq -r '.builds[]? | select(.building == true) | .number' 2>/dev/null || true)
 
             for build_num in $builds; do
                 if [[ -n "$build_num" ]]; then
                     curl -sk -X POST -u "$jenkins_auth" $crumb_header \
-                        "$JENKINS_URL/job/k8s-deployments/job/$encoded_job/$build_num/stop" >/dev/null 2>&1 && \
+                        "$JENKINS_URL_EXTERNAL/job/k8s-deployments/job/$encoded_job/$build_num/stop" >/dev/null 2>&1 && \
                         aborted=$((aborted + 1))
                 fi
             done
@@ -311,268 +286,128 @@ extract_images_from_env_cue() {
     log_info "  postgres image: $POSTGRES_IMAGE"
 }
 
-# Reset services/ directory from main branch
-reset_services_directory() {
+
+# =============================================================================
+# Phase 3: Reset CUE Configuration via MR Workflow
+# =============================================================================
+
+# Reset a single environment using MR workflow
+# Usage: reset_env_via_mr <env>
+# This creates a feature branch, commits all reset files, creates MR,
+# waits for Jenkins to regenerate manifests, and merges.
+reset_env_via_mr() {
     local env="$1"
-    local gitlab_cli="$SCRIPT_DIR/../04-operations/gitlab-cli.sh"
+    local timestamp=$(date +%s)
+    local branch_name="reset-demo-${env}-${timestamp}"
+
+    log_info ""
+    log_info "=== Resetting $env branch via MR workflow ==="
+
+    # 1. Extract current images (to preserve CI/CD-managed values)
+    extract_images_from_env_cue "$env"
+
+    # 2. Gather all files to reset
+    local files_to_commit=()
+
+    # 2a. Get services/ files from main
     local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
-
-    log_info "Resetting services/ directory on $env from main..."
-
-    # Get list of files in services/ from main branch (recursive)
-    local tree_url="$GITLAB_URL/api/v4/projects/$encoded_project/repository/tree?ref=main&path=services&recursive=true&per_page=100"
-    local files=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$tree_url" 2>/dev/null | \
+    local tree_url="$GITLAB_URL_EXTERNAL/api/v4/projects/$encoded_project/repository/tree?ref=main&path=services&recursive=true&per_page=100"
+    local service_files=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$tree_url" 2>/dev/null | \
         jq -r '.[] | select(.type == "blob") | .path')
 
-    if [[ -z "$files" ]]; then
-        log_warn "Could not list files in services/ directory"
-        return 1
-    fi
-
-    local updated=0
-    for file_path in $files; do
-        local encoded_file=$(echo "$file_path" | sed 's/\//%2F/g')
-
-        # Get content from main
-        local main_content=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file?ref=main" 2>/dev/null)
-
-        if [[ -z "$main_content" ]] || ! echo "$main_content" | jq -e '.content' > /dev/null 2>&1; then
-            continue
-        fi
-
-        local content_b64=$(echo "$main_content" | jq -r '.content')
-
-        # Update file on env branch
-        local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset $file_path from main [no-promote]\"}" \
-            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
-
-        if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
-            updated=$((updated + 1))
+    for file_path in $service_files; do
+        local content=$(mw_get_file "$DEPLOYMENTS_REPO_PATH" "main" "$file_path")
+        if [[ -n "$content" ]]; then
+            local content_b64=$(echo "$content" | base64 -w0)
+            files_to_commit+=("$file_path:base64:$content_b64")
         fi
     done
+    log_info "  Prepared ${#files_to_commit[@]} files from services/"
 
-    log_info "  Updated $updated files in services/"
-}
-
-# Reset Jenkinsfile from main branch
-reset_jenkinsfile() {
-    local env="$1"
-    local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
-
-    log_info "Resetting Jenkinsfile on $env from main..."
-
-    local encoded_file="Jenkinsfile"
-
-    # Get content from main
-    local main_content=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file?ref=main" 2>/dev/null)
-
-    if [[ -z "$main_content" ]] || ! echo "$main_content" | jq -e '.content' > /dev/null 2>&1; then
-        log_warn "Could not get Jenkinsfile from main"
-        return 1
+    # 2b. Get Jenkinsfile from main
+    local jenkinsfile_content=$(mw_get_file "$DEPLOYMENTS_REPO_PATH" "main" "Jenkinsfile")
+    if [[ -n "$jenkinsfile_content" ]]; then
+        local jenkinsfile_b64=$(echo "$jenkinsfile_content" | base64 -w0)
+        files_to_commit+=("Jenkinsfile:base64:$jenkinsfile_b64")
+        log_info "  Prepared Jenkinsfile"
     fi
 
-    local content_b64=$(echo "$main_content" | jq -r '.content')
-
-    # Update on env branch
-    local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset Jenkinsfile from main [no-promote]\"}" \
-        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
-
-    if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
-        log_info "  Jenkinsfile updated"
-    fi
-}
-
-# Reset scripts/ directory from main branch
-reset_scripts_directory() {
-    local env="$1"
-    local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
-
-    log_info "Resetting scripts/ directory on $env from main..."
-
-    # Get list of files in scripts/ from main branch
-    local tree_url="$GITLAB_URL/api/v4/projects/$encoded_project/repository/tree?ref=main&path=scripts&recursive=true&per_page=100"
-    local files=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$tree_url" 2>/dev/null | \
+    # 2c. Get scripts/ files from main
+    tree_url="$GITLAB_URL_EXTERNAL/api/v4/projects/$encoded_project/repository/tree?ref=main&path=scripts&recursive=true&per_page=100"
+    local script_files=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$tree_url" 2>/dev/null | \
         jq -r '.[] | select(.type == "blob") | .path')
 
-    if [[ -z "$files" ]]; then
-        log_info "  No scripts/ directory on main"
-        return 0
-    fi
-
-    local updated=0
-    for file_path in $files; do
-        local encoded_file=$(echo "$file_path" | sed 's/\//%2F/g')
-
-        # Get content from main
-        local main_content=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file?ref=main" 2>/dev/null)
-
-        if [[ -z "$main_content" ]] || ! echo "$main_content" | jq -e '.content' > /dev/null 2>&1; then
-            continue
-        fi
-
-        local content_b64=$(echo "$main_content" | jq -r '.content')
-
-        # Try PUT first (update), fall back to POST (create) if file doesn't exist
-        local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset $file_path from main [no-promote]\"}" \
-            "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
-
-        if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
-            updated=$((updated + 1))
-        else
-            # Try POST for new files
-            result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-                -H "Content-Type: application/json" \
-                -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: add $file_path from main [no-promote]\"}" \
-                "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$encoded_file" 2>/dev/null)
-
-            if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
-                updated=$((updated + 1))
-            fi
+    local script_count=0
+    for file_path in $script_files; do
+        local content=$(mw_get_file "$DEPLOYMENTS_REPO_PATH" "main" "$file_path")
+        if [[ -n "$content" ]]; then
+            local content_b64=$(echo "$content" | base64 -w0)
+            files_to_commit+=("$file_path:base64:$content_b64")
+            script_count=$((script_count + 1))
         fi
     done
+    log_info "  Prepared $script_count files from scripts/"
 
-    log_info "  Updated $updated files in scripts/"
-}
-
-# Reset env.cue from baseline template
-reset_env_cue_from_baseline() {
-    local env="$1"
+    # 2d. Generate env.cue from baseline
     local baseline_file="$BASELINES_DIR/env-${env}.cue"
-    local encoded_project=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
-
-    log_info "Resetting env.cue on $env from baseline..."
-
-    if [[ ! -f "$baseline_file" ]]; then
-        log_error "Baseline file not found: $baseline_file"
-        return 1
+    if [[ -f "$baseline_file" ]]; then
+        local env_cue_content=$(cat "$baseline_file" \
+            | sed "s|{{EXAMPLE_APP_IMAGE}}|$EXAMPLE_APP_IMAGE|g" \
+            | sed "s|{{POSTGRES_IMAGE}}|$POSTGRES_IMAGE|g")
+        local env_cue_b64=$(echo "$env_cue_content" | base64 -w0)
+        files_to_commit+=("env.cue:base64:$env_cue_b64")
+        log_info "  Prepared env.cue from baseline"
     fi
 
-    # Read baseline and substitute image placeholders
-    local content=$(cat "$baseline_file" \
-        | sed "s|{{EXAMPLE_APP_IMAGE}}|$EXAMPLE_APP_IMAGE|g" \
-        | sed "s|{{POSTGRES_IMAGE}}|$POSTGRES_IMAGE|g")
+    # 3. Execute MR workflow
+    log_info "  Creating feature branch and MR..."
 
-    # Base64 encode
-    local content_b64=$(echo "$content" | base64 -w0)
+    local title="chore: reset $env to baseline [no-promote]"
+    local commit_message="chore: reset $env CUE configuration to baseline [no-promote]
 
-    # Update on GitLab
-    local result=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "{\"branch\": \"$env\", \"encoding\": \"base64\", \"content\": \"$content_b64\", \"commit_message\": \"chore: reset env.cue to baseline [no-promote]\"}" \
-        "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/env.cue" 2>/dev/null)
+Resets services/, scripts/, Jenkinsfile, and env.cue from main.
+Preserves CI/CD-managed image tags.
 
-    if echo "$result" | jq -e '.file_path' > /dev/null 2>&1; then
-        log_info "  env.cue reset to baseline"
-    else
-        local error=$(echo "$result" | jq -r '.message // "unknown error"' 2>/dev/null)
-        log_warn "  Failed to reset env.cue: $error"
-    fi
-}
+Automated reset by reset-demo-state.sh"
 
-# Wait for Jenkins build (using jenkins-cli.sh)
-wait_for_build() {
-    local job="$1"
-    local timeout_seconds="${2:-300}"
-    local after_timestamp="${3:-0}"
-
-    local cli_args=("$job" --timeout "$timeout_seconds")
-    if [[ $after_timestamp -gt 0 ]]; then
-        cli_args+=(--after "$after_timestamp")
-    fi
-
-    log_info "  Waiting for build on $job..."
-
-    local result
-    if result=$("$SCRIPT_DIR/../04-operations/jenkins-cli.sh" wait "${cli_args[@]}" 2>&1); then
-        local build_num
-        build_num=$(echo "$result" | tail -1 | jq -r '.number // empty' 2>/dev/null)
-        log_info "  Build #${build_num:-?} completed successfully"
+    if mw_complete_mr_workflow \
+        "$DEPLOYMENTS_REPO_PATH" \
+        "$env" \
+        "$branch_name" \
+        "$title" \
+        "$commit_message" \
+        "${files_to_commit[@]}"; then
+        log_info "  ✓ $env reset complete (MR !$MW_RESULT_MR_IID merged)"
         return 0
     else
-        log_warn "  Build wait failed or timed out"
+        log_error "  ✗ Failed to reset $env via MR workflow"
         return 1
     fi
 }
 
-# Main Phase 3 function: Reset all CUE configuration
+# Main Phase 3 function: Reset all CUE configuration via MR workflow
 reset_cue_config() {
-    log_step "Phase 3: Resetting CUE configuration on all environment branches..."
+    log_step "Phase 3: Resetting CUE configuration via MR workflow..."
+    log_info ""
+    log_info "This uses the standard MR workflow for each environment:"
+    log_info "  feature branch → commit changes → MR → Jenkins CI → merge"
+    log_info ""
+
+    local failed_envs=()
 
     for env in dev stage prod; do
-        log_info ""
-        log_info "=== Resetting $env branch ==="
-
-        # 1. Extract current images (to preserve CI/CD-managed values)
-        extract_images_from_env_cue "$env"
-
-        # 2. Reset services/ directory from main
-        reset_services_directory "$env"
-
-        # 3. Reset Jenkinsfile from main
-        reset_jenkinsfile "$env"
-
-        # 4. Reset scripts/ directory from main
-        reset_scripts_directory "$env"
-
-        # 5. Reset env.cue from baseline (with extracted images)
-        reset_env_cue_from_baseline "$env"
-    done
-
-    # 6. Trigger Jenkins builds to regenerate manifests
-    log_step "Triggering Jenkins builds to regenerate manifests..."
-
-    local jenkins_auth="$JENKINS_USER:$JENKINS_TOKEN"
-
-    # Trigger multibranch scan
-    curl -sk -X POST -u "$jenkins_auth" \
-        "$JENKINS_URL/job/k8s-deployments/build?delay=0sec" >/dev/null 2>&1 || true
-
-    # Wait a moment for scan to discover changes
-    sleep 10
-
-    # Wait for each environment branch build
-    local build_timestamp=$(($(date +%s) * 1000))
-    for env in dev stage prod; do
-        wait_for_build "k8s-deployments/$env" 300 "$build_timestamp" || true
-    done
-
-    # Close any promotion MRs created by the reset builds
-    # (These happen because env branches have different images, which triggers promotion logic)
-    log_info "Closing any promotion MRs created during reset..."
-    local gitlab_cli="$SCRIPT_DIR/../04-operations/gitlab-cli.sh"
-    for target in stage prod; do
-        local mr_list
-        if mr_list=$("$gitlab_cli" mr list "$DEPLOYMENTS_REPO_PATH" --state opened --target "$target" 2>/dev/null); then
-            local promote_mrs=$(echo "$mr_list" | jq -r 'select(.source_branch | startswith("promote-")) | .iid' 2>/dev/null)
-            for mr_iid in $promote_mrs; do
-                if [[ -n "$mr_iid" ]]; then
-                    "$gitlab_cli" mr close "$DEPLOYMENTS_REPO_PATH" "$mr_iid" >/dev/null 2>&1 || true
-                    log_info "  Closed promotion MR !$mr_iid"
-                fi
-            done
+        if ! reset_env_via_mr "$env"; then
+            failed_envs+=("$env")
         fi
     done
 
-    # Clean up any orphaned promote-* branches
-    local branches
-    if branches=$("$gitlab_cli" branch list "$DEPLOYMENTS_REPO_PATH" --pattern "promote-*" 2>/dev/null); then
-        while IFS= read -r branch; do
-            if [[ -n "$branch" ]]; then
-                "$gitlab_cli" branch delete "$DEPLOYMENTS_REPO_PATH" "$branch" >/dev/null 2>&1 || true
-            fi
-        done <<< "$branches"
+    if [[ ${#failed_envs[@]} -gt 0 ]]; then
+        log_error "Failed to reset environments: ${failed_envs[*]}"
+        return 1
     fi
 
-    log_info "CUE configuration reset complete"
+    log_info ""
+    log_info "CUE configuration reset complete for all environments"
 }
 
 # =============================================================================
@@ -633,7 +468,9 @@ main() {
     echo "  - App version at 1.0.0-SNAPSHOT"
     echo ""
 
-    get_credentials
+    log_step "Credentials loaded via mr-workflow.sh"
+    log_info "GitLab: $GITLAB_URL_EXTERNAL"
+    log_info "Jenkins: $JENKINS_URL_EXTERNAL"
 
     # Phase 1: Clean up Jenkins
     cleanup_jenkins_queue
