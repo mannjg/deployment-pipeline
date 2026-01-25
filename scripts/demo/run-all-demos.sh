@@ -172,15 +172,15 @@ print_summary() {
             case "$result" in
                 PASS)
                     printf "  ${GREEN}%-25s %-8s %s${NC}\n" "$id" "PASS" "$duration_str"
-                    ((passed++))
+                    ((++passed))
                     ;;
                 FAIL)
                     printf "  ${RED}%-25s %-8s %s${NC}\n" "$id" "FAIL" "$duration_str"
-                    ((failed++))
+                    ((++failed))
                     ;;
                 SKIP)
                     printf "  ${YELLOW}%-25s %-8s %s${NC}\n" "$id" "SKIP" "-"
-                    ((skipped++))
+                    ((++skipped))
                     ;;
             esac
         fi
