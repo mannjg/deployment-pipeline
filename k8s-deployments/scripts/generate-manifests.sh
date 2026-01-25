@@ -51,7 +51,7 @@ esac
 mkdir -p "${MANIFEST_DIR}"
 
 log_info "Cleaning old manifests..."
-rm -f "${MANIFEST_DIR}"/*.yaml
+find "${MANIFEST_DIR}" -name "*.yaml" -type f -delete
 
 # Generate manifests for each app in the environment
 cd "${PROJECT_ROOT}"
