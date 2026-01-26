@@ -81,7 +81,7 @@ Changes made to `env.cue` on a single environment branch. These intentionally **
 | **Expected Behavior** | Dev ConfigMap has dev Redis; prod ConfigMap has prod Redis |
 | **Validates** | ConfigMap entries set in env.cue are environment-specific |
 
-**Demo Script:** [`scripts/demo/demo-env-configmap.sh`](../scripts/demo/demo-env-configmap.sh) (implements UC-A3)
+**Demo Script:** [`scripts/demo/demo-uc-a3-env-configmap.sh`](../scripts/demo/demo-uc-a3-env-configmap.sh) (implements UC-A3)
 
 ---
 
@@ -129,7 +129,7 @@ Changes made to `services/apps/<app>.cue`. These **SHOULD propagate** to all env
 | **Expected Behavior** | Dev/stage get 300; prod gets 600 |
 | **Validates** | Environment override takes precedence over app-level default |
 
-**Demo Script:** [`scripts/demo/demo-app-override.sh`](../scripts/demo/demo-app-override.sh) (implements UC-B4)
+**Demo Script:** [`scripts/demo/demo-uc-b4-app-override.sh`](../scripts/demo/demo-uc-b4-app-override.sh) (implements UC-B4)
 
 ### UC-B5: App-Level Probe with Environment Override
 
@@ -332,8 +332,8 @@ Env (env.cue per branch)
 
 | Script | Use Case | What It Demonstrates |
 |--------|----------|---------------------|
-| [`scripts/demo/demo-env-configmap.sh`](../scripts/demo/demo-env-configmap.sh) | UC-A3 | Environment-specific changes stay isolated |
-| [`scripts/demo/demo-app-override.sh`](../scripts/demo/demo-app-override.sh) | UC-B4 | App defaults propagate; environments can override |
+| [`scripts/demo/demo-uc-a3-env-configmap.sh`](../scripts/demo/demo-uc-a3-env-configmap.sh) | UC-A3 | Environment-specific changes stay isolated |
+| [`scripts/demo/demo-uc-b4-app-override.sh`](../scripts/demo/demo-uc-b4-app-override.sh) | UC-B4 | App defaults propagate; environments can override |
 
 ### Platform-Wide Demos (Phase 2)
 
@@ -389,11 +389,11 @@ While preserving:
 |----|----------|-------------|-------------|-------------------|--------|-------|
 | UC-A1 | Adjust replica count | 🔲 | 🔲 | 🔲 | — | |
 | UC-A2 | Enable debug mode | 🔲 | 🔲 | 🔲 | — | |
-| UC-A3 | Env-specific ConfigMap | ✅ | ✅ | 🔲 | — | Demo exists, needs pipeline verification |
+| UC-A3 | Env-specific ConfigMap | ✅ | ✅ | 🚧 | `uc-a3-env-configmap` | Full pipeline demo, pending verification |
 | UC-B1 | Add app env var | 🔲 | 🔲 | 🔲 | — | |
 | UC-B2 | Add app annotation | 🔲 | 🔲 | 🔲 | — | |
 | UC-B3 | Add app ConfigMap entry | 🔲 | 🔲 | 🔲 | — | |
-| UC-B4 | App ConfigMap with env override | ✅ | ✅ | 🔲 | — | Demo exists, needs pipeline verification |
+| UC-B4 | App ConfigMap with env override | ✅ | ✅ | 🚧 | `uc-b4-app-override` | Full pipeline demo, pending verification |
 | UC-B5 | App probe with env override | 🔲 | 🔲 | 🔲 | — | |
 | UC-B6 | App env var with env override | 🔲 | 🔲 | 🔲 | — | |
 | UC-C1 | Add default label | ✅ | ✅ | ✅ | `uc-c1-default-label` | Pipeline verified 2026-01-21 |

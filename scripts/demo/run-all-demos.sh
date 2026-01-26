@@ -28,7 +28,11 @@ RESET_SCRIPT="$REPO_ROOT/scripts/03-pipelines/reset-demo-state.sh"
 DEMO_ORDER=(
     # Core: App code lifecycle (SNAPSHOT → RC → Release)
     "validate-pipeline:../test/validate-pipeline.sh:App code lifecycle across dev/stage/prod"
-    # Category C: Platform-Wide (implemented)
+    # Category A: Environment-Specific
+    "UC-A3:demo-uc-a3-env-configmap.sh:Environment-specific ConfigMap (isolated)"
+    # Category B: App-Level Cross-Environment
+    "UC-B4:demo-uc-b4-app-override.sh:App ConfigMap with environment override"
+    # Category C: Platform-Wide
     "UC-C1:demo-uc-c1-default-label.sh:Platform-wide label propagation"
     "UC-C2:demo-uc-c2-security-context.sh:Platform-wide pod security context"
     "UC-C4:demo-uc-c4-prometheus-annotations.sh:Platform-wide pod annotations"
