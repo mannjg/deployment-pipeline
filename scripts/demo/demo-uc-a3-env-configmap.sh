@@ -51,8 +51,8 @@ DEMO_CONFIGMAP="${DEMO_APP}-config"
 TARGET_ENV="dev"
 OTHER_ENVS=("stage" "prod")
 
-# CUE edit helper path
-CUE_EDIT="${SCRIPT_DIR}/lib/cue-edit.py"
+# GitLab CLI path
+GITLAB_CLI="${PROJECT_ROOT}/scripts/04-operations/gitlab-cli.sh"
 
 # ============================================================================
 # MAIN DEMO
@@ -144,20 +144,51 @@ if [[ -z "$DEV_ENV_CUE" ]]; then
 fi
 demo_verify "Retrieved $TARGET_ENV's env.cue"
 
-# Modify the content locally using cue-edit.py
-demo_action "Adding ConfigMap entry to env.cue..."
-TEMP_ENV_CUE="${K8S_DEPLOYMENTS_DIR}/.tmp-env-cue-$$.cue"
-echo "$DEV_ENV_CUE" > "$TEMP_ENV_CUE"
-
-# Use cue-edit.py to add the ConfigMap entry
-if ! python3 "${CUE_EDIT}" env-configmap add "$TEMP_ENV_CUE" "$TARGET_ENV" "$DEMO_APP_CUE" "$DEMO_KEY" "$DEMO_VALUE"; then
-    demo_fail "Failed to add ConfigMap entry to env.cue"
-    rm -f "$TEMP_ENV_CUE"
+# Check if entry already exists
+if echo "$DEV_ENV_CUE" | grep -q "\"$DEMO_KEY\""; then
+    demo_warn "Key '$DEMO_KEY' already exists in $TARGET_ENV's env.cue"
+    demo_info "Run reset-demo-state.sh to clean up"
     exit 1
 fi
 
-MODIFIED_ENV_CUE=$(cat "$TEMP_ENV_CUE")
-rm -f "$TEMP_ENV_CUE"
+# Modify the content using awk (no local CUE validation - Jenkins CI will validate)
+# Add configMap entry to the dev exampleApp appConfig block
+demo_action "Adding ConfigMap entry to env.cue..."
+
+# Find the dev: exampleApp: block and add entry to its configMap.data
+MODIFIED_ENV_CUE=$(echo "$DEV_ENV_CUE" | awk -v env="$TARGET_ENV" -v key="$DEMO_KEY" -v val="$DEMO_VALUE" '
+BEGIN { in_target=0; in_app=0; in_appconfig=0; in_configmap=0 }
+$0 ~ "^" env ":" { in_target=1 }
+in_target && /exampleApp:/ { in_app=1 }
+in_app && /appConfig:/ { in_appconfig=1 }
+in_appconfig && /configMap:/ { in_configmap=1 }
+in_configmap && /data: \{/ {
+    print
+    print "\t\t\t\t\"" key "\": \"" val "\""
+    next
+}
+# Reset when we exit the target block (next top-level key)
+/^[a-z]+:/ && $0 !~ "^" env ":" { in_target=0; in_app=0; in_appconfig=0; in_configmap=0 }
+{print}
+')
+
+if [[ -z "$MODIFIED_ENV_CUE" ]]; then
+    demo_fail "Failed to modify env.cue"
+    exit 1
+fi
+
+# Verify the change was actually made
+if [[ "$MODIFIED_ENV_CUE" == "$DEV_ENV_CUE" ]]; then
+    demo_fail "No change made - configMap data block pattern not found in $TARGET_ENV env.cue"
+    exit 1
+fi
+
+# Verify the key appears in modified content
+if ! echo "$MODIFIED_ENV_CUE" | grep -q "\"$DEMO_KEY\""; then
+    demo_fail "Failed to add ConfigMap entry - key not found in modified content"
+    exit 1
+fi
+
 demo_verify "Modified env.cue with ConfigMap entry"
 
 demo_action "Change preview:"
@@ -172,24 +203,22 @@ demo_step 4 "Push Change via GitLab MR"
 # Generate feature branch name
 FEATURE_BRANCH="uc-a3-env-configmap-$(date +%s)"
 
-# Create branch from dev
-PROJECT="${DEPLOYMENTS_REPO_PATH:-p2c/k8s-deployments}"
-ENCODED_PROJECT=$(echo "$PROJECT" | sed 's/\//%2F/g')
-
-demo_action "Creating branch '$FEATURE_BRANCH' from $TARGET_ENV..."
-branch_result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-    "${GITLAB_URL_EXTERNAL}/api/v4/projects/${ENCODED_PROJECT}/repository/branches?branch=${FEATURE_BRANCH}&ref=${TARGET_ENV}" 2>/dev/null)
-
-if ! echo "$branch_result" | jq -e '.name' >/dev/null 2>&1; then
-    demo_fail "Could not create branch: $(echo "$branch_result" | jq -r '.message // "unknown error"')"
+demo_action "Creating branch '$FEATURE_BRANCH' from $TARGET_ENV in GitLab..."
+"$GITLAB_CLI" branch create p2c/k8s-deployments "$FEATURE_BRANCH" --from "$TARGET_ENV" >/dev/null || {
+    demo_fail "Failed to create branch in GitLab"
     exit 1
-fi
+}
 demo_verify "Created branch $FEATURE_BRANCH from $TARGET_ENV"
 
-# Commit the modified env.cue to the feature branch
-demo_action "Committing change to feature branch..."
-commit_file_to_branch "$FEATURE_BRANCH" "env.cue" "$MODIFIED_ENV_CUE" \
-    "feat: add $DEMO_KEY to $TARGET_ENV ConfigMap (UC-A3)" || exit 1
+demo_action "Pushing CUE change to GitLab..."
+echo "$MODIFIED_ENV_CUE" | "$GITLAB_CLI" file update p2c/k8s-deployments "env.cue" \
+    --ref "$FEATURE_BRANCH" \
+    --message "feat: add $DEMO_KEY to $TARGET_ENV ConfigMap (UC-A3)" \
+    --stdin >/dev/null || {
+    demo_fail "Failed to update file in GitLab"
+    exit 1
+}
+demo_verify "Feature branch pushed"
 
 # Create MR from feature branch to dev
 demo_action "Creating MR: $FEATURE_BRANCH → $TARGET_ENV..."

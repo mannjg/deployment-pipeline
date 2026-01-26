@@ -61,9 +61,6 @@ DEMO_APP_CUE="exampleApp"  # CUE identifier
 DEMO_CONFIGMAP="${DEMO_APP}-config"
 ENVIRONMENTS=("dev" "stage" "prod")
 
-# CUE edit helper path
-CUE_EDIT="${SCRIPT_DIR}/lib/cue-edit.py"
-
 # ============================================================================
 # MAIN DEMO
 # ============================================================================
@@ -145,35 +142,57 @@ demo_step 3 "PHASE 1: Add App-Level Default"
 demo_info "Adding '$DEMO_KEY: $APP_DEFAULT_VALUE' to services/apps/example-app.cue"
 demo_info "This will propagate to ALL environments (dev, stage, prod)"
 
-# Get current app CUE file from GitLab (from dev branch)
+# Edit LOCAL file directly (same pattern as UC-C1)
 APP_CUE_PATH="services/apps/example-app.cue"
-demo_action "Fetching $APP_CUE_PATH from GitLab..."
-APP_CUE_CONTENT=$(get_file_from_branch "dev" "$APP_CUE_PATH")
 
-if [[ -z "$APP_CUE_CONTENT" ]]; then
-    demo_fail "Could not fetch $APP_CUE_PATH from dev branch"
+# Check if entry already exists
+if grep -q "\"$DEMO_KEY\"" "$APP_CUE_PATH"; then
+    demo_warn "Key '$DEMO_KEY' already exists in $APP_CUE_PATH"
+    demo_info "Run reset-demo-state.sh to clean up"
     exit 1
 fi
-demo_verify "Retrieved app CUE file"
 
-# Modify the content locally using cue-edit.py
+# Add configMap entry to appConfig block
+# The appConfig block is currently empty (just comments), so we add after "appConfig: {"
 demo_action "Adding ConfigMap entry to app CUE..."
-TEMP_APP_CUE="${K8S_DEPLOYMENTS_DIR}/.tmp-app-cue-$$.cue"
-echo "$APP_CUE_CONTENT" > "$TEMP_APP_CUE"
 
-# Use cue-edit.py to add the ConfigMap entry
-if ! python3 "${CUE_EDIT}" app-configmap add "$TEMP_APP_CUE" "$DEMO_APP_CUE" "$DEMO_KEY" "$APP_DEFAULT_VALUE"; then
-    demo_fail "Failed to add ConfigMap entry to app CUE"
-    rm -f "$TEMP_APP_CUE"
+# Use awk for reliable multi-line insertion after "appConfig: {"
+# IMPORTANT: Use CUE default syntax (string | *"300") so env.cue can override
+# If we use concrete "300", CUE unification will fail when env.cue sets "600"
+awk -v key="$DEMO_KEY" -v val="$APP_DEFAULT_VALUE" '
+/appConfig: \{/ {
+    print
+    print "\t\tconfigMap: {"
+    print "\t\t\tdata: {"
+    print "\t\t\t\t\"" key "\": string | *\"" val "\""
+    print "\t\t\t}"
+    print "\t\t}"
+    next
+}
+{print}
+' "$APP_CUE_PATH" > "${APP_CUE_PATH}.tmp" && mv "${APP_CUE_PATH}.tmp" "$APP_CUE_PATH"
+
+demo_verify "Added ConfigMap entry to $APP_CUE_PATH"
+
+# Verify the change was actually made
+if ! grep -q "\"$DEMO_KEY\"" "$APP_CUE_PATH"; then
+    demo_fail "Failed to add ConfigMap entry - appConfig block may be missing"
+    git checkout "$APP_CUE_PATH" 2>/dev/null || true
     exit 1
 fi
 
-MODIFIED_APP_CUE=$(cat "$TEMP_APP_CUE")
-rm -f "$TEMP_APP_CUE"
-demo_verify "Modified app CUE with ConfigMap entry"
+# Verify CUE is valid (use -c=false since main branch env.cue is incomplete by design)
+demo_action "Validating CUE configuration..."
+if cue vet -c=false ./...; then
+    demo_verify "CUE validation passed"
+else
+    demo_fail "CUE validation failed"
+    git checkout "$APP_CUE_PATH" 2>/dev/null || true
+    exit 1
+fi
 
-demo_action "Change preview:"
-diff <(echo "$APP_CUE_CONTENT") <(echo "$MODIFIED_APP_CUE") | head -20 || true
+demo_action "Changed section in $APP_CUE_PATH:"
+grep -A10 "appConfig" "$APP_CUE_PATH" | head -15 | sed 's/^/    /'
 
 # ---------------------------------------------------------------------------
 # Step 4: Push App-Level Change via GitLab MR
@@ -184,24 +203,29 @@ demo_step 4 "Push App-Level Change via GitLab MR"
 # Generate feature branch name
 FEATURE_BRANCH="uc-b4-app-configmap-$(date +%s)"
 
-# Create branch from dev
-PROJECT="${DEPLOYMENTS_REPO_PATH:-p2c/k8s-deployments}"
-ENCODED_PROJECT=$(echo "$PROJECT" | sed 's/\//%2F/g')
+# Use GitLab CLI to create branch and push file (same pattern as UC-C1)
+GITLAB_CLI="${PROJECT_ROOT}/scripts/04-operations/gitlab-cli.sh"
 
-demo_action "Creating branch '$FEATURE_BRANCH' from dev..."
-branch_result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-    "${GITLAB_URL_EXTERNAL}/api/v4/projects/${ENCODED_PROJECT}/repository/branches?branch=${FEATURE_BRANCH}&ref=dev" 2>/dev/null)
-
-if ! echo "$branch_result" | jq -e '.name' >/dev/null 2>&1; then
-    demo_fail "Could not create branch: $(echo "$branch_result" | jq -r '.message // "unknown error"')"
+demo_action "Creating branch '$FEATURE_BRANCH' from dev in GitLab..."
+"$GITLAB_CLI" branch create p2c/k8s-deployments "$FEATURE_BRANCH" --from dev >/dev/null || {
+    demo_fail "Failed to create branch in GitLab"
+    git checkout "$APP_CUE_PATH" 2>/dev/null || true
     exit 1
-fi
-demo_verify "Created branch $FEATURE_BRANCH from dev"
+}
 
-# Commit the modified app CUE to the feature branch
-demo_action "Committing change to feature branch..."
-commit_file_to_branch "$FEATURE_BRANCH" "$APP_CUE_PATH" "$MODIFIED_APP_CUE" \
-    "feat: add $DEMO_KEY to app ConfigMap defaults (UC-B4)" || exit 1
+demo_action "Pushing CUE change to GitLab..."
+cat "$APP_CUE_PATH" | "$GITLAB_CLI" file update p2c/k8s-deployments "$APP_CUE_PATH" \
+    --ref "$FEATURE_BRANCH" \
+    --message "feat: add $DEMO_KEY to app ConfigMap defaults (UC-B4)" \
+    --stdin >/dev/null || {
+    demo_fail "Failed to update file in GitLab"
+    git checkout "$APP_CUE_PATH" 2>/dev/null || true
+    exit 1
+}
+demo_verify "Feature branch pushed"
+
+# Restore local changes (don't leave local repo dirty)
+git checkout "$APP_CUE_PATH" 2>/dev/null || true
 
 # Create MR from feature branch to dev
 demo_action "Creating MR: $FEATURE_BRANCH → dev..."
@@ -305,20 +329,53 @@ if [[ -z "$PROD_ENV_CUE" ]]; then
 fi
 demo_verify "Retrieved prod's env.cue"
 
-# Modify the content locally using cue-edit.py
-demo_action "Adding ConfigMap override to env.cue..."
-TEMP_ENV_CUE="${K8S_DEPLOYMENTS_DIR}/.tmp-env-cue-$$.cue"
-echo "$PROD_ENV_CUE" > "$TEMP_ENV_CUE"
-
-# Use cue-edit.py to add the ConfigMap entry
-if ! python3 "${CUE_EDIT}" env-configmap add "$TEMP_ENV_CUE" "prod" "$DEMO_APP_CUE" "$DEMO_KEY" "$PROD_OVERRIDE_VALUE"; then
-    demo_fail "Failed to add ConfigMap override to env.cue"
-    rm -f "$TEMP_ENV_CUE"
+# Check if entry already exists
+if echo "$PROD_ENV_CUE" | grep -q "\"$DEMO_KEY\""; then
+    demo_warn "Key '$DEMO_KEY' already exists in prod's env.cue"
+    demo_info "Run reset-demo-state.sh to clean up"
     exit 1
 fi
 
-MODIFIED_ENV_CUE=$(cat "$TEMP_ENV_CUE")
-rm -f "$TEMP_ENV_CUE"
+# Modify the content using awk (no local CUE validation - Jenkins CI will validate)
+# Add configMap entry to the prod exampleApp appConfig block
+demo_action "Adding ConfigMap override to env.cue..."
+
+# Find the prod: exampleApp: block and add configMap entry to its appConfig
+# The structure is: prod: exampleApp: { appConfig: { configMap: { data: { ... } } } }
+# We need to add our key-value pair to the data block
+MODIFIED_ENV_CUE=$(echo "$PROD_ENV_CUE" | awk -v key="$DEMO_KEY" -v val="$PROD_OVERRIDE_VALUE" '
+BEGIN { in_prod=0; in_app=0; in_appconfig=0; in_configmap=0; in_data=0 }
+/^prod:/ { in_prod=1 }
+in_prod && /exampleApp:/ { in_app=1 }
+in_app && /appConfig:/ { in_appconfig=1 }
+in_appconfig && /configMap:/ { in_configmap=1 }
+in_configmap && /data: \{/ {
+    print
+    print "\t\t\t\t\"" key "\": \"" val "\""
+    next
+}
+# Reset when we exit the prod block (next top-level key)
+/^[a-z]+:/ && !/^prod:/ { in_prod=0; in_app=0; in_appconfig=0; in_configmap=0; in_data=0 }
+{print}
+')
+
+if [[ -z "$MODIFIED_ENV_CUE" ]]; then
+    demo_fail "Failed to modify env.cue"
+    exit 1
+fi
+
+# Verify the change was actually made
+if [[ "$MODIFIED_ENV_CUE" == "$PROD_ENV_CUE" ]]; then
+    demo_fail "No change made - configMap data block pattern not found in prod env.cue"
+    exit 1
+fi
+
+# Verify the key appears in modified content
+if ! echo "$MODIFIED_ENV_CUE" | grep -q "\"$DEMO_KEY\""; then
+    demo_fail "Failed to add override - key not found in modified content"
+    exit 1
+fi
+
 demo_verify "Modified env.cue with override"
 
 demo_action "Change preview:"
@@ -326,22 +383,23 @@ diff <(echo "$PROD_ENV_CUE") <(echo "$MODIFIED_ENV_CUE") | head -20 || true
 
 # Create branch and MR for the override
 OVERRIDE_BRANCH="uc-b4-prod-override-$(date +%s)"
-demo_action "Creating override branch: $OVERRIDE_BRANCH"
 
-# Create branch from prod
-branch_result=$(curl -sk -X POST -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-    "${GITLAB_URL_EXTERNAL}/api/v4/projects/${ENCODED_PROJECT}/repository/branches?branch=${OVERRIDE_BRANCH}&ref=prod" 2>/dev/null)
-
-if ! echo "$branch_result" | jq -e '.name' >/dev/null 2>&1; then
-    demo_fail "Could not create branch: $(echo "$branch_result" | jq -r '.message // "unknown error"')"
+demo_action "Creating branch '$OVERRIDE_BRANCH' from prod in GitLab..."
+"$GITLAB_CLI" branch create p2c/k8s-deployments "$OVERRIDE_BRANCH" --from prod >/dev/null || {
+    demo_fail "Failed to create branch in GitLab"
     exit 1
-fi
+}
 demo_verify "Created branch $OVERRIDE_BRANCH from prod"
 
-# Commit the modified env.cue to the override branch
-demo_action "Committing override to branch..."
-commit_file_to_branch "$OVERRIDE_BRANCH" "env.cue" "$MODIFIED_ENV_CUE" \
-    "feat: override $DEMO_KEY to $PROD_OVERRIDE_VALUE in prod (UC-B4)" || exit 1
+demo_action "Pushing override to GitLab..."
+echo "$MODIFIED_ENV_CUE" | "$GITLAB_CLI" file update p2c/k8s-deployments "env.cue" \
+    --ref "$OVERRIDE_BRANCH" \
+    --message "feat: override $DEMO_KEY to $PROD_OVERRIDE_VALUE in prod (UC-B4)" \
+    --stdin >/dev/null || {
+    demo_fail "Failed to update file in GitLab"
+    exit 1
+}
+demo_verify "Override branch pushed"
 
 # Create MR from override branch to prod
 demo_action "Creating MR for prod override..."
