@@ -443,11 +443,14 @@ demo_preflight_check() {
     fi
 }
 
-# Postflight check: verify pipeline is quiescent after demo completes
-# Hard error if dirty - no cleanup offered (demo should leave clean state)
-# Returns: 0 if clean, exits with 1 if dirty
+# Postflight check: wait for pipeline to become quiescent after demo completes
+# Waits up to timeout for all triggered activity (builds, syncs) to finish
+# Returns: 0 if quiescent, exits with 1 if still dirty after timeout
 demo_postflight_check() {
-    demo_action "Verifying pipeline state after demo..."
+    local timeout="${DEMO_POSTFLIGHT_TIMEOUT:-60}"
+    local interval=5
+
+    demo_action "Waiting for pipeline to become quiescent (timeout ${timeout}s)..."
 
     # Ensure credentials are loaded
     if declare -f load_pipeline_credentials >/dev/null 2>&1; then
@@ -461,13 +464,21 @@ demo_postflight_check() {
         exit 1
     fi
 
-    if check_pipeline_quiescent; then
-        demo_verify "Pipeline is quiescent - demo completed cleanly"
-        return 0
-    fi
+    local elapsed=0
+    while [[ $elapsed -lt $timeout ]]; do
+        if check_pipeline_quiescent; then
+            demo_verify "Pipeline is quiescent - demo completed cleanly"
+            return 0
+        fi
 
-    # Pipeline is dirty after demo - hard error
-    demo_fail "Pipeline has unexpected pending work after demo:"
+        # Show progress
+        demo_info "Waiting for activity to finish... (${elapsed}s elapsed)"
+        sleep $interval
+        elapsed=$((elapsed + interval))
+    done
+
+    # Still not quiescent after timeout - hard error
+    demo_fail "Pipeline still has pending work after ${timeout}s:"
     display_pipeline_state
     exit 1
 }

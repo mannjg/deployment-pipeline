@@ -126,7 +126,7 @@ _check_running_builds() {
     if [[ -n "$queue_response" ]]; then
         while IFS= read -r line; do
             [[ -n "$line" ]] && STATE_QUEUED_BUILDS+=("$line")
-        done < <(echo "$queue_response" | jq -r '.items[]? | "\(.id):\(.task.name // "unknown")"' 2>/dev/null)
+        done < <(echo "$queue_response" | jq -r '.items[]? | "\(.id):\(.task.name // (if .task._class | contains("PlaceholderTask") then "agent-pending" else "unknown" end))"' 2>/dev/null)
     fi
 
     return 0
