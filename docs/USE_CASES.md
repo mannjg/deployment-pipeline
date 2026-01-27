@@ -340,6 +340,8 @@ Env (env.cue per branch)
 | [`scripts/demo/demo-uc-a2-debug-mode.sh`](../scripts/demo/demo-uc-a2-debug-mode.sh) | UC-A2 | Environment-specific debug mode stays isolated |
 | [`scripts/demo/demo-uc-a3-env-configmap.sh`](../scripts/demo/demo-uc-a3-env-configmap.sh) | UC-A3 | Environment-specific ConfigMap entries stay isolated |
 | [`scripts/demo/demo-uc-b1-app-env-var.sh`](../scripts/demo/demo-uc-b1-app-env-var.sh) | UC-B1 | App env vars propagate to all environments |
+| [`scripts/demo/demo-uc-b2-app-annotation.sh`](../scripts/demo/demo-uc-b2-app-annotation.sh) | UC-B2 | App annotations propagate to all environments |
+| [`scripts/demo/demo-uc-b3-app-configmap.sh`](../scripts/demo/demo-uc-b3-app-configmap.sh) | UC-B3 | App ConfigMap entries propagate to all environments |
 | [`scripts/demo/demo-uc-b4-app-override.sh`](../scripts/demo/demo-uc-b4-app-override.sh) | UC-B4 | App defaults propagate; environments can override |
 
 ### Platform-Wide Demos (Phase 2)
@@ -399,8 +401,8 @@ While preserving:
 | UC-A2 | Enable debug mode | ✅ | ✅ | 🔲 | `uc-a2-debug-mode` | CUE already supports debug field |
 | UC-A3 | Env-specific ConfigMap | ✅ | ✅ | ✅ | `uc-a3-env-configmap` | Pipeline verified 2026-01-27 |
 | UC-B1 | Add app env var | ✅ | ✅ | ✅ | `uc-b1-app-env-var` | Pipeline verified 2026-01-27 |
-| UC-B2 | Add app annotation | 🔲 | 🔲 | 🔲 | — | |
-| UC-B3 | Add app ConfigMap entry | 🔲 | 🔲 | 🔲 | — | |
+| UC-B2 | Add app annotation | ✅ | ✅ | 🔲 | `uc-b2-app-annotation` | Pending pipeline verification |
+| UC-B3 | Add app ConfigMap entry | ✅ | ✅ | 🔲 | `uc-b3-app-configmap` | Pending pipeline verification |
 | UC-B4 | App ConfigMap with env override | ✅ | ✅ | ✅ | `uc-b4-app-override` | Pipeline verified 2026-01-27 |
 | UC-B5 | App probe with env override | 🔲 | 🔲 | 🔲 | — | |
 | UC-B6 | App env var with env override | 🔲 | 🔲 | 🔲 | — | |
