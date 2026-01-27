@@ -23,7 +23,8 @@ dev: exampleApp: apps.exampleApp & {
 			managed_by:  "argocd"
 		}
 
-		debug: true
+		// Debug mode - set to false in baseline, UC-A2 demo enables it
+		debug: false
 
 		deployment: {
 			// Image managed by CI/CD pipeline

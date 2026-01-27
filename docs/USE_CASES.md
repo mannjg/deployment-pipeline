@@ -61,6 +61,8 @@ Changes made to `env.cue` on a single environment branch. These intentionally **
 | **Expected Behavior** | Dev deploys with 2 pods; stage/prod unchanged |
 | **Validates** | Environment isolation; promotion preserves target's replicas |
 
+**Demo Script:** [`scripts/demo/demo-uc-a1-replicas.sh`](../scripts/demo/demo-uc-a1-replicas.sh) (implements UC-A1)
+
 ### UC-A2: Enable Debug Mode
 
 | Aspect | Detail |
@@ -69,7 +71,9 @@ Changes made to `env.cue` on a single environment branch. These intentionally **
 | **Change Location** | `env.cue` on `dev` branch |
 | **Change** | `debug: true` (dev) vs `debug: false` (prod) |
 | **Expected Behavior** | Dev gets DEBUG env var and debug service; prod does not |
-| **Validates** | Environment-specific flags don't leak to production |
+| **Validates** | Environment-specific flags don't leak to production
+
+**Demo Script:** [`scripts/demo/demo-uc-a2-debug-mode.sh`](../scripts/demo/demo-uc-a2-debug-mode.sh) (implements UC-A2) |
 
 ### UC-A3: Environment-Specific ConfigMap Entry
 
@@ -332,7 +336,9 @@ Env (env.cue per branch)
 
 | Script | Use Case | What It Demonstrates |
 |--------|----------|---------------------|
-| [`scripts/demo/demo-uc-a3-env-configmap.sh`](../scripts/demo/demo-uc-a3-env-configmap.sh) | UC-A3 | Environment-specific changes stay isolated |
+| [`scripts/demo/demo-uc-a1-replicas.sh`](../scripts/demo/demo-uc-a1-replicas.sh) | UC-A1 | Environment-specific replica count stays isolated |
+| [`scripts/demo/demo-uc-a2-debug-mode.sh`](../scripts/demo/demo-uc-a2-debug-mode.sh) | UC-A2 | Environment-specific debug mode stays isolated |
+| [`scripts/demo/demo-uc-a3-env-configmap.sh`](../scripts/demo/demo-uc-a3-env-configmap.sh) | UC-A3 | Environment-specific ConfigMap entries stay isolated |
 | [`scripts/demo/demo-uc-b1-app-env-var.sh`](../scripts/demo/demo-uc-b1-app-env-var.sh) | UC-B1 | App env vars propagate to all environments |
 | [`scripts/demo/demo-uc-b4-app-override.sh`](../scripts/demo/demo-uc-b4-app-override.sh) | UC-B4 | App defaults propagate; environments can override |
 
@@ -389,8 +395,8 @@ While preserving:
 
 | ID | Use Case | CUE Support | Demo Script | Pipeline Verified | Branch | Notes |
 |----|----------|-------------|-------------|-------------------|--------|-------|
-| UC-A1 | Adjust replica count | 🔲 | 🔲 | 🔲 | — | |
-| UC-A2 | Enable debug mode | 🔲 | 🔲 | 🔲 | — | |
+| UC-A1 | Adjust replica count | ✅ | ✅ | 🔲 | `uc-a1-replicas` | CUE already supports replicas field |
+| UC-A2 | Enable debug mode | ✅ | ✅ | 🔲 | `uc-a2-debug-mode` | CUE already supports debug field |
 | UC-A3 | Env-specific ConfigMap | ✅ | ✅ | ✅ | `uc-a3-env-configmap` | Pipeline verified 2026-01-27 |
 | UC-B1 | Add app env var | ✅ | ✅ | ✅ | `uc-b1-app-env-var` | Pipeline verified 2026-01-27 |
 | UC-B2 | Add app annotation | 🔲 | 🔲 | 🔲 | — | |

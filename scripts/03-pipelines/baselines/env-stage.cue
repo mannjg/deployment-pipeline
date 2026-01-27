@@ -23,7 +23,8 @@ stage: exampleApp: apps.exampleApp & {
 			managed_by:  "argocd"
 		}
 
-		debug: true
+		// Debug mode - disabled in baseline for all envs
+		debug: false
 
 		deployment: {
 			// Image managed by CI/CD pipeline

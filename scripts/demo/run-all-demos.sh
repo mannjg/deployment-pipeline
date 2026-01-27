@@ -29,6 +29,8 @@ DEMO_ORDER=(
     # Core: App code lifecycle (SNAPSHOT → RC → Release)
     "validate-pipeline:../test/validate-pipeline.sh:App code lifecycle across dev/stage/prod"
     # Category A: Environment-Specific
+    "UC-A1:demo-uc-a1-replicas.sh:Adjust replica count (isolated)"
+    "UC-A2:demo-uc-a2-debug-mode.sh:Enable debug mode (isolated)"
     "UC-A3:demo-uc-a3-env-configmap.sh:Environment-specific ConfigMap (isolated)"
     # Category B: App-Level Cross-Environment
     "UC-B1:demo-uc-b1-app-env-var.sh:App env var propagates to all environments"
