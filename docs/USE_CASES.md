@@ -343,6 +343,7 @@ Env (env.cue per branch)
 | [`scripts/demo/demo-uc-c1-default-label.sh`](../scripts/demo/demo-uc-c1-default-label.sh) | UC-C1 | Platform-wide label propagates to all apps in all envs |
 | [`scripts/demo/demo-uc-c4-prometheus-annotations.sh`](../scripts/demo/demo-uc-c4-prometheus-annotations.sh) | UC-C4 | Platform-wide pod annotations propagate to all apps |
 | [`scripts/demo/demo-uc-c2-security-context.sh`](../scripts/demo/demo-uc-c2-security-context.sh) | UC-C2 | Platform-wide pod security context (runAsNonRoot) |
+| [`scripts/demo/demo-uc-c3-deployment-strategy.sh`](../scripts/demo/demo-uc-c3-deployment-strategy.sh) | UC-C3 | Platform-wide zero-downtime deployment strategy |
 | [`scripts/demo/demo-uc-c6-platform-env-override.sh`](../scripts/demo/demo-uc-c6-platform-env-override.sh) | UC-C6 | Platform default with environment override; prod can diverge |
 
 ### Future Demos (Phase 3+)
