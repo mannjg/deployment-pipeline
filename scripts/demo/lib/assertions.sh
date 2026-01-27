@@ -433,3 +433,48 @@ assert_nexus_artifact_exists() {
         return 1
     fi
 }
+
+# ============================================================================
+# DEPLOYMENT ENVIRONMENT VARIABLE ASSERTIONS
+# ============================================================================
+
+# Assert a deployment container has a specific env var with expected value
+# Usage: assert_deployment_env_var <namespace> <deployment_name> <env_name> <expected_value>
+assert_deployment_env_var() {
+    local namespace="$1"
+    local deployment="$2"
+    local env_name="$3"
+    local expected_value="$4"
+
+    local actual
+    actual=$(kubectl get deployment "$deployment" -n "$namespace" \
+        -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name==\"$env_name\")].value}" 2>/dev/null)
+
+    if [[ "$actual" == "$expected_value" ]]; then
+        demo_verify "Env var $env_name = '$expected_value' in $namespace/$deployment"
+        return 0
+    else
+        demo_fail "Env var $env_name: expected '$expected_value', got '$actual' in $namespace/$deployment"
+        return 1
+    fi
+}
+
+# Assert a deployment container does NOT have a specific env var
+# Usage: assert_deployment_env_var_absent <namespace> <deployment_name> <env_name>
+assert_deployment_env_var_absent() {
+    local namespace="$1"
+    local deployment="$2"
+    local env_name="$3"
+
+    local actual
+    actual=$(kubectl get deployment "$deployment" -n "$namespace" \
+        -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name==\"$env_name\")].value}" 2>/dev/null)
+
+    if [[ -z "$actual" ]]; then
+        demo_verify "Env var $env_name absent (expected) in $namespace/$deployment"
+        return 0
+    else
+        demo_fail "Env var $env_name exists but should not: '$actual' in $namespace/$deployment"
+        return 1
+    fi
+}
