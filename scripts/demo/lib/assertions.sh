@@ -205,6 +205,19 @@ assert_pod_annotation_equals() {
     assert_field_equals "$namespace" "deployment" "$deployment" "$jsonpath" "$expected_value"
 }
 
+# Assert an annotation does NOT exist on the pod template of a deployment
+# Usage: assert_pod_annotation_absent <namespace> <deployment_name> <annotation_key>
+assert_pod_annotation_absent() {
+    local namespace="$1"
+    local deployment="$2"
+    local annotation_key="$3"
+
+    # Annotations with dots need escaped dot notation for kubectl jsonpath
+    local escaped_key="${annotation_key//./\\.}"
+    local jsonpath="{.spec.template.metadata.annotations.${escaped_key}}"
+    assert_field_absent "$namespace" "deployment" "$deployment" "$jsonpath"
+}
+
 # ============================================================================
 # CROSS-ENVIRONMENT ASSERTIONS
 # ============================================================================

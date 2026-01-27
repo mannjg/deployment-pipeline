@@ -93,7 +93,12 @@ _projectedSecretsVolumeBuilder: {
 	_labels: _defaultLabels & appConfig.labels
 
 	// Computed pod annotations - merge platform defaults with app-specific
-	_podAnnotations: defaultPodAnnotations & (appConfig.deployment.podAnnotations | *{})
+	// Note: Must use conditional check since optional fields with disjunction don't work as expected
+	_podAnnotations: defaultPodAnnotations & {
+		if appConfig.deployment.podAnnotations != _|_ {
+			appConfig.deployment.podAnnotations
+		}
+	}
 
 	// Computed env - concatenate: app-level defaults + environment-specific
 	// Note: appEnvVars includes system defaults (like DEBUG) computed in app.cue
