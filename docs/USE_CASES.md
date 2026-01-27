@@ -390,15 +390,15 @@ While preserving:
 |----|----------|-------------|-------------|-------------------|--------|-------|
 | UC-A1 | Adjust replica count | 🔲 | 🔲 | 🔲 | — | |
 | UC-A2 | Enable debug mode | 🔲 | 🔲 | 🔲 | — | |
-| UC-A3 | Env-specific ConfigMap | ✅ | ✅ | 🚧 | `uc-a3-env-configmap` | Full pipeline demo, pending verification |
+| UC-A3 | Env-specific ConfigMap | ✅ | ✅ | ✅ | `uc-a3-env-configmap` | Pipeline verified 2026-01-27 |
 | UC-B1 | Add app env var | ✅ | ✅ | ✅ | `uc-b1-app-env-var` | Pipeline verified 2026-01-27 |
 | UC-B2 | Add app annotation | 🔲 | 🔲 | 🔲 | — | |
 | UC-B3 | Add app ConfigMap entry | 🔲 | 🔲 | 🔲 | — | |
-| UC-B4 | App ConfigMap with env override | ✅ | ✅ | 🚧 | `uc-b4-app-override` | Full pipeline demo, pending verification |
+| UC-B4 | App ConfigMap with env override | ✅ | ✅ | ✅ | `uc-b4-app-override` | Pipeline verified 2026-01-27 |
 | UC-B5 | App probe with env override | 🔲 | 🔲 | 🔲 | — | |
 | UC-B6 | App env var with env override | 🔲 | 🔲 | 🔲 | — | |
 | UC-C1 | Add default label | ✅ | ✅ | ✅ | `uc-c1-default-label` | Pipeline verified 2026-01-21 |
-| UC-C2 | Add security context | ✅ | ✅ | 🔲 | `uc-c2-security-context` | Demo script created, pending verification |
+| UC-C2 | Add security context | ✅ | ✅ | ✅ | `uc-c2-security-context` | Pipeline verified 2026-01-27 |
 | UC-C3 | Change deployment strategy | 🔲 | 🔲 | 🔲 | — | |
 | UC-C4 | Add standard pod annotation | ✅ | ✅ | ✅ | `uc-c4-prometheus-annotations` | Pipeline verified 2026-01-21 |
 | UC-C5 | Platform default + app override | 🔲 | 🔲 | 🔲 | — | Multi-app pivot (uses postgres) |
