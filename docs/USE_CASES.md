@@ -333,6 +333,7 @@ Env (env.cue per branch)
 | Script | Use Case | What It Demonstrates |
 |--------|----------|---------------------|
 | [`scripts/demo/demo-uc-a3-env-configmap.sh`](../scripts/demo/demo-uc-a3-env-configmap.sh) | UC-A3 | Environment-specific changes stay isolated |
+| [`scripts/demo/demo-uc-b1-app-env-var.sh`](../scripts/demo/demo-uc-b1-app-env-var.sh) | UC-B1 | App env vars propagate to all environments |
 | [`scripts/demo/demo-uc-b4-app-override.sh`](../scripts/demo/demo-uc-b4-app-override.sh) | UC-B4 | App defaults propagate; environments can override |
 
 ### Platform-Wide Demos (Phase 2)
@@ -390,7 +391,7 @@ While preserving:
 | UC-A1 | Adjust replica count | 🔲 | 🔲 | 🔲 | — | |
 | UC-A2 | Enable debug mode | 🔲 | 🔲 | 🔲 | — | |
 | UC-A3 | Env-specific ConfigMap | ✅ | ✅ | 🚧 | `uc-a3-env-configmap` | Full pipeline demo, pending verification |
-| UC-B1 | Add app env var | 🔲 | 🔲 | 🔲 | — | |
+| UC-B1 | Add app env var | ✅ | ✅ | 🚧 | `uc-b1-app-env-var` | Full pipeline demo |
 | UC-B2 | Add app annotation | 🔲 | 🔲 | 🔲 | — | |
 | UC-B3 | Add app ConfigMap entry | 🔲 | 🔲 | 🔲 | — | |
 | UC-B4 | App ConfigMap with env override | ✅ | ✅ | 🚧 | `uc-b4-app-override` | Full pipeline demo, pending verification |
