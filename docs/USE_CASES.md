@@ -400,7 +400,7 @@ While preserving:
 | UC-B6 | App env var with env override | 🔲 | 🔲 | 🔲 | — | |
 | UC-C1 | Add default label | ✅ | ✅ | ✅ | `uc-c1-default-label` | Pipeline verified 2026-01-21 |
 | UC-C2 | Add security context | ✅ | ✅ | ✅ | `uc-c2-security-context` | Pipeline verified 2026-01-27 |
-| UC-C3 | Change deployment strategy | 🔲 | 🔲 | 🔲 | — | |
+| UC-C3 | Change deployment strategy | ✅ | ✅ | 🔲 | `uc-c3-deployment-strategy` | |
 | UC-C4 | Add standard pod annotation | ✅ | ✅ | ✅ | `uc-c4-prometheus-annotations` | Pipeline verified 2026-01-21 |
 | UC-C5 | Platform default + app override | 🔲 | 🔲 | 🔲 | — | Multi-app pivot (uses postgres) |
 | UC-C6 | Platform default + env override | ✅ | ✅ | ✅ | `uc-c6-platform-env-override` | Pipeline verified 2026-01-22 |
