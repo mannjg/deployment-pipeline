@@ -36,6 +36,7 @@ DEMO_ORDER=(
     # Category C: Platform-Wide
     "UC-C1:demo-uc-c1-default-label.sh:Platform-wide label propagation"
     "UC-C2:demo-uc-c2-security-context.sh:Platform-wide pod security context"
+    "UC-C3:demo-uc-c3-deployment-strategy.sh:Platform-wide zero-downtime deployment strategy"
     "UC-C4:demo-uc-c4-prometheus-annotations.sh:Platform-wide pod annotations"
     "UC-C6:demo-uc-c6-platform-env-override.sh:Platform default with env override"
 )
