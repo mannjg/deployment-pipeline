@@ -63,6 +63,62 @@ source "$SCRIPT_DIR/../lib/mr-workflow.sh"
 # GITLAB_URL_EXTERNAL, JENKINS_URL_EXTERNAL are set by infra.sh
 
 # =============================================================================
+# Phase 0: Wait for pipeline quiescence before any cleanup
+# =============================================================================
+# This prevents a race condition where auto-promote webhooks from the previous
+# demo trigger builds while we're deleting agent pods. We must wait for all
+# in-flight builds to complete before starting cleanup.
+wait_for_pipeline_quiescence() {
+    local timeout="${1:-120}"
+    local jenkins_cli="$SCRIPT_DIR/../04-operations/jenkins-cli.sh"
+    local start_time=$(date +%s)
+
+    log_step "Phase 0: Waiting for pipeline quiescence before cleanup..."
+    log_info "Ensuring no builds are in-flight from previous operations..."
+
+    while true; do
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+
+        if [[ $elapsed -ge $timeout ]]; then
+            log_warn "Pipeline quiescence timeout after ${timeout}s - proceeding with cleanup"
+            return 0  # Don't fail, just warn and proceed
+        fi
+
+        local any_active=false
+        local status_parts=()
+
+        for env in dev stage prod; do
+            # Check if build is running
+            local status_json=$("$jenkins_cli" status "k8s-deployments/$env" 2>/dev/null || echo '{}')
+            local building=$(echo "$status_json" | jq -r '.building // false')
+
+            # Check queue for this branch
+            local queue_json=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+                "$JENKINS_URL_EXTERNAL/queue/api/json" 2>/dev/null || echo '{"items":[]}')
+            local queued=$(echo "$queue_json" | jq -r --arg env "$env" \
+                '[.items[] | select(.task.name == $env)] | length')
+
+            if [[ "$building" == "true" ]] || [[ "$queued" != "0" ]]; then
+                any_active=true
+                local env_status=""
+                [[ "$building" == "true" ]] && env_status="running"
+                [[ "$queued" != "0" ]] && env_status="${env_status:+$env_status+}queued"
+                status_parts+=("$env:$env_status")
+            fi
+        done
+
+        if [[ "$any_active" == "false" ]]; then
+            log_info "  ✓ Pipeline is quiescent - safe to proceed with cleanup"
+            return 0
+        fi
+
+        log_info "  Waiting for: ${status_parts[*]} (${elapsed}s elapsed)"
+        sleep 10
+    done
+}
+
+# =============================================================================
 # Phase 1: Clean up Jenkins queue and running jobs
 # =============================================================================
 cleanup_jenkins_queue() {
@@ -498,6 +554,10 @@ main() {
     log_step "Credentials loaded via mr-workflow.sh"
     log_info "GitLab: $GITLAB_URL_EXTERNAL"
     log_info "Jenkins: $JENKINS_URL_EXTERNAL"
+
+    # Phase 0: Wait for pipeline quiescence before any cleanup
+    # This prevents race conditions with auto-promote webhooks from previous demos
+    wait_for_pipeline_quiescence 120
 
     # Phase 1: Clean up Jenkins
     cleanup_jenkins_queue
