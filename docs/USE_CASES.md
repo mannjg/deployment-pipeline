@@ -391,7 +391,7 @@ While preserving:
 | UC-A1 | Adjust replica count | 🔲 | 🔲 | 🔲 | — | |
 | UC-A2 | Enable debug mode | 🔲 | 🔲 | 🔲 | — | |
 | UC-A3 | Env-specific ConfigMap | ✅ | ✅ | 🚧 | `uc-a3-env-configmap` | Full pipeline demo, pending verification |
-| UC-B1 | Add app env var | ✅ | ✅ | 🚧 | `uc-b1-app-env-var` | Full pipeline demo |
+| UC-B1 | Add app env var | ✅ | ✅ | ✅ | `uc-b1-app-env-var` | Pipeline verified 2026-01-27 |
 | UC-B2 | Add app annotation | 🔲 | 🔲 | 🔲 | — | |
 | UC-B3 | Add app ConfigMap entry | 🔲 | 🔲 | 🔲 | — | |
 | UC-B4 | App ConfigMap with env override | ✅ | ✅ | 🚧 | `uc-b4-app-override` | Full pipeline demo, pending verification |
