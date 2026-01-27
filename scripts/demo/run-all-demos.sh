@@ -34,6 +34,8 @@ DEMO_ORDER=(
     "UC-A3:demo-uc-a3-env-configmap.sh:Environment-specific ConfigMap (isolated)"
     # Category B: App-Level Cross-Environment
     "UC-B1:demo-uc-b1-app-env-var.sh:App env var propagates to all environments"
+    "UC-B2:demo-uc-b2-app-annotation.sh:App annotation propagates to all environments"
+    "UC-B3:demo-uc-b3-app-configmap.sh:App ConfigMap entry propagates to all environments"
     "UC-B4:demo-uc-b4-app-override.sh:App ConfigMap with environment override"
     # Category C: Platform-Wide
     "UC-C1:demo-uc-c1-default-label.sh:Platform-wide label propagation"
