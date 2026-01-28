@@ -333,9 +333,10 @@ if [[ -z "$DEV_ENV_CUE" ]]; then
 fi
 demo_verify "Retrieved dev's env.cue"
 
-# Check if override already exists in additionalEnv
-if echo "$DEV_ENV_CUE" | grep -A2 "additionalEnv" | grep -q "$ENV_VAR_NAME"; then
-    demo_warn "$ENV_VAR_NAME already exists in dev's additionalEnv"
+# Check if override already exists in additionalEnv (exact name match)
+# Use word boundary to avoid matching QUARKUS_LOG_LEVEL when looking for LOG_LEVEL
+if echo "$DEV_ENV_CUE" | grep -E "name:\s+\"${ENV_VAR_NAME}\"" >/dev/null; then
+    demo_warn "$ENV_VAR_NAME already exists in dev's env.cue"
     demo_info "Run reset-demo-state.sh to clean up"
     exit 1
 fi

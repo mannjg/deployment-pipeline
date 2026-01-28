@@ -647,9 +647,15 @@ wait_for_argocd_sync() {
         local sync_status=$(echo "$app_status" | jq -r '.status.sync.status // "Unknown"')
         local health_status=$(echo "$app_status" | jq -r '.status.health.status // "Unknown"')
         local current_revision=$(echo "$app_status" | jq -r '.status.sync.revision // ""')
+        # Also check the ACTUALLY SYNCED revision (operationState.syncResult.revision)
+        # This confirms the sync operation completed, not just that ArgoCD detected the commit
+        local synced_revision=$(echo "$app_status" | jq -r '.status.operationState.syncResult.revision // ""')
 
-        # Wait for revision to change AND status to be Synced+Healthy
-        if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" && "$current_revision" != "$baseline" ]]; then
+        # Wait for:
+        # 1. Tracked revision to change from baseline
+        # 2. Status to be Synced+Healthy
+        # 3. The synced revision to match the tracked revision (actual deploy happened)
+        if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" && "$current_revision" != "$baseline" && "$synced_revision" == "$current_revision" ]]; then
             demo_verify "$app_name synced and healthy"
             # Give K8s a moment to fully propagate deployment changes
             sleep 2
