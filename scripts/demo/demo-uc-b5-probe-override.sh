@@ -132,6 +132,9 @@ demo_verify "Baseline state captured"
 
 demo_step 3 "PHASE 1: Verify App-Level Default"
 
+# Initialize FEATURE_BRANCH - may not be created if baseline already has app default
+FEATURE_BRANCH=""
+
 # Edit LOCAL file directly (same pattern as UC-B4)
 APP_CUE_PATH="services/apps/example-app.cue"
 
@@ -507,7 +510,7 @@ demo_postflight_check
 demo_action "Returning to original branch: $ORIGINAL_BRANCH"
 git checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
 
-demo_info "Feature branch '$FEATURE_BRANCH' left in GitLab for reference"
+[[ -n "$FEATURE_BRANCH" ]] && demo_info "Feature branch '$FEATURE_BRANCH' left in GitLab for reference"
 demo_info "Override branch '$OVERRIDE_BRANCH' left in GitLab for reference"
 
 demo_complete
