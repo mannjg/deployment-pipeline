@@ -299,12 +299,19 @@ _projectedSecretsVolumeBuilder: {
 							resources: appConfig.deployment.resources
 						}
 
-						// Liveness probe - use base defaults, override with app config if specified
-						// Use default (*{}) to avoid disjunction when app doesn't specify probe config
-						livenessProbe: _baseProbes.liveness & (appConfig.deployment.livenessProbe | *{})
+						// Liveness probe - base provides defaults, app config overrides
+						livenessProbe: _baseProbes.liveness & {
+							if appConfig.deployment.livenessProbe != _|_ {
+								appConfig.deployment.livenessProbe
+							}
+						}
 
-						// Readiness probe - use base defaults, override with app config if specified
-						readinessProbe: _baseProbes.readiness & (appConfig.deployment.readinessProbe | *{})
+						// Readiness probe - base provides defaults, app config overrides
+						readinessProbe: _baseProbes.readiness & {
+							if appConfig.deployment.readinessProbe != _|_ {
+								appConfig.deployment.readinessProbe
+							}
+						}
 
 						securityContext: base.#DefaultContainerSecurityContext
 					}]
