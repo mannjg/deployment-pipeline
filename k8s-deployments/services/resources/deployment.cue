@@ -299,13 +299,12 @@ _projectedSecretsVolumeBuilder: {
 							resources: appConfig.deployment.resources
 						}
 
-						// Liveness probe - merge app config with defaults
-						// Base probes have optional httpGet, so apps can provide exec or tcpSocket instead
-						// Timing fields from app config override defaults via CUE unification
-						livenessProbe: _baseProbes.liveness & (appConfig.deployment.livenessProbe | {})
+						// Liveness probe - use base defaults, override with app config if specified
+						// Use default (*{}) to avoid disjunction when app doesn't specify probe config
+						livenessProbe: _baseProbes.liveness & (appConfig.deployment.livenessProbe | *{})
 
-						// Readiness probe - merge app config with defaults
-						readinessProbe: _baseProbes.readiness & (appConfig.deployment.readinessProbe | {})
+						// Readiness probe - use base defaults, override with app config if specified
+						readinessProbe: _baseProbes.readiness & (appConfig.deployment.readinessProbe | *{})
 
 						securityContext: base.#DefaultContainerSecurityContext
 					}]

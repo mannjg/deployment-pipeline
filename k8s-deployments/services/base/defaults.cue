@@ -91,29 +91,29 @@ package base
 // pods during startup or temporary slow responses.
 
 #DefaultLivenessProbe: {
-	// httpGet is optional to allow apps to provide exec or tcpSocket probes
-	httpGet?: {
+	httpGet: {
 		path:   *"/health/live" | string
 		port:   *8080 | int
-		scheme: *"HTTP" | string
+		scheme: *"HTTP" | "HTTPS"
 	}
 	initialDelaySeconds: *30 | int
 	periodSeconds:       *10 | int
 	timeoutSeconds:      *5 | int
 	failureThreshold:    *3 | int
+	... // Allow k8s.#Probe optional fields
 }
 
 #DefaultHttpsLivenessProbe: {
-	// httpGet is optional to allow apps to provide exec or tcpSocket probes
-	httpGet?: {
+	httpGet: {
 		path:   *"/health/live" | string
 		port:   *8443 | int
-		scheme: *"HTTPS" | string
+		scheme: *"HTTPS" | "HTTP"
 	}
 	initialDelaySeconds: *30 | int
 	periodSeconds:       *10 | int
 	timeoutSeconds:      *5 | int
 	failureThreshold:    *3 | int
+	... // Allow k8s.#Probe optional fields
 }
 
 // Readiness Probe
@@ -122,29 +122,29 @@ package base
 // when pods are ready to serve traffic.
 
 #DefaultReadinessProbe: {
-	// httpGet is optional to allow apps to provide exec or tcpSocket probes
-	httpGet?: {
+	httpGet: {
 		path:   *"/health/ready" | string
 		port:   *8080 | int
-		scheme: *"HTTP" | string
+		scheme: *"HTTP" | "HTTPS"
 	}
 	initialDelaySeconds: *10 | int
 	periodSeconds:       *5 | int
 	timeoutSeconds:      *3 | int
 	failureThreshold:    *3 | int
+	... // Allow k8s.#Probe optional fields
 }
 
 #DefaultHttpsReadinessProbe: {
-	// httpGet is optional to allow apps to provide exec or tcpSocket probes
-	httpGet?: {
+	httpGet: {
 		path:   *"/health/ready" | string
 		port:   *8443 | int
-		scheme: *"HTTPS" | string
+		scheme: *"HTTPS" | "HTTP"
 	}
 	initialDelaySeconds: *10 | int
 	periodSeconds:       *5 | int
 	timeoutSeconds:      *3 | int
 	failureThreshold:    *3 | int
+	... // Allow k8s.#Probe optional fields
 }
 
 // Volume Mount and Configuration Definitions

@@ -147,13 +147,14 @@ fi
 demo_action "Adding readinessProbe to app CUE..."
 
 # Use awk for reliable multi-line insertion after "appConfig: {"
-# IMPORTANT: Use CUE default syntax (int | *10) so env.cue can override
+# Use concrete value (not CUE default syntax) - concrete values override base defaults
+# env.cue can still override this with its own concrete value
 awk -v timeout="$APP_DEFAULT_TIMEOUT" '
 /appConfig: \{/ {
     print
     print "\t\tdeployment: {"
     print "\t\t\treadinessProbe: {"
-    print "\t\t\t\ttimeoutSeconds: int | *" timeout
+    print "\t\t\t\ttimeoutSeconds: " timeout
     print "\t\t\t}"
     print "\t\t}"
     next
