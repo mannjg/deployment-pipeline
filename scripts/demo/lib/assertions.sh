@@ -491,3 +491,18 @@ assert_deployment_env_var_absent() {
         return 1
     fi
 }
+
+# ============================================================================
+# PROBE ASSERTIONS
+# ============================================================================
+
+# Assert readiness probe timeoutSeconds equals expected value
+# Usage: assert_readiness_probe_timeout <namespace> <deployment_name> <expected_timeout>
+assert_readiness_probe_timeout() {
+    local namespace="$1"
+    local deployment="$2"
+    local expected="$3"
+
+    assert_field_equals "$namespace" "deployment" "$deployment" \
+        "{.spec.template.spec.containers[0].readinessProbe.timeoutSeconds}" "$expected"
+}
