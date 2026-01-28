@@ -112,7 +112,7 @@ done
 demo_step 2 "Verify Baseline State"
 
 demo_info "Checking current readinessProbe timeoutSeconds across environments..."
-demo_info "(Default from platform is 3s - we'll override to 10s at app level)"
+demo_info "(App-level default is ${APP_DEFAULT_TIMEOUT}s, prod will override to ${PROD_OVERRIDE_TIMEOUT}s)"
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
@@ -124,164 +124,186 @@ done
 demo_verify "Baseline state captured"
 
 # ============================================================================
-# PHASE 1: Add App-Level Default (propagates to all environments)
+# PHASE 1: Verify App-Level Default (already in baseline)
 # ============================================================================
 
-demo_step 3 "PHASE 1: Add App-Level Default"
-
-demo_info "Adding readinessProbe.timeoutSeconds=$APP_DEFAULT_TIMEOUT to services/apps/example-app.cue"
-demo_info "This will propagate to ALL environments (dev, stage, prod)"
+demo_step 3 "PHASE 1: Verify App-Level Default"
 
 # Edit LOCAL file directly (same pattern as UC-B4)
 APP_CUE_PATH="services/apps/example-app.cue"
 
 # Check if readinessProbe already exists in app config
 if grep -q "readinessProbe" "$APP_CUE_PATH"; then
-    demo_warn "readinessProbe already exists in $APP_CUE_PATH"
-    demo_info "Run reset-demo-state.sh to clean up"
-    exit 1
-fi
+    demo_info "App-level readinessProbe already defined in $APP_CUE_PATH"
+    demo_info "This is the expected baseline state per UC-B5:"
+    demo_info "  - App defines default probe timeout ($APP_DEFAULT_TIMEOUT s)"
+    demo_info "  - Environment (prod) will override to $PROD_OVERRIDE_TIMEOUT s"
 
-# Add readinessProbe to appConfig block
-# The appConfig block is currently empty, so we add after "appConfig: {"
-demo_action "Adding readinessProbe to app CUE..."
-
-# Use awk for reliable multi-line insertion after "appConfig: {"
-# Use concrete value (not CUE default syntax) - concrete values override base defaults
-# env.cue can still override this with its own concrete value
-awk -v timeout="$APP_DEFAULT_TIMEOUT" '
-/appConfig: \{/ {
-    print
-    print "\t\tdeployment: {"
-    print "\t\t\treadinessProbe: {"
-    print "\t\t\t\ttimeoutSeconds: " timeout
-    print "\t\t\t}"
-    print "\t\t}"
-    next
-}
-{print}
-' "$APP_CUE_PATH" > "${APP_CUE_PATH}.tmp" && mv "${APP_CUE_PATH}.tmp" "$APP_CUE_PATH"
-
-demo_verify "Added readinessProbe to $APP_CUE_PATH"
-
-# Verify the change was actually made
-if ! grep -q "readinessProbe" "$APP_CUE_PATH"; then
-    demo_fail "Failed to add readinessProbe - appConfig block may be missing"
-    git checkout "$APP_CUE_PATH" 2>/dev/null || true
-    exit 1
-fi
-
-# Verify CUE is valid
-demo_action "Validating CUE configuration..."
-if cue vet -c=false ./...; then
-    demo_verify "CUE validation passed"
-else
-    demo_fail "CUE validation failed"
-    git checkout "$APP_CUE_PATH" 2>/dev/null || true
-    exit 1
-fi
-
-demo_action "Changed section in $APP_CUE_PATH:"
-grep -A10 "appConfig" "$APP_CUE_PATH" | head -15 | sed 's/^/    /'
-
-# ---------------------------------------------------------------------------
-# Step 4: Push App-Level Change via GitLab MR
-# ---------------------------------------------------------------------------
-
-demo_step 4 "Push App-Level Change via GitLab MR"
-
-# Generate feature branch name
-FEATURE_BRANCH="uc-b5-probe-timeout-$(date +%s)"
-
-# Use GitLab CLI to create branch and push file
-GITLAB_CLI="${PROJECT_ROOT}/scripts/04-operations/gitlab-cli.sh"
-
-demo_action "Creating branch '$FEATURE_BRANCH' from dev in GitLab..."
-"$GITLAB_CLI" branch create p2c/k8s-deployments "$FEATURE_BRANCH" --from dev >/dev/null || {
-    demo_fail "Failed to create branch in GitLab"
-    git checkout "$APP_CUE_PATH" 2>/dev/null || true
-    exit 1
-}
-
-demo_action "Pushing CUE change to GitLab..."
-cat "$APP_CUE_PATH" | "$GITLAB_CLI" file update p2c/k8s-deployments "$APP_CUE_PATH" \
-    --ref "$FEATURE_BRANCH" \
-    --message "feat: add readinessProbe timeout to app config (UC-B5)" \
-    --stdin >/dev/null || {
-    demo_fail "Failed to update file in GitLab"
-    git checkout "$APP_CUE_PATH" 2>/dev/null || true
-    exit 1
-}
-demo_verify "Feature branch pushed"
-
-# Restore local changes (don't leave local repo dirty)
-git checkout "$APP_CUE_PATH" 2>/dev/null || true
-
-# Create MR from feature branch to dev
-demo_action "Creating MR: $FEATURE_BRANCH → dev..."
-mr_iid=$(create_mr "$FEATURE_BRANCH" "dev" "UC-B5: Add readinessProbe timeout to app config")
-
-# ---------------------------------------------------------------------------
-# Step 5: Promote Through All Environments
-# ---------------------------------------------------------------------------
-
-demo_step 5 "Promote Through All Environments"
-
-# Track baseline time for promotion MR detection
-next_promotion_baseline=""
-
-for env in "${ENVIRONMENTS[@]}"; do
-    demo_info "--- Promoting to $env ---"
-
-    # Capture baselines before MR
-    argocd_baseline=$(get_argocd_revision "${DEMO_APP}-${env}")
-
-    if [[ "$env" == "dev" ]]; then
-        # DEV: Wait for pipeline on existing MR
-        demo_action "Waiting for Jenkins CI to generate manifests..."
-        wait_for_mr_pipeline "$mr_iid" || exit 1
-
-        # Verify MR contains expected changes
-        demo_action "Verifying MR contains app CUE and manifest changes..."
-        assert_mr_contains_diff "$mr_iid" "$APP_CUE_PATH" "readinessProbe" || exit 1
-        assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "timeoutSeconds" || exit 1
-        demo_verify "MR contains app change and regenerated manifests"
-
-        # Capture baseline time BEFORE merge
-        next_promotion_baseline=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-        # Merge MR
-        accept_mr "$mr_iid" || exit 1
+    # Verify the value matches expected baseline
+    if grep -q "timeoutSeconds.*$APP_DEFAULT_TIMEOUT" "$APP_CUE_PATH"; then
+        demo_verify "App-level default timeoutSeconds=$APP_DEFAULT_TIMEOUT confirmed"
+        SKIP_PHASE1=true
     else
-        # STAGE/PROD: Wait for Jenkins-created promotion MR
-        wait_for_promotion_mr "$env" "$next_promotion_baseline" || exit 1
-        mr_iid="$PROMOTION_MR_IID"
+        demo_warn "App-level timeoutSeconds exists but doesn't match expected value"
+        demo_info "Expected: $APP_DEFAULT_TIMEOUT, run reset-demo-state.sh to clean up"
+        exit 1
+    fi
+else
+    SKIP_PHASE1=false
+fi
 
-        # Wait for MR pipeline
-        demo_action "Waiting for pipeline to validate promotion..."
-        wait_for_mr_pipeline "$mr_iid" || exit 1
+if [[ "${SKIP_PHASE1:-false}" == "true" ]]; then
+    demo_info "Skipping Phase 1 MR workflow - baseline already has app-level default"
+    demo_info "Proceeding directly to Phase 2 (prod override)..."
 
-        # Verify MR contains expected changes
-        demo_action "Verifying MR contains manifest changes..."
-        assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "timeoutSeconds" || exit 1
+    # Show the current app config
+    demo_action "Current app-level readinessProbe configuration:"
+    grep -A5 "readinessProbe" "$APP_CUE_PATH" | sed 's/^/    /'
+else
+    demo_info "Adding readinessProbe.timeoutSeconds=$APP_DEFAULT_TIMEOUT to services/apps/example-app.cue"
+    demo_info "This will propagate to ALL environments (dev, stage, prod)"
 
-        # Capture baseline time BEFORE merge
-        next_promotion_baseline=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    # Add readinessProbe to appConfig block
+    # The appConfig block is currently empty, so we add after "appConfig: {"
+    demo_action "Adding readinessProbe to app CUE..."
 
-        # Merge MR
-        accept_mr "$mr_iid" || exit 1
+    # Use awk for reliable multi-line insertion after "appConfig: {"
+    # Use concrete value (not CUE default syntax) - concrete values override base defaults
+    # env.cue can still override this with its own concrete value
+    awk -v timeout="$APP_DEFAULT_TIMEOUT" '
+    /appConfig: \{/ {
+        print
+        print "\t\tdeployment: {"
+        print "\t\t\treadinessProbe: {"
+        print "\t\t\t\ttimeoutSeconds: " timeout
+        print "\t\t\t}"
+        print "\t\t}"
+        next
+    }
+    {print}
+    ' "$APP_CUE_PATH" > "${APP_CUE_PATH}.tmp" && mv "${APP_CUE_PATH}.tmp" "$APP_CUE_PATH"
+
+    demo_verify "Added readinessProbe to $APP_CUE_PATH"
+
+    # Verify the change was actually made
+    if ! grep -q "readinessProbe" "$APP_CUE_PATH"; then
+        demo_fail "Failed to add readinessProbe - appConfig block may be missing"
+        git checkout "$APP_CUE_PATH" 2>/dev/null || true
+        exit 1
     fi
 
-    # Wait for ArgoCD sync
-    wait_for_argocd_sync "${DEMO_APP}-${env}" "$argocd_baseline" || exit 1
+    # Verify CUE is valid
+    demo_action "Validating CUE configuration..."
+    if cue vet -c=false ./...; then
+        demo_verify "CUE validation passed"
+    else
+        demo_fail "CUE validation failed"
+        git checkout "$APP_CUE_PATH" 2>/dev/null || true
+        exit 1
+    fi
 
-    # Verify K8s state
-    demo_action "Verifying readinessProbe timeout in K8s..."
-    assert_readiness_probe_timeout "$env" "$DEMO_APP" "$APP_DEFAULT_TIMEOUT" || exit 1
+    demo_action "Changed section in $APP_CUE_PATH:"
+    grep -A10 "appConfig" "$APP_CUE_PATH" | head -15 | sed 's/^/    /'
 
-    demo_verify "Promotion to $env complete"
-    echo ""
-done
+    # ---------------------------------------------------------------------------
+    # Step 4: Push App-Level Change via GitLab MR
+    # ---------------------------------------------------------------------------
+
+    demo_step 4 "Push App-Level Change via GitLab MR"
+
+    # Generate feature branch name
+    FEATURE_BRANCH="uc-b5-probe-timeout-$(date +%s)"
+
+    # Use GitLab CLI to create branch and push file
+    GITLAB_CLI="${PROJECT_ROOT}/scripts/04-operations/gitlab-cli.sh"
+
+    demo_action "Creating branch '$FEATURE_BRANCH' from dev in GitLab..."
+    "$GITLAB_CLI" branch create p2c/k8s-deployments "$FEATURE_BRANCH" --from dev >/dev/null || {
+        demo_fail "Failed to create branch in GitLab"
+        git checkout "$APP_CUE_PATH" 2>/dev/null || true
+        exit 1
+    }
+
+    demo_action "Pushing CUE change to GitLab..."
+    cat "$APP_CUE_PATH" | "$GITLAB_CLI" file update p2c/k8s-deployments "$APP_CUE_PATH" \
+        --ref "$FEATURE_BRANCH" \
+        --message "feat: add readinessProbe timeout to app config (UC-B5)" \
+        --stdin >/dev/null || {
+        demo_fail "Failed to update file in GitLab"
+        git checkout "$APP_CUE_PATH" 2>/dev/null || true
+        exit 1
+    }
+    demo_verify "Feature branch pushed"
+
+    # Restore local changes (don't leave local repo dirty)
+    git checkout "$APP_CUE_PATH" 2>/dev/null || true
+
+    # Create MR from feature branch to dev
+    demo_action "Creating MR: $FEATURE_BRANCH → dev..."
+    mr_iid=$(create_mr "$FEATURE_BRANCH" "dev" "UC-B5: Add readinessProbe timeout to app config")
+
+    # ---------------------------------------------------------------------------
+    # Step 5: Promote Through All Environments
+    # ---------------------------------------------------------------------------
+
+    demo_step 5 "Promote Through All Environments"
+
+    # Track baseline time for promotion MR detection
+    next_promotion_baseline=""
+
+    for env in "${ENVIRONMENTS[@]}"; do
+        demo_info "--- Promoting to $env ---"
+
+        # Capture baselines before MR
+        argocd_baseline=$(get_argocd_revision "${DEMO_APP}-${env}")
+
+        if [[ "$env" == "dev" ]]; then
+            # DEV: Wait for pipeline on existing MR
+            demo_action "Waiting for Jenkins CI to generate manifests..."
+            wait_for_mr_pipeline "$mr_iid" || exit 1
+
+            # Verify MR contains expected changes
+            demo_action "Verifying MR contains app CUE and manifest changes..."
+            assert_mr_contains_diff "$mr_iid" "$APP_CUE_PATH" "readinessProbe" || exit 1
+            assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "timeoutSeconds" || exit 1
+            demo_verify "MR contains app change and regenerated manifests"
+
+            # Capture baseline time BEFORE merge
+            next_promotion_baseline=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+            # Merge MR
+            accept_mr "$mr_iid" || exit 1
+        else
+            # STAGE/PROD: Wait for Jenkins-created promotion MR
+            wait_for_promotion_mr "$env" "$next_promotion_baseline" || exit 1
+            mr_iid="$PROMOTION_MR_IID"
+
+            # Wait for MR pipeline
+            demo_action "Waiting for pipeline to validate promotion..."
+            wait_for_mr_pipeline "$mr_iid" || exit 1
+
+            # Verify MR contains expected changes
+            demo_action "Verifying MR contains manifest changes..."
+            assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "timeoutSeconds" || exit 1
+
+            # Capture baseline time BEFORE merge
+            next_promotion_baseline=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+            # Merge MR
+            accept_mr "$mr_iid" || exit 1
+        fi
+
+        # Wait for ArgoCD sync
+        wait_for_argocd_sync "${DEMO_APP}-${env}" "$argocd_baseline" || exit 1
+
+        # Verify K8s state
+        demo_action "Verifying readinessProbe timeout in K8s..."
+        assert_readiness_probe_timeout "$env" "$DEMO_APP" "$APP_DEFAULT_TIMEOUT" || exit 1
+
+        demo_verify "Promotion to $env complete"
+        echo ""
+    done
+fi  # End of SKIP_PHASE1 else block
 
 # ---------------------------------------------------------------------------
 # Step 6: Checkpoint - All Environments Have App Default
@@ -289,7 +311,8 @@ done
 
 demo_step 6 "Checkpoint - All Environments Have App Default"
 
-demo_info "Verifying app default propagated to ALL environments..."
+demo_info "Verifying app default exists in ALL environments..."
+demo_info "(Baseline already deployed, or just promoted via Phase 1)"
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
@@ -297,7 +320,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 done
 
 demo_verify "CHECKPOINT: All environments have readinessProbe.timeoutSeconds=$APP_DEFAULT_TIMEOUT"
-demo_info "This proves app-level probe changes propagate correctly."
+demo_info "This confirms the app-level probe default is active everywhere."
 echo ""
 
 # ============================================================================
