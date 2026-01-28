@@ -401,8 +401,8 @@ While preserving:
 | UC-A2 | Enable debug mode | ✅ | ✅ | 🔲 | `uc-a2-debug-mode` | CUE already supports debug field |
 | UC-A3 | Env-specific ConfigMap | ✅ | ✅ | ✅ | `uc-a3-env-configmap` | Pipeline verified 2026-01-27 |
 | UC-B1 | Add app env var | ✅ | ✅ | ✅ | `uc-b1-app-env-var` | Pipeline verified 2026-01-27 |
-| UC-B2 | Add app annotation | ✅ | ✅ | 🔲 | `uc-b2-app-annotation` | Pending pipeline verification |
-| UC-B3 | Add app ConfigMap entry | ✅ | ✅ | 🔲 | `uc-b3-app-configmap` | Pending pipeline verification |
+| UC-B2 | Add app annotation | ✅ | ✅ | ✅ | `uc-b2-app-annotation` | Pipeline verified 2026-01-28 |
+| UC-B3 | Add app ConfigMap entry | ✅ | ✅ | ✅ | `uc-b3-app-configmap` | Pipeline verified 2026-01-28 |
 | UC-B4 | App ConfigMap with env override | ✅ | ✅ | ✅ | `uc-b4-app-override` | Pipeline verified 2026-01-27 |
 | UC-B5 | App probe with env override | 🔲 | 🔲 | 🔲 | — | |
 | UC-B6 | App env var with env override | 🔲 | 🔲 | 🔲 | — | |
