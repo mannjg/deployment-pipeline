@@ -235,16 +235,26 @@ _projectedSecretsVolumeBuilder: {
 
 	_additionalVolumeMounts: _volumeConfig.additionalVolumeMounts | *[]
 
-	// Helper to select base probes based on HTTPS setting
-	// Uses struct embedding with conditionals to avoid list disjunction issues
-	_baseProbes: {
+	// Check if app config specifies non-HTTP probe handlers (exec or tcpSocket)
+	// These are mutually exclusive with httpGet, so base httpGet must be excluded
+	_livenessHasNonHttpHandler: (appConfig.deployment.livenessProbe.exec != _|_) || (appConfig.deployment.livenessProbe.tcpSocket != _|_)
+	_readinessHasNonHttpHandler: (appConfig.deployment.readinessProbe.exec != _|_) || (appConfig.deployment.readinessProbe.tcpSocket != _|_)
+
+	// Select default httpGet handlers based on HTTPS setting
+	_defaultLivenessHttpGet: {
 		if appConfig.enableHttps {
-			liveness:  base.#DefaultHttpsLivenessProbe
-			readiness: base.#DefaultHttpsReadinessProbe
+			base.#DefaultHttpsLivenessHttpGet
 		}
 		if !appConfig.enableHttps {
-			liveness:  base.#DefaultLivenessProbe
-			readiness: base.#DefaultReadinessProbe
+			base.#DefaultLivenessHttpGet
+		}
+	}
+	_defaultReadinessHttpGet: {
+		if appConfig.enableHttps {
+			base.#DefaultHttpsReadinessHttpGet
+		}
+		if !appConfig.enableHttps {
+			base.#DefaultReadinessHttpGet
 		}
 	}
 
@@ -299,15 +309,29 @@ _projectedSecretsVolumeBuilder: {
 							resources: appConfig.deployment.resources
 						}
 
-						// Liveness probe - base provides defaults, app config overrides
-						livenessProbe: _baseProbes.liveness & {
+						// Liveness probe - timing defaults + handler selection
+						// Uses timing-only defaults when app specifies exec/tcpSocket,
+						// otherwise includes default httpGet handler
+						livenessProbe: base.#DefaultLivenessProbeTimings & {
+							// Only include default httpGet if app doesn't use exec/tcpSocket
+							if !_livenessHasNonHttpHandler {
+								httpGet: _defaultLivenessHttpGet
+							}
+						} & {
+							// Merge app config if specified
 							if appConfig.deployment.livenessProbe != _|_ {
 								appConfig.deployment.livenessProbe
 							}
 						}
 
-						// Readiness probe - base provides defaults, app config overrides
-						readinessProbe: _baseProbes.readiness & {
+						// Readiness probe - timing defaults + handler selection
+						readinessProbe: base.#DefaultReadinessProbeTimings & {
+							// Only include default httpGet if app doesn't use exec/tcpSocket
+							if !_readinessHasNonHttpHandler {
+								httpGet: _defaultReadinessHttpGet
+							}
+						} & {
+							// Merge app config if specified
 							if appConfig.deployment.readinessProbe != _|_ {
 								appConfig.deployment.readinessProbe
 							}

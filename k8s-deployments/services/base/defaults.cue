@@ -85,6 +85,54 @@ package base
 // The defaults provide sensible values for typical applications but can be
 // partially overridden using CUE's merge operator (&).
 
+// Probe Timing Defaults
+//
+// These contain only timing fields (no handler) for use when apps specify
+// non-HTTP handlers (exec, tcpSocket). They allow timing defaults to be
+// inherited while letting the app control the handler type.
+
+#DefaultLivenessProbeTimings: {
+	initialDelaySeconds: *30 | int
+	periodSeconds:       *10 | int
+	timeoutSeconds:      *5 | int
+	failureThreshold:    *3 | int
+	... // Allow handler fields (httpGet, exec, tcpSocket)
+}
+
+#DefaultReadinessProbeTimings: {
+	initialDelaySeconds: *10 | int
+	periodSeconds:       *5 | int
+	timeoutSeconds:      *3 | int
+	failureThreshold:    *3 | int
+	... // Allow handler fields (httpGet, exec, tcpSocket)
+}
+
+// Default HTTP handlers (for apps that don't specify a handler)
+
+#DefaultLivenessHttpGet: {
+	path:   *"/health/live" | string
+	port:   *8080 | int
+	scheme: *"HTTP" | "HTTPS"
+}
+
+#DefaultReadinessHttpGet: {
+	path:   *"/health/ready" | string
+	port:   *8080 | int
+	scheme: *"HTTP" | "HTTPS"
+}
+
+#DefaultHttpsLivenessHttpGet: {
+	path:   *"/health/live" | string
+	port:   *8443 | int
+	scheme: *"HTTPS" | "HTTP"
+}
+
+#DefaultHttpsReadinessHttpGet: {
+	path:   *"/health/ready" | string
+	port:   *8443 | int
+	scheme: *"HTTPS" | "HTTP"
+}
+
 // Liveness Probe
 //
 // Default liveness probe with conservative timing to avoid killing healthy
