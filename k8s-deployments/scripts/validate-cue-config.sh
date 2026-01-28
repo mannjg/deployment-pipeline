@@ -28,12 +28,13 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 ERRORS=0
 
-# Validate services (allow incomplete - these are schemas)
+# Validate services (allow incomplete - these are schemas with defaults)
 if [ -d "services" ]; then
     echo "Validating services..."
     for file in services/**/*.cue; do
         if [ -f "$file" ]; then
-            if cue vet -c=false "$file" 2>&1 | grep -q "error"; then
+            # CUE errors have format: path/file.cue:line:col: message
+            if cue vet -c=false "$file" 2>&1 | grep -qE '\.cue:[0-9]+:[0-9]+:'; then
                 echo "✗ Error in $file"
                 ERRORS=$((ERRORS + 1))
             else
@@ -44,13 +45,18 @@ if [ -d "services" ]; then
 fi
 
 # Validate environment configuration (env.cue at root)
+# Use -c=false since env.cue imports schemas with defaults (*value | type)
+# Defaults resolve at export time; final validation happens via kubectl dry-run
 echo ""
 echo "Validating environment configuration..."
 
 if [ -f "env.cue" ]; then
-    if cue vet "env.cue" 2>&1 | grep -q "error"; then
+    # Capture output and check for actual CUE errors (file:line:col format)
+    validation_output=$(cue vet -c=false "env.cue" 2>&1)
+    # CUE errors have format: path/file.cue:line:col: message
+    if echo "$validation_output" | grep -qE '\.cue:[0-9]+:[0-9]+:'; then
         echo "✗ Error in env.cue"
-        cue vet "env.cue" 2>&1 | head -20
+        echo "$validation_output" | head -20
         ERRORS=$((ERRORS + 1))
     else
         echo "✓ env.cue"
@@ -62,13 +68,14 @@ else
     exit 1
 fi
 
-# Validate k8s templates (allow incomplete)
+# Validate k8s templates (allow incomplete - these are templates with defaults)
 if [ -d "k8s" ]; then
     echo ""
     echo "Validating k8s templates..."
     for file in k8s/*.cue; do
         if [ -f "$file" ]; then
-            if cue vet -c=false "$file" 2>&1 | grep -q "error"; then
+            # CUE errors have format: path/file.cue:line:col: message
+            if cue vet -c=false "$file" 2>&1 | grep -qE '\.cue:[0-9]+:[0-9]+:'; then
                 echo "✗ Error in $file"
                 ERRORS=$((ERRORS + 1))
             else
