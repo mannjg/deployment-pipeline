@@ -51,12 +51,12 @@ exampleApp: core.#App & {
 
 	// Application-level configuration
 	// Environment-specific values will be merged with this
-	// Note: Environments MUST specify concrete values for any fields with app defaults
-	// to avoid CUE default conflicts (e.g., app's *10 | int + base's *3 | int = incomplete)
+	// Use CUE default syntax (*value | type) for fields that environments can override.
+	// Env overrides with concrete values: (*10 | int) & 30 = 30
 	appConfig: {
 		deployment: {
 			readinessProbe: {
-				timeoutSeconds: 10 // App default; env overrides with concrete value
+				timeoutSeconds: *10 | int // App default, env can override with concrete
 			}
 		}
 		// Service configuration uses default HTTP port (80 -> 8080)

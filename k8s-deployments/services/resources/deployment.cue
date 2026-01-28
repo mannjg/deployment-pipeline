@@ -309,31 +309,122 @@ _projectedSecretsVolumeBuilder: {
 							resources: appConfig.deployment.resources
 						}
 
-						// Liveness probe - timing defaults + handler selection
-						// Uses timing-only defaults when app specifies exec/tcpSocket,
-						// otherwise includes default httpGet handler
-						livenessProbe: base.#DefaultLivenessProbeTimings & {
-							// Only include default httpGet if app doesn't use exec/tcpSocket
-							if !_livenessHasNonHttpHandler {
-								httpGet: _defaultLivenessHttpGet
+						// Liveness probe - uses conditional pattern (like strategy) to avoid
+						// CUE default conflicts. Each field: use appConfig if defined, else base.
+						livenessProbe: {
+							// Handler: use appConfig's handler if specified, else default httpGet
+							if _livenessHasNonHttpHandler && appConfig.deployment.livenessProbe.exec != _|_ {
+								exec: appConfig.deployment.livenessProbe.exec
 							}
-						} & {
-							// Merge app config if specified
-							if appConfig.deployment.livenessProbe != _|_ {
-								appConfig.deployment.livenessProbe
+							if _livenessHasNonHttpHandler && appConfig.deployment.livenessProbe.tcpSocket != _|_ {
+								tcpSocket: appConfig.deployment.livenessProbe.tcpSocket
+							}
+							if !_livenessHasNonHttpHandler {
+								// Use appConfig httpGet fields if specified, else defaults
+								httpGet: {
+									if appConfig.deployment.livenessProbe.httpGet.path != _|_ {
+										path: appConfig.deployment.livenessProbe.httpGet.path
+									}
+									if appConfig.deployment.livenessProbe.httpGet.path == _|_ {
+										path: _defaultLivenessHttpGet.path
+									}
+									if appConfig.deployment.livenessProbe.httpGet.port != _|_ {
+										port: appConfig.deployment.livenessProbe.httpGet.port
+									}
+									if appConfig.deployment.livenessProbe.httpGet.port == _|_ {
+										port: _defaultLivenessHttpGet.port
+									}
+									if appConfig.deployment.livenessProbe.httpGet.scheme != _|_ {
+										scheme: appConfig.deployment.livenessProbe.httpGet.scheme
+									}
+									if appConfig.deployment.livenessProbe.httpGet.scheme == _|_ {
+										scheme: _defaultLivenessHttpGet.scheme
+									}
+								}
+							}
+							// Timing fields: use appConfig if defined, else base default
+							if appConfig.deployment.livenessProbe.initialDelaySeconds != _|_ {
+								initialDelaySeconds: appConfig.deployment.livenessProbe.initialDelaySeconds
+							}
+							if appConfig.deployment.livenessProbe.initialDelaySeconds == _|_ {
+								initialDelaySeconds: base.#DefaultLivenessProbeTimings.initialDelaySeconds
+							}
+							if appConfig.deployment.livenessProbe.periodSeconds != _|_ {
+								periodSeconds: appConfig.deployment.livenessProbe.periodSeconds
+							}
+							if appConfig.deployment.livenessProbe.periodSeconds == _|_ {
+								periodSeconds: base.#DefaultLivenessProbeTimings.periodSeconds
+							}
+							if appConfig.deployment.livenessProbe.timeoutSeconds != _|_ {
+								timeoutSeconds: appConfig.deployment.livenessProbe.timeoutSeconds
+							}
+							if appConfig.deployment.livenessProbe.timeoutSeconds == _|_ {
+								timeoutSeconds: base.#DefaultLivenessProbeTimings.timeoutSeconds
+							}
+							if appConfig.deployment.livenessProbe.failureThreshold != _|_ {
+								failureThreshold: appConfig.deployment.livenessProbe.failureThreshold
+							}
+							if appConfig.deployment.livenessProbe.failureThreshold == _|_ {
+								failureThreshold: base.#DefaultLivenessProbeTimings.failureThreshold
 							}
 						}
 
-						// Readiness probe - timing defaults + handler selection
-						readinessProbe: base.#DefaultReadinessProbeTimings & {
-							// Only include default httpGet if app doesn't use exec/tcpSocket
-							if !_readinessHasNonHttpHandler {
-								httpGet: _defaultReadinessHttpGet
+						// Readiness probe - same conditional pattern as liveness
+						readinessProbe: {
+							// Handler: use appConfig's handler if specified, else default httpGet
+							if _readinessHasNonHttpHandler && appConfig.deployment.readinessProbe.exec != _|_ {
+								exec: appConfig.deployment.readinessProbe.exec
 							}
-						} & {
-							// Merge app config if specified
-							if appConfig.deployment.readinessProbe != _|_ {
-								appConfig.deployment.readinessProbe
+							if _readinessHasNonHttpHandler && appConfig.deployment.readinessProbe.tcpSocket != _|_ {
+								tcpSocket: appConfig.deployment.readinessProbe.tcpSocket
+							}
+							if !_readinessHasNonHttpHandler {
+								// Use appConfig httpGet fields if specified, else defaults
+								httpGet: {
+									if appConfig.deployment.readinessProbe.httpGet.path != _|_ {
+										path: appConfig.deployment.readinessProbe.httpGet.path
+									}
+									if appConfig.deployment.readinessProbe.httpGet.path == _|_ {
+										path: _defaultReadinessHttpGet.path
+									}
+									if appConfig.deployment.readinessProbe.httpGet.port != _|_ {
+										port: appConfig.deployment.readinessProbe.httpGet.port
+									}
+									if appConfig.deployment.readinessProbe.httpGet.port == _|_ {
+										port: _defaultReadinessHttpGet.port
+									}
+									if appConfig.deployment.readinessProbe.httpGet.scheme != _|_ {
+										scheme: appConfig.deployment.readinessProbe.httpGet.scheme
+									}
+									if appConfig.deployment.readinessProbe.httpGet.scheme == _|_ {
+										scheme: _defaultReadinessHttpGet.scheme
+									}
+								}
+							}
+							// Timing fields: use appConfig if defined, else base default
+							if appConfig.deployment.readinessProbe.initialDelaySeconds != _|_ {
+								initialDelaySeconds: appConfig.deployment.readinessProbe.initialDelaySeconds
+							}
+							if appConfig.deployment.readinessProbe.initialDelaySeconds == _|_ {
+								initialDelaySeconds: base.#DefaultReadinessProbeTimings.initialDelaySeconds
+							}
+							if appConfig.deployment.readinessProbe.periodSeconds != _|_ {
+								periodSeconds: appConfig.deployment.readinessProbe.periodSeconds
+							}
+							if appConfig.deployment.readinessProbe.periodSeconds == _|_ {
+								periodSeconds: base.#DefaultReadinessProbeTimings.periodSeconds
+							}
+							if appConfig.deployment.readinessProbe.timeoutSeconds != _|_ {
+								timeoutSeconds: appConfig.deployment.readinessProbe.timeoutSeconds
+							}
+							if appConfig.deployment.readinessProbe.timeoutSeconds == _|_ {
+								timeoutSeconds: base.#DefaultReadinessProbeTimings.timeoutSeconds
+							}
+							if appConfig.deployment.readinessProbe.failureThreshold != _|_ {
+								failureThreshold: appConfig.deployment.readinessProbe.failureThreshold
+							}
+							if appConfig.deployment.readinessProbe.failureThreshold == _|_ {
+								failureThreshold: base.#DefaultReadinessProbeTimings.failureThreshold
 							}
 						}
 
