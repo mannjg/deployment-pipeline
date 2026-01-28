@@ -66,6 +66,7 @@ dev: exampleApp: apps.exampleApp & {
 				}
 				initialDelaySeconds: 10
 				periodSeconds:       10
+				timeoutSeconds:      10 // Must be concrete to resolve app/base default conflict
 			}
 
 			// Environment-specific variables
