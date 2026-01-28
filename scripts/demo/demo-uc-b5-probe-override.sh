@@ -58,6 +58,9 @@ ENVIRONMENTS=("dev" "stage" "prod")
 
 cd "$K8S_DEPLOYMENTS_DIR"
 
+# GitLab CLI path (used in both Phase 1 and Phase 2)
+GITLAB_CLI="${PROJECT_ROOT}/scripts/04-operations/gitlab-cli.sh"
+
 demo_init "UC-B5: App Probe with Environment Override"
 
 # Load credentials
@@ -214,9 +217,6 @@ else
     # Generate feature branch name
     FEATURE_BRANCH="uc-b5-probe-timeout-$(date +%s)"
 
-    # Use GitLab CLI to create branch and push file
-    GITLAB_CLI="${PROJECT_ROOT}/scripts/04-operations/gitlab-cli.sh"
-
     demo_action "Creating branch '$FEATURE_BRANCH' from dev in GitLab..."
     "$GITLAB_CLI" branch create p2c/k8s-deployments "$FEATURE_BRANCH" --from dev >/dev/null || {
         demo_fail "Failed to create branch in GitLab"
@@ -355,19 +355,20 @@ fi
 demo_action "Adding timeoutSeconds override to env.cue..."
 
 MODIFIED_ENV_CUE=$(echo "$PROD_ENV_CUE" | awk -v timeout="$PROD_OVERRIDE_TIMEOUT" '
-BEGIN { in_prod=0; in_app=0; in_deployment=0; in_readiness=0 }
-/^prod:/ { in_prod=1 }
-in_prod && /exampleApp:/ { in_app=1 }
-in_app && /deployment: \{/ { in_deployment=1 }
+BEGIN { in_prod_exampleapp=0; in_deployment=0; in_readiness=0; added=0 }
+# Match "prod: exampleApp:" at start of line (the specific block we want)
+/^prod: exampleApp:/ { in_prod_exampleapp=1 }
+# Reset when we see any other top-level definition (dev:, stage:, prod: postgres:, etc.)
+/^[a-z]+:/ && !/^prod: exampleApp:/ { in_prod_exampleapp=0; in_deployment=0; in_readiness=0 }
+in_prod_exampleapp && /deployment: \{/ { in_deployment=1 }
 in_deployment && /readinessProbe: \{/ { in_readiness=1 }
-in_readiness && /periodSeconds:/ {
+in_readiness && /periodSeconds:/ && !added {
     print
     print "\t\t\t\ttimeoutSeconds: " timeout
-    in_readiness=0  # Only add once
+    in_readiness=0
+    added=1  # Only add once
     next
 }
-# Reset when we exit the prod block
-/^[a-z]+:/ && !/^prod:/ { in_prod=0; in_app=0; in_deployment=0; in_readiness=0 }
 {print}
 ')
 
