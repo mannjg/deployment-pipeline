@@ -37,6 +37,8 @@ DEMO_ORDER=(
     "UC-B2:demo-uc-b2-app-annotation.sh:App annotation propagates to all environments"
     "UC-B3:demo-uc-b3-app-configmap.sh:App ConfigMap entry propagates to all environments"
     "UC-B4:demo-uc-b4-app-override.sh:App ConfigMap with environment override"
+    "UC-B5:demo-uc-b5-probe-override.sh:App probe with environment override"
+    "UC-B6:demo-uc-b6-env-var-override.sh:App env var with environment override"
     # Category C: Platform-Wide
     "UC-C1:demo-uc-c1-default-label.sh:Platform-wide label propagation"
     "UC-C2:demo-uc-c2-security-context.sh:Platform-wide pod security context"
