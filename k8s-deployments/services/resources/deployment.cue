@@ -236,15 +236,16 @@ _projectedSecretsVolumeBuilder: {
 	_additionalVolumeMounts: _volumeConfig.additionalVolumeMounts | *[]
 
 	// Helper to select base probes based on HTTPS setting
+	// Uses struct embedding with conditionals to avoid list disjunction issues
 	_baseProbes: {
-		liveness: [
-			if appConfig.enableHttps {base.#DefaultHttpsLivenessProbe},
-			if !appConfig.enableHttps {base.#DefaultLivenessProbe},
-		][0]
-		readiness: [
-			if appConfig.enableHttps {base.#DefaultHttpsReadinessProbe},
-			if !appConfig.enableHttps {base.#DefaultReadinessProbe},
-		][0]
+		if appConfig.enableHttps {
+			liveness:  base.#DefaultHttpsLivenessProbe
+			readiness: base.#DefaultHttpsReadinessProbe
+		}
+		if !appConfig.enableHttps {
+			liveness:  base.#DefaultLivenessProbe
+			readiness: base.#DefaultReadinessProbe
+		}
 	}
 
 	// The actual Deployment resource
@@ -298,25 +299,13 @@ _projectedSecretsVolumeBuilder: {
 							resources: appConfig.deployment.resources
 						}
 
-						// Liveness probe with smart defaults
-						// If exec or tcpSocket is specified, use custom probe entirely
-						// Otherwise merge custom settings with HTTP defaults
-						if (appConfig.deployment.livenessProbe.exec | _|_) != _|_ || (appConfig.deployment.livenessProbe.tcpSocket | _|_) != _|_ {
-							livenessProbe: appConfig.deployment.livenessProbe
-						}
-						if (appConfig.deployment.livenessProbe.exec | _|_) == _|_ && (appConfig.deployment.livenessProbe.tcpSocket | _|_) == _|_ {
-							livenessProbe: _baseProbes.liveness & (appConfig.deployment.livenessProbe | {})
-						}
+						// Liveness probe - merge app config with defaults
+						// Base probes have optional httpGet, so apps can provide exec or tcpSocket instead
+						// Timing fields from app config override defaults via CUE unification
+						livenessProbe: _baseProbes.liveness & (appConfig.deployment.livenessProbe | {})
 
-						// Readiness probe with smart defaults
-						// If exec or tcpSocket is specified, use custom probe entirely
-						// Otherwise merge custom settings with HTTP defaults
-						if (appConfig.deployment.readinessProbe.exec | _|_) != _|_ || (appConfig.deployment.readinessProbe.tcpSocket | _|_) != _|_ {
-							readinessProbe: appConfig.deployment.readinessProbe
-						}
-						if (appConfig.deployment.readinessProbe.exec | _|_) == _|_ && (appConfig.deployment.readinessProbe.tcpSocket | _|_) == _|_ {
-							readinessProbe: _baseProbes.readiness & (appConfig.deployment.readinessProbe | {})
-						}
+						// Readiness probe - merge app config with defaults
+						readinessProbe: _baseProbes.readiness & (appConfig.deployment.readinessProbe | {})
 
 						securityContext: base.#DefaultContainerSecurityContext
 					}]
