@@ -91,10 +91,11 @@ package base
 // pods during startup or temporary slow responses.
 
 #DefaultLivenessProbe: {
-	httpGet: {
-		path:   "/health/live"
-		port:   8080
-		scheme: "HTTP"
+	// httpGet is optional to allow apps to provide exec or tcpSocket probes
+	httpGet?: {
+		path:   *"/health/live" | string
+		port:   *8080 | int
+		scheme: *"HTTP" | string
 	}
 	initialDelaySeconds: *30 | int
 	periodSeconds:       *10 | int
@@ -103,10 +104,11 @@ package base
 }
 
 #DefaultHttpsLivenessProbe: {
-	httpGet: {
-		path:   "/health/live"
-		port:   8443
-		scheme: "HTTPS"
+	// httpGet is optional to allow apps to provide exec or tcpSocket probes
+	httpGet?: {
+		path:   *"/health/live" | string
+		port:   *8443 | int
+		scheme: *"HTTPS" | string
 	}
 	initialDelaySeconds: *30 | int
 	periodSeconds:       *10 | int
@@ -120,10 +122,11 @@ package base
 // when pods are ready to serve traffic.
 
 #DefaultReadinessProbe: {
-	httpGet: {
-		path:   "/health/ready"
-		port:   8080
-		scheme: "HTTP"
+	// httpGet is optional to allow apps to provide exec or tcpSocket probes
+	httpGet?: {
+		path:   *"/health/ready" | string
+		port:   *8080 | int
+		scheme: *"HTTP" | string
 	}
 	initialDelaySeconds: *10 | int
 	periodSeconds:       *5 | int
@@ -132,10 +135,11 @@ package base
 }
 
 #DefaultHttpsReadinessProbe: {
-	httpGet: {
-		path:   "/health/ready"
-		port:   8443
-		scheme: "HTTPS"
+	// httpGet is optional to allow apps to provide exec or tcpSocket probes
+	httpGet?: {
+		path:   *"/health/ready" | string
+		port:   *8443 | int
+		scheme: *"HTTPS" | string
 	}
 	initialDelaySeconds: *10 | int
 	periodSeconds:       *5 | int
