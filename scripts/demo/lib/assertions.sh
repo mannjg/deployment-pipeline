@@ -506,3 +506,53 @@ assert_readiness_probe_timeout() {
     assert_field_equals "$namespace" "deployment" "$deployment" \
         "{.spec.template.spec.containers[0].readinessProbe.timeoutSeconds}" "$expected"
 }
+
+# ============================================================================
+# ENV VAR "LAST WINS" ASSERTIONS
+# ============================================================================
+
+# Assert the LAST occurrence of an env var equals expected value
+# Kubernetes uses "last wins" when duplicate env vars exist
+# Usage: assert_deployment_env_var_last <namespace> <deployment_name> <env_name> <expected_value>
+assert_deployment_env_var_last() {
+    local namespace="$1"
+    local deployment="$2"
+    local env_name="$3"
+    local expected_value="$4"
+
+    # Get all env vars as JSON, find all matching names, take the last one
+    local actual
+    actual=$(kubectl get deployment "$deployment" -n "$namespace" \
+        -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name==\"$env_name\")].value}" 2>/dev/null | \
+        awk '{print $NF}')  # Take last space-separated value
+
+    if [[ "$actual" == "$expected_value" ]]; then
+        demo_verify "Env var $env_name (last value) = '$expected_value' in $namespace/$deployment"
+        return 0
+    else
+        demo_fail "Env var $env_name (last value): expected '$expected_value', got '$actual' in $namespace/$deployment"
+        return 1
+    fi
+}
+
+# Assert that an env var appears exactly N times (for verifying concatenation behavior)
+# Usage: assert_deployment_env_var_count <namespace> <deployment_name> <env_name> <expected_count>
+assert_deployment_env_var_count() {
+    local namespace="$1"
+    local deployment="$2"
+    local env_name="$3"
+    local expected_count="$4"
+
+    local actual_count
+    actual_count=$(kubectl get deployment "$deployment" -n "$namespace" \
+        -o jsonpath="{.spec.template.spec.containers[0].env[*].name}" 2>/dev/null | \
+        tr ' ' '\n' | grep -c "^${env_name}$" || echo "0")
+
+    if [[ "$actual_count" == "$expected_count" ]]; then
+        demo_verify "Env var $env_name appears $expected_count time(s) in $namespace/$deployment"
+        return 0
+    else
+        demo_fail "Env var $env_name count: expected $expected_count, got $actual_count in $namespace/$deployment"
+        return 1
+    fi
+}
