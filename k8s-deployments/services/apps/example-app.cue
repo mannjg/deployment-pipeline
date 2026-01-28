@@ -52,6 +52,11 @@ exampleApp: core.#App & {
 	// Application-level configuration
 	// Environment-specific values will be merged with this
 	appConfig: {
+		deployment: {
+			readinessProbe: {
+				timeoutSeconds: 10
+			}
+		}
 		// Service configuration uses default HTTP port (80 -> 8080)
 		// No additional ports needed - the default HTTP port is provided by the base template
 	}
