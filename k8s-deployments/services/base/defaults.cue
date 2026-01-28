@@ -96,10 +96,10 @@ package base
 		port:   8080
 		scheme: "HTTP"
 	}
-	initialDelaySeconds: 30
-	periodSeconds:       10
-	timeoutSeconds:      5
-	failureThreshold:    3
+	initialDelaySeconds: *30 | int
+	periodSeconds:       *10 | int
+	timeoutSeconds:      *5 | int
+	failureThreshold:    *3 | int
 }
 
 #DefaultHttpsLivenessProbe: {
@@ -108,10 +108,10 @@ package base
 		port:   8443
 		scheme: "HTTPS"
 	}
-	initialDelaySeconds: 30
-	periodSeconds:       10
-	timeoutSeconds:      5
-	failureThreshold:    3
+	initialDelaySeconds: *30 | int
+	periodSeconds:       *10 | int
+	timeoutSeconds:      *5 | int
+	failureThreshold:    *3 | int
 }
 
 // Readiness Probe
@@ -125,10 +125,10 @@ package base
 		port:   8080
 		scheme: "HTTP"
 	}
-	initialDelaySeconds: 10
-	periodSeconds:       5
-	timeoutSeconds:      3
-	failureThreshold:    3
+	initialDelaySeconds: *10 | int
+	periodSeconds:       *5 | int
+	timeoutSeconds:      *3 | int
+	failureThreshold:    *3 | int
 }
 
 #DefaultHttpsReadinessProbe: {
@@ -137,10 +137,10 @@ package base
 		port:   8443
 		scheme: "HTTPS"
 	}
-	initialDelaySeconds: 10
-	periodSeconds:       5
-	timeoutSeconds:      3
-	failureThreshold:    3
+	initialDelaySeconds: *10 | int
+	periodSeconds:       *5 | int
+	timeoutSeconds:      *3 | int
+	failureThreshold:    *3 | int
 }
 
 // Volume Mount and Configuration Definitions
