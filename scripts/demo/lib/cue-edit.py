@@ -53,6 +53,17 @@ Examples:
 
   # Remove environment-specific label override
   cue-edit.py env-label remove env.cue prod exampleApp cost-center
+
+App-level pod annotation overrides:
+  cue-edit.py app-annotation add <file> <app> <key> <value>
+  cue-edit.py app-annotation remove <file> <app> <key>
+
+Examples:
+  # Disable Prometheus scraping for postgres (overrides platform default)
+  cue-edit.py app-annotation add services/apps/postgres.cue postgres prometheus.io/scrape false
+
+  # Remove the override (restore platform default behavior)
+  cue-edit.py app-annotation remove services/apps/postgres.cue postgres prometheus.io/scrape
 """
 
 import argparse
@@ -277,8 +288,13 @@ def add_app_configmap_entry(content: str, app: str, key: str, value: str) -> str
     raise ValueError("Could not find appConfig block in file")
 
 
-def remove_app_configmap_entry(content: str, app: str, key: str) -> str:
-    """Remove a ConfigMap entry from an app's default config."""
+def remove_app_configmap_entry(content: str, _app: str, key: str) -> str:
+    """Remove a ConfigMap entry from an app's default config.
+
+    Note: The _app parameter is unused but kept for API consistency.
+    This function operates on single-app files (services/apps/*.cue), so it
+    modifies the first matching entry found.
+    """
     pattern = rf'(\n\s*)"{re.escape(key)}":\s*"[^"]*"\s*'
     return re.sub(pattern, r'\1', content)
 
@@ -565,6 +581,96 @@ def remove_platform_annotation(project_root: str, key: str) -> dict:
         'app_cue_path': str(app_cue_path),
         'deployment_cue_path': str(deployment_cue_path),
     }
+
+
+# ============================================================================
+# APP-LEVEL POD ANNOTATION FUNCTIONS
+# ============================================================================
+
+def add_app_pod_annotation(content: str, _app: str, key: str, value: str) -> str:
+    """Add a pod annotation override to an app's config in services/apps/*.cue.
+
+    This adds appConfig.deployment.podAnnotations to override platform defaults.
+
+    Note: The _app parameter is unused but kept for API consistency.
+    This function operates on single-app files (services/apps/*.cue), so it
+    modifies the first appConfig block found. This is consistent with other
+    app-level functions like remove_app_configmap_entry.
+
+    Structure: postgres: core.#App & {
+        appName: "postgres"
+        appConfig: {
+            deployment: {
+                podAnnotations: {
+                    "prometheus.io/scrape": "false"
+                }
+            }
+        }
+    }
+    """
+    # Look for existing appConfig.deployment.podAnnotations block
+    pod_ann_pattern = r'(appConfig:\s*\{[^}]*?deployment:\s*\{[^}]*?podAnnotations:\s*\{)'
+    pod_ann_match = re.search(pod_ann_pattern, content, re.DOTALL)
+
+    if pod_ann_match:
+        insert_pos = pod_ann_match.end()
+
+        # Check if key already exists
+        if re.search(rf'"{re.escape(key)}":\s*"[^"]*"', content[pod_ann_match.start():]):
+            # Replace existing value
+            return re.sub(
+                rf'("{re.escape(key)}":\s*)"[^"]*"',
+                rf'\1"{value}"',
+                content
+            )
+
+        new_entry = f'\n\t\t\t\t"{key}": "{value}"'
+        return content[:insert_pos] + new_entry + content[insert_pos:]
+
+    # Look for existing appConfig.deployment block (without podAnnotations)
+    deployment_pattern = r'(appConfig:\s*\{[^}]*?deployment:\s*\{)'
+    deployment_match = re.search(deployment_pattern, content, re.DOTALL)
+
+    if deployment_match:
+        insert_pos = deployment_match.end()
+        new_block = f'\n\t\t\tpodAnnotations: {{\n\t\t\t\t"{key}": "{value}"\n\t\t\t}}'
+        return content[:insert_pos] + new_block + content[insert_pos:]
+
+    # Look for existing appConfig block (without deployment)
+    appconfig_pattern = r'(appConfig:\s*\{)'
+    appconfig_match = re.search(appconfig_pattern, content)
+
+    if appconfig_match:
+        insert_pos = appconfig_match.end()
+        new_block = f'\n\t\tdeployment: {{\n\t\t\tpodAnnotations: {{\n\t\t\t\t"{key}": "{value}"\n\t\t\t}}\n\t\t}}'
+        return content[:insert_pos] + new_block + content[insert_pos:]
+
+    raise ValueError("Could not find appConfig block in file")
+
+
+def remove_app_pod_annotation(content: str, _app: str, key: str) -> str:
+    """Remove a pod annotation override from an app's config.
+
+    Also cleans up empty podAnnotations and deployment blocks if they become empty.
+
+    Note: The _app parameter is unused but kept for API consistency.
+    This function operates on single-app files (services/apps/*.cue), so it
+    modifies the first matching annotation found. This is consistent with other
+    app-level functions like remove_app_configmap_entry.
+    """
+    # Remove the specific annotation
+    pattern = rf'\n\s*"{re.escape(key)}":\s*"[^"]*"'
+    content = re.sub(pattern, '', content)
+
+    # Clean up empty podAnnotations block
+    empty_pod_ann = r'\n\s*podAnnotations:\s*\{\s*\}'
+    content = re.sub(empty_pod_ann, '', content)
+
+    # Clean up empty deployment block (only if it contains nothing but whitespace)
+    empty_deployment = r'\n\s*deployment:\s*\{\s*\}'
+    content = re.sub(empty_deployment, '', content)
+
+    return content
 
 
 # ============================================================================
@@ -937,6 +1043,21 @@ def main():
     env_lbl_remove.add_argument('app', help='App name (CUE identifier)')
     env_lbl_remove.add_argument('key', help='Label key to remove')
 
+    # app-annotation subcommand
+    app_ann = subparsers.add_parser('app-annotation', help='Modify app-level pod annotation overrides')
+    app_ann_sub = app_ann.add_subparsers(dest='action')
+
+    app_ann_add = app_ann_sub.add_parser('add', help='Add a pod annotation override to app config')
+    app_ann_add.add_argument('file', help='CUE file to modify (services/apps/*.cue)')
+    app_ann_add.add_argument('app', help='App name (CUE identifier)')
+    app_ann_add.add_argument('key', help='Annotation key (e.g., prometheus.io/scrape)')
+    app_ann_add.add_argument('value', help='Annotation value (e.g., false)')
+
+    app_ann_remove = app_ann_sub.add_parser('remove', help='Remove a pod annotation override')
+    app_ann_remove.add_argument('file', help='CUE file to modify')
+    app_ann_remove.add_argument('app', help='App name (CUE identifier)')
+    app_ann_remove.add_argument('key', help='Annotation key to remove')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1056,6 +1177,58 @@ def main():
                 # Restore on any error
                 if Path(app_backup).exists():
                     shutil.move(app_backup, str(app_cue_path))
+                raise
+
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Handle app-annotation command
+    if args.command == 'app-annotation':
+        file_path = Path(args.file).resolve()
+        if not file_path.exists():
+            print(f"Error: File not found: {file_path}", file=sys.stderr)
+            sys.exit(1)
+
+        content = file_path.read_text()
+        project_root = find_project_root(str(file_path))
+
+        try:
+            if args.action == 'add':
+                new_content = add_app_pod_annotation(content, args.app, args.key, args.value)
+            elif args.action == 'remove':
+                new_content = remove_app_pod_annotation(content, args.app, args.key)
+            else:
+                print(f"Error: Unknown action: {args.action}", file=sys.stderr)
+                sys.exit(1)
+
+            # Write and validate
+            backup_path = str(file_path) + '.bak'
+            shutil.copy(str(file_path), backup_path)
+
+            try:
+                file_path.write_text(new_content)
+
+                result = subprocess.run(
+                    ["cue", "vet", "-c=false", "./..."],
+                    cwd=project_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+
+                if result.returncode != 0:
+                    shutil.move(backup_path, str(file_path))
+                    print(f"Error: CUE validation failed:\n{result.stderr}", file=sys.stderr)
+                    sys.exit(1)
+
+                Path(backup_path).unlink(missing_ok=True)
+                print(f"Successfully modified {file_path}")
+                sys.exit(0)
+
+            except Exception as e:
+                if Path(backup_path).exists():
+                    shutil.move(backup_path, str(file_path))
                 raise
 
         except ValueError as e:
