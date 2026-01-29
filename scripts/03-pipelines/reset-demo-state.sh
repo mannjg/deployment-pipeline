@@ -44,6 +44,39 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BASELINES_DIR="$SCRIPT_DIR/baselines"
 
+# Parse command-line arguments
+BRANCHES="dev,stage,prod"  # Default: all branches
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --branches)
+            BRANCHES="$2"
+            shift 2
+            ;;
+        --help|-h)
+            echo "Usage: $0 [--branches dev,stage,prod]"
+            echo ""
+            echo "Options:"
+            echo "  --branches  Comma-separated list of branches to reset (default: dev,stage,prod)"
+            echo ""
+            echo "Examples:"
+            echo "  $0                        # Reset all branches"
+            echo "  $0 --branches dev         # Reset dev only"
+            echo "  $0 --branches dev,stage   # Reset dev and stage"
+            exit 0
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Convert comma-separated branches to array
+IFS=',' read -ra BRANCH_LIST <<< "$BRANCHES"
+log_info "Target branches: ${BRANCH_LIST[*]}"
+
 if [[ -f "$REPO_ROOT/config/infra.env" ]]; then
     source "$REPO_ROOT/config/infra.env"
 else
@@ -88,7 +121,7 @@ wait_for_pipeline_quiescence() {
         local any_active=false
         local status_parts=()
 
-        for env in dev stage prod; do
+        for env in "${BRANCH_LIST[@]}"; do
             # Check if build is running
             local status_json=$("$jenkins_cli" status "k8s-deployments/$env" 2>/dev/null || echo '{}')
             local building=$(echo "$status_json" | jq -r '.building // false')
@@ -261,7 +294,7 @@ close_all_env_mrs() {
 
     log_info "Closing ALL open MRs targeting environment branches..."
 
-    for target_branch in dev stage prod; do
+    for target_branch in "${BRANCH_LIST[@]}"; do
         local mr_list
         if ! mr_list=$("$gitlab_cli" mr list "$project_path" --state opened --target "$target_branch" 2>/dev/null); then
             log_info "  $target_branch: no open MRs"
@@ -507,7 +540,7 @@ reset_cue_config() {
 
     local failed_envs=()
 
-    for env in dev stage prod; do
+    for env in "${BRANCH_LIST[@]}"; do
         # Step 1: Create MR and merge (waits for feature branch pipeline)
         if ! reset_env_via_mr "$env"; then
             failed_envs+=("$env")
