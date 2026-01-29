@@ -3,8 +3,8 @@
 #
 # This demo showcases the CUE override hierarchy for environment variables:
 # - App-level env vars (appEnvVars) propagate to ALL environments
-# - Environment-level env vars (additionalEnv) are concatenated
-# - Kubernetes uses "last wins" when duplicate env vars exist
+# - Environment-level env vars (additionalEnv) override by name
+# - Later values win when the same env var name appears multiple times
 #
 # Use Case UC-B6:
 # "App sets LOG_LEVEL=INFO as default, but dev needs LOG_LEVEL=DEBUG"
@@ -28,9 +28,9 @@
 #   7. Verify dev has DEBUG (last wins), stage/prod have INFO
 #
 # Design Note:
-#   Current implementation concatenates env vars rather than merging by name.
-#   This means both LOG_LEVEL=INFO and LOG_LEVEL=DEBUG appear in the manifest.
-#   Kubernetes uses the last value, so additionalEnv wins.
+#   Env vars are merged by name using #MergeEnvVars helper.
+#   additionalEnv values override appEnvVars values with the same name.
+#   This enables environment-specific overrides as expected.
 #
 # Prerequisites:
 # - Environment branches (dev/stage/prod) exist in GitLab
@@ -425,48 +425,31 @@ wait_for_argocd_sync "${DEMO_APP}-dev" "$argocd_baseline" || exit 1
 demo_verify "Dev override applied successfully"
 
 # ---------------------------------------------------------------------------
-# Step 8: Final Verification - Document Known Limitation
+# Step 8: Final Verification - Override Works Correctly
 # ---------------------------------------------------------------------------
 
-demo_step 8 "Final Verification - Document Known Limitation"
+demo_step 8 "Final Verification - Override Works Correctly"
 
 demo_info "Verifying final state across all environments..."
 
-# KNOWN LIMITATION: kubectl apply deduplicates env vars keeping FIRST occurrence
-# The CUE template uses list.Concat which creates duplicate entries:
-#   env: [LOG_LEVEL=INFO (from appEnvVars), LOG_LEVEL=DEBUG (from additionalEnv)]
-# But kubectl apply sends this through Kubernetes API which deduplicates by keeping
-# the FIRST occurrence. So the actual deployed pod has LOG_LEVEL=INFO, not DEBUG.
+# With #MergeEnvVars, env vars are merged by name and later values win
+# So dev should have LOG_LEVEL=DEBUG (override), stage/prod have LOG_LEVEL=INFO
 
-demo_action "Checking dev env var (documents kubectl apply behavior)..."
-# Note: We expect INFO because kubectl apply keeps first occurrence, not last
-actual_value=$(kubectl get deployment "$DEMO_APP" -n dev -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="'"$ENV_VAR_NAME"'")].value}' 2>/dev/null | awk '{print $1}')
+demo_action "Checking dev env var (override should work)..."
+assert_deployment_env_var "dev" "$DEMO_APP" "$ENV_VAR_NAME" "$DEV_OVERRIDE_VALUE" || exit 1
 
-if [[ "$actual_value" == "$APP_DEFAULT_VALUE" ]]; then
-    demo_warn "KNOWN LIMITATION CONFIRMED: kubectl apply keeps first occurrence"
-    demo_info "  Manifest has both: $ENV_VAR_NAME=$APP_DEFAULT_VALUE and $ENV_VAR_NAME=$DEV_OVERRIDE_VALUE"
-    demo_info "  Deployed pod has: $ENV_VAR_NAME=$APP_DEFAULT_VALUE (first wins with kubectl apply)"
-    demo_info ""
-    demo_info "  To fix: CUE template should merge env vars by name instead of concatenating."
-    demo_info "  See: k8s-deployments/services/resources/deployment.cue line ~105"
-elif [[ "$actual_value" == "$DEV_OVERRIDE_VALUE" ]]; then
-    demo_verify "Override worked: $ENV_VAR_NAME=$DEV_OVERRIDE_VALUE in dev"
-else
-    demo_warn "Unexpected value: $ENV_VAR_NAME=$actual_value in dev"
-fi
-
-# Stage should still have only app default (single occurrence)
-demo_action "Checking stage (should have app default only)..."
+# Stage should have only app default
+demo_action "Checking stage (should have app default)..."
 assert_deployment_env_var "stage" "$DEMO_APP" "$ENV_VAR_NAME" "$APP_DEFAULT_VALUE" || exit 1
 
-# Prod should still have only app default (single occurrence)
-demo_action "Checking prod (should have app default only)..."
+# Prod should have only app default
+demo_action "Checking prod (should have app default)..."
 assert_deployment_env_var "prod" "$DEMO_APP" "$ENV_VAR_NAME" "$APP_DEFAULT_VALUE" || exit 1
 
-demo_verify "Verification complete - documented kubectl apply behavior"
-demo_info "  - dev:   Manifest has override, but kubectl apply keeps first ($APP_DEFAULT_VALUE)"
-demo_info "  - stage: $ENV_VAR_NAME = $APP_DEFAULT_VALUE (app default only)"
-demo_info "  - prod:  $ENV_VAR_NAME = $APP_DEFAULT_VALUE (app default only)"
+demo_verify "Override works correctly!"
+demo_info "  - dev:   $ENV_VAR_NAME = $DEV_OVERRIDE_VALUE (override applied)"
+demo_info "  - stage: $ENV_VAR_NAME = $APP_DEFAULT_VALUE (app default)"
+demo_info "  - prod:  $ENV_VAR_NAME = $APP_DEFAULT_VALUE (app default)"
 
 # ---------------------------------------------------------------------------
 # Step 9: Summary
@@ -476,7 +459,7 @@ demo_step 9 "Summary"
 
 cat << EOF
 
-  This demo documented UC-B6: App Env Var with Environment Override
+  UC-B6: App Env Var with Environment Override - VERIFIED
 
   What happened:
 
@@ -488,33 +471,18 @@ cat << EOF
      - stage → prod: Jenkins auto-created promotion MR
   3. CHECKPOINT: Verified all environments had $ENV_VAR_NAME=$APP_DEFAULT_VALUE
 
-  PHASE 2: Dev Override (Demonstrates Known Limitation)
+  PHASE 2: Dev Override (Proves Override Works)
   4. Added $ENV_VAR_NAME=$DEV_OVERRIDE_VALUE to dev's additionalEnv via MR
-  5. Observed behavior:
-     - Manifest has BOTH values (list.Concat creates duplicates)
-     - kubectl apply deduplicates keeping FIRST occurrence
-     - Actual deployed value: $APP_DEFAULT_VALUE (not $DEV_OVERRIDE_VALUE)
+  5. Verified results:
+     - dev:   $ENV_VAR_NAME=$DEV_OVERRIDE_VALUE (override applied)
+     - stage: $ENV_VAR_NAME=$APP_DEFAULT_VALUE (app default)
+     - prod:  $ENV_VAR_NAME=$APP_DEFAULT_VALUE (app default)
 
-  KNOWN LIMITATION:
-  The CUE template uses list.Concat([appEnvVars, additionalEnv]) which creates:
-    env:
-      - name: LOG_LEVEL
-        value: INFO      # from appEnvVars (first)
-      - name: LOG_LEVEL
-        value: DEBUG     # from additionalEnv (second)
+  Why It Works:
+  The CUE template uses #MergeEnvVars to merge env vars by name.
+  Later values override earlier ones, so additionalEnv wins over appEnvVars.
 
-  When ArgoCD applies this manifest with 'kubectl apply', Kubernetes API
-  deduplicates env vars by keeping the FIRST occurrence. So the pod runs
-  with LOG_LEVEL=INFO, not DEBUG.
-
-  To Fix:
-  Change deployment.cue to MERGE env vars by name instead of concatenating.
-  The env-level value should replace (not append to) the app-level value.
-
-  What DOES Work:
-  - UC-B4 (ConfigMap override) - ConfigMaps don't have this issue
-  - UC-B5 (Probe override) - CUE unification properly merges probe settings
-  - Any override using CUE struct unification (not list concatenation)
+  This is the expected behavior for environment-specific overrides.
 
 EOF
 
