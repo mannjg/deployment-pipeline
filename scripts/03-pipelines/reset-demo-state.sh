@@ -294,7 +294,9 @@ close_all_env_mrs() {
 
     log_info "Closing ALL open MRs targeting environment branches..."
 
-    for target_branch in "${BRANCH_LIST[@]}"; do
+    # Always check all env branches for MRs, not just BRANCH_LIST
+    # This is critical because merging to dev creates promote MRs to stage/prod
+    for target_branch in dev stage prod; do
         local mr_list
         if ! mr_list=$("$gitlab_cli" mr list "$project_path" --state opened --target "$target_branch" 2>/dev/null); then
             log_info "  $target_branch: no open MRs"
