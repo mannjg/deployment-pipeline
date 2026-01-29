@@ -24,27 +24,27 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RESET_SCRIPT="$REPO_ROOT/scripts/03-pipelines/reset-demo-state.sh"
 
 # Verification order: validate-pipeline first, then demos by category
-# Only list tests that actually exist
+# Format: "ID:script:description:branches"
 DEMO_ORDER=(
     # Core: App code lifecycle (SNAPSHOT → RC → Release)
-    "validate-pipeline:../test/validate-pipeline.sh:App code lifecycle across dev/stage/prod"
-    # Category A: Environment-Specific
-    "UC-A1:demo-uc-a1-replicas.sh:Adjust replica count (isolated)"
-    "UC-A2:demo-uc-a2-debug-mode.sh:Enable debug mode (isolated)"
-    "UC-A3:demo-uc-a3-env-configmap.sh:Environment-specific ConfigMap (isolated)"
-    # Category B: App-Level Cross-Environment
-    "UC-B1:demo-uc-b1-app-env-var.sh:App env var propagates to all environments"
-    "UC-B2:demo-uc-b2-app-annotation.sh:App annotation propagates to all environments"
-    "UC-B3:demo-uc-b3-app-configmap.sh:App ConfigMap entry propagates to all environments"
-    "UC-B4:demo-uc-b4-app-override.sh:App ConfigMap with environment override"
-    "UC-B5:demo-uc-b5-probe-override.sh:App probe with environment override"
-    "UC-B6:demo-uc-b6-env-var-override.sh:App env var with environment override"
-    # Category C: Platform-Wide
-    "UC-C1:demo-uc-c1-default-label.sh:Platform-wide label propagation"
-    "UC-C2:demo-uc-c2-security-context.sh:Platform-wide pod security context"
-    "UC-C3:demo-uc-c3-deployment-strategy.sh:Platform-wide zero-downtime deployment strategy"
-    "UC-C4:demo-uc-c4-prometheus-annotations.sh:Platform-wide pod annotations"
-    "UC-C6:demo-uc-c6-platform-env-override.sh:Platform default with env override"
+    "validate-pipeline:../test/validate-pipeline.sh:App code lifecycle across dev/stage/prod:dev,stage,prod"
+    # Category A: Environment-Specific (dev only)
+    "UC-A1:demo-uc-a1-replicas.sh:Adjust replica count (isolated):dev"
+    "UC-A2:demo-uc-a2-debug-mode.sh:Enable debug mode (isolated):dev"
+    "UC-A3:demo-uc-a3-env-configmap.sh:Environment-specific ConfigMap (isolated):dev"
+    # Category B: App-Level Cross-Environment (full promotion)
+    "UC-B1:demo-uc-b1-app-env-var.sh:App env var propagates to all environments:dev,stage,prod"
+    "UC-B2:demo-uc-b2-app-annotation.sh:App annotation propagates to all environments:dev,stage,prod"
+    "UC-B3:demo-uc-b3-app-configmap.sh:App ConfigMap entry propagates to all environments:dev,stage,prod"
+    "UC-B4:demo-uc-b4-app-override.sh:App ConfigMap with environment override:dev,stage,prod"
+    "UC-B5:demo-uc-b5-probe-override.sh:App probe with environment override:dev,stage,prod"
+    "UC-B6:demo-uc-b6-env-var-override.sh:App env var with environment override:dev,stage,prod"
+    # Category C: Platform-Wide (full promotion)
+    "UC-C1:demo-uc-c1-default-label.sh:Platform-wide label propagation:dev,stage,prod"
+    "UC-C2:demo-uc-c2-security-context.sh:Platform-wide pod security context:dev,stage,prod"
+    "UC-C3:demo-uc-c3-deployment-strategy.sh:Platform-wide zero-downtime deployment strategy:dev,stage,prod"
+    "UC-C4:demo-uc-c4-prometheus-annotations.sh:Platform-wide pod annotations:dev,stage,prod"
+    "UC-C6:demo-uc-c6-platform-env-override.sh:Platform default with env override:dev,stage,prod"
 )
 
 # Colors
@@ -75,17 +75,15 @@ list_demos() {
     echo ""
     echo "Available verifications:"
     echo ""
-    printf "  %-20s %-45s %s\n" "ID" "Script" "Description"
-    printf "  %-20s %-45s %s\n" "--" "------" "-----------"
+    printf "  %-20s %-40s %-20s %s\n" "ID" "Script" "Branches" "Description"
+    printf "  %-20s %-40s %-20s %s\n" "--" "------" "--------" "-----------"
     for entry in "${DEMO_ORDER[@]}"; do
-        local id="${entry%%:*}"
-        local rest="${entry#*:}"
-        local script="${rest%%:*}"
-        local desc="${rest#*:}"
+        IFS=':' read -r id script desc branches <<< "$entry"
+        branches="${branches:-dev,stage,prod}"
         local full_path="$SCRIPT_DIR/$script"
         local status="✓"
         [[ ! -x "$full_path" ]] && status="○"
-        printf "  %s %-18s %-45s %s\n" "$status" "$id" "$script" "$desc"
+        printf "  %s %-18s %-40s %-20s %s\n" "$status" "$id" "$script" "$branches" "$desc"
     done
     echo ""
     echo "Legend: ✓ = exists, ○ = not implemented"
@@ -94,6 +92,7 @@ list_demos() {
 
 run_reset() {
     local test_id="$1"
+    local branches="${2:-dev,stage,prod}"
 
     if [[ "$SKIP_RESET" == "true" ]]; then
         return 0
@@ -102,6 +101,7 @@ run_reset() {
     echo ""
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}  RESET: Preparing clean state for $test_id${NC}"
+    echo -e "${BLUE}  Branches: $branches${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
     if [[ ! -x "$RESET_SCRIPT" ]]; then
@@ -109,7 +109,7 @@ run_reset() {
         return 1
     fi
 
-    if ! "$RESET_SCRIPT"; then
+    if ! "$RESET_SCRIPT" --branches "$branches"; then
         echo -e "${RED}[ERROR]${NC} Reset failed"
         return 1
     fi
@@ -275,18 +275,16 @@ main() {
     TOTAL_START_TIME=$(date +%s)
 
     for entry in "${DEMO_ORDER[@]}"; do
-        local id="${entry%%:*}"
-        local rest="${entry#*:}"
-        local script="${rest%%:*}"
-        local desc="${rest#*:}"
+        IFS=':' read -r id script desc branches <<< "$entry"
+        branches="${branches:-dev,stage,prod}"  # Default if missing
 
         # Filter if specific ID requested (partial match)
         if [[ -n "$filter" && "$id" != *"$filter"* && "$filter" != *"$id"* ]]; then
             continue
         fi
 
-        # Run reset before each test
-        if ! run_reset "$id"; then
+        # Run reset before each test with appropriate branches
+        if ! run_reset "$id" "$branches"; then
             RESULTS[$id]="SKIP"
             DURATIONS[$id]=0
             continue
