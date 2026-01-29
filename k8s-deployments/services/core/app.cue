@@ -98,10 +98,14 @@ import (
 		},
 	]
 
-	// Concatenate all env var layers: base + app-level + environment-level
-	// This combined list is passed to the deployment template
-	// Final order: DEBUG (if debug) → app vars (e.g., FOO_SPECIAL) → env vars (e.g., ENVIRONMENT=dev)
-	_computedAppEnvVars: list.Concat([_baseAppEnvs, appEnvVars, envEnvVars])
+	// Merge all env var layers: base + app-level + environment-level
+	// Later layers override earlier layers for matching names (last wins)
+	// Priority order: base (DEBUG) < app vars < env vars
+	_computedAppEnvVars: (#MergeEnvVars & {
+		base: _baseAppEnvs
+		app:  appEnvVars
+		env:  envEnvVars
+	}).out
 
 	// Concatenate all envFrom layers: app-level + environment-level
 	// This combined list is passed to the deployment template
