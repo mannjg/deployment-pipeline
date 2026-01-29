@@ -150,10 +150,7 @@ _check_running_builds() {
 
     if [[ -n "$queue_response" ]]; then
         while IFS= read -r line; do
-            # Skip empty lines and agent-pending items (transient K8s agent provisioning)
-            [[ -z "$line" ]] && continue
-            [[ "$line" == *":agent-pending" ]] && continue
-            STATE_QUEUED_BUILDS+=("$line")
+            [[ -n "$line" ]] && STATE_QUEUED_BUILDS+=("$line")
         done < <(echo "$queue_response" | jq -r '.items[]? | "\(.id):\(.task.name // (if .task._class | contains("PlaceholderTask") then "agent-pending" else "unknown" end))"' 2>/dev/null)
     fi
 
