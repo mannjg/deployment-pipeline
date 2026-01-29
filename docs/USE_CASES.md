@@ -406,8 +406,8 @@ While preserving:
 | UC-B2 | Add app annotation | ✅ | ✅ | ✅ | `uc-b2-app-annotation` | Pipeline verified 2026-01-28 |
 | UC-B3 | Add app ConfigMap entry | ✅ | ✅ | ✅ | `uc-b3-app-configmap` | Pipeline verified 2026-01-28 |
 | UC-B4 | App ConfigMap with env override | ✅ | ✅ | ✅ | `uc-b4-app-override` | Pipeline verified 2026-01-27 |
-| UC-B5 | App probe with env override | ✅ | ✅ | 🔲 | `uc-b5-probe-override` | Ready for pipeline verification |
-| UC-B6 | App env var with env override | ✅ | ✅ | 🔲 | `uc-b6-env-var-override` | Ready for pipeline verification; documents concat vs merge |
+| UC-B5 | App probe with env override | ✅ | ✅ | ✅ | `uc-b5-probe-override` | Pipeline verified 2026-01-28 |
+| UC-B6 | App env var with env override | ✅ | ✅ | ⚠️ | `uc-b6-env-var-override` | Demo works; kubectl apply deduplicates env vars (keeps first), preventing override semantics |
 | UC-C1 | Add default label | ✅ | ✅ | ✅ | `uc-c1-default-label` | Pipeline verified 2026-01-21 |
 | UC-C2 | Add security context | ✅ | ✅ | ✅ | `uc-c2-security-context` | Pipeline verified 2026-01-27 |
 | UC-C3 | Change deployment strategy | ✅ | ✅ | ✅ | `uc-c3-deployment-strategy` | Pipeline verified 2026-01-27 |

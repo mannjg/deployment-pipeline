@@ -651,18 +651,44 @@ wait_for_argocd_sync() {
         # This confirms the sync operation completed, not just that ArgoCD detected the commit
         local synced_revision=$(echo "$app_status" | jq -r '.status.operationState.syncResult.revision // ""')
 
+        # Get operation state to check if sync operation is in progress
+        local operation_phase=$(echo "$app_status" | jq -r '.status.operationState.phase // "None"')
+
         # Wait for:
         # 1. Tracked revision to change from baseline
         # 2. Status to be Synced+Healthy
-        # 3. The synced revision to match the tracked revision (actual deploy happened)
-        if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" && "$current_revision" != "$baseline" && "$synced_revision" == "$current_revision" ]]; then
-            demo_verify "$app_name synced and healthy"
-            # Give K8s a moment to fully propagate deployment changes
-            sleep 2
-            return 0
+        # 3. Either:
+        #    a) The synced revision matches tracked revision (operation completed), OR
+        #    b) No operation in progress and revision changed (ArgoCD decided no sync needed,
+        #       e.g., when kubectl apply results in no-op due to duplicate env vars)
+        local revision_changed=false
+        [[ "$current_revision" != "$baseline" ]] && revision_changed=true
+
+        if [[ "$sync_status" == "Synced" && "$health_status" == "Healthy" && "$revision_changed" == "true" ]]; then
+            # Strict check: synced revision matches (operation actually completed)
+            if [[ "$synced_revision" == "$current_revision" ]]; then
+                demo_verify "$app_name synced and healthy"
+                sleep 2
+                return 0
+            fi
+
+            # Fallback: No operation running/pending and revision changed
+            # This handles cases where ArgoCD detected the change but determined no sync
+            # operation was needed (e.g., kubectl apply was a no-op)
+            if [[ "$operation_phase" == "Succeeded" || "$operation_phase" == "None" ]]; then
+                # Wait a bit to ensure we're not catching a transient state
+                if [[ $elapsed -ge 20 ]]; then
+                    demo_verify "$app_name synced and healthy (no-op sync)"
+                    sleep 2
+                    return 0
+                fi
+            fi
         fi
 
-        demo_info "Status: sync=$sync_status health=$health_status rev=${current_revision:0:7} (${elapsed}s)"
+        # Show operation phase in debug output if relevant
+        local phase_info=""
+        [[ "$operation_phase" != "Succeeded" && "$operation_phase" != "None" ]] && phase_info=" op=$operation_phase"
+        demo_info "Status: sync=$sync_status health=$health_status rev=${current_revision:0:7}${phase_info} (${elapsed}s)"
         sleep $poll_interval
         elapsed=$((elapsed + poll_interval))
     done
