@@ -1,5 +1,5 @@
-// Package core provides shared utilities for CUE templates
-package core
+// Package base provides shared utilities and defaults for CUE templates
+package base
 
 import "list"
 

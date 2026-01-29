@@ -101,7 +101,7 @@ import (
 	// Merge all env var layers: base + app-level + environment-level
 	// Later layers override earlier layers for matching names (last wins)
 	// Priority order: base (DEBUG) < app vars < env vars
-	_computedAppEnvVars: (#MergeEnvVars & {
+	_computedAppEnvVars: (base.#MergeEnvVars & {
 		base: _baseAppEnvs
 		app:  appEnvVars
 		env:  envEnvVars

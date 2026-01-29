@@ -100,9 +100,13 @@ _projectedSecretsVolumeBuilder: {
 		}
 	}
 
-	// Computed env - concatenate: app-level defaults + environment-specific
+	// Computed env - merge by name: app-level defaults + environment-specific
 	// Note: appEnvVars includes system defaults (like DEBUG) computed in app.cue
-	_env: list.Concat([appEnvVars, appConfig.deployment.additionalEnv])
+	// additionalEnv overrides appEnvVars for matching names (last wins)
+	_env: (base.#MergeEnvVars & {
+		app:        appEnvVars
+		additional: appConfig.deployment.additionalEnv
+	}).out
 
 	// Computed envFrom - concatenate: app-level + environment-specific
 	// Note: appEnvFrom includes app-level and environment-level envFrom computed in app.cue
@@ -237,7 +241,7 @@ _projectedSecretsVolumeBuilder: {
 
 	// Check if app config specifies non-HTTP probe handlers (exec or tcpSocket)
 	// These are mutually exclusive with httpGet, so base httpGet must be excluded
-	_livenessHasNonHttpHandler: (appConfig.deployment.livenessProbe.exec != _|_) || (appConfig.deployment.livenessProbe.tcpSocket != _|_)
+	_livenessHasNonHttpHandler:  (appConfig.deployment.livenessProbe.exec != _|_) || (appConfig.deployment.livenessProbe.tcpSocket != _|_)
 	_readinessHasNonHttpHandler: (appConfig.deployment.readinessProbe.exec != _|_) || (appConfig.deployment.readinessProbe.tcpSocket != _|_)
 
 	// Select default httpGet handlers based on HTTPS setting
@@ -342,6 +346,7 @@ _projectedSecretsVolumeBuilder: {
 									}
 								}
 							}
+
 							// Timing fields: use appConfig if defined, else base default
 							if appConfig.deployment.livenessProbe.initialDelaySeconds != _|_ {
 								initialDelaySeconds: appConfig.deployment.livenessProbe.initialDelaySeconds
@@ -401,6 +406,7 @@ _projectedSecretsVolumeBuilder: {
 									}
 								}
 							}
+
 							// Timing fields: use appConfig if defined, else base default
 							if appConfig.deployment.readinessProbe.initialDelaySeconds != _|_ {
 								initialDelaySeconds: appConfig.deployment.readinessProbe.initialDelaySeconds
