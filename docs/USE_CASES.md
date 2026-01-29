@@ -153,8 +153,8 @@ Changes made to `services/apps/<app>.cue`. These **SHOULD propagate** to all env
 | **Change Location** | App: `services/apps/example-app.cue` → `appEnvVars`; Override: `env.cue` on `dev` → `additionalEnv` |
 | **Change** | App sets `{name: "LOG_LEVEL", value: "INFO"}`; Dev's env.cue sets `{name: "LOG_LEVEL", value: "DEBUG"}` |
 | **Expected Behavior** | Stage/prod use INFO; dev uses DEBUG |
-| **Design Note** | Current implementation concatenates env vars (both appear, last wins in K8s). A cleaner implementation might merge-by-name. |
-| **Validates** | Env var override pattern; documents concatenation vs merge semantics |
+| **Design Note** | Uses `#MergeEnvVars` helper to merge env vars by name. `additionalEnv` values override `appEnvVars` values with the same name. |
+| **Validates** | Env var override pattern with proper merge-by-name semantics |
 
 ---
 
@@ -407,7 +407,7 @@ While preserving:
 | UC-B3 | Add app ConfigMap entry | ✅ | ✅ | ✅ | `uc-b3-app-configmap` | Pipeline verified 2026-01-28 |
 | UC-B4 | App ConfigMap with env override | ✅ | ✅ | ✅ | `uc-b4-app-override` | Pipeline verified 2026-01-27 |
 | UC-B5 | App probe with env override | ✅ | ✅ | ✅ | `uc-b5-probe-override` | Pipeline verified 2026-01-28 |
-| UC-B6 | App env var with env override | ✅ | ✅ | ⚠️ | `uc-b6-env-var-override` | Demo works; kubectl apply deduplicates env vars (keeps first), preventing override semantics |
+| UC-B6 | App env var with env override | ✅ | ✅ | ✅ | `uc-b6-env-var-override` | Pipeline verified 2026-01-29; uses #MergeEnvVars for proper override semantics |
 | UC-C1 | Add default label | ✅ | ✅ | ✅ | `uc-c1-default-label` | Pipeline verified 2026-01-21 |
 | UC-C2 | Add security context | ✅ | ✅ | ✅ | `uc-c2-security-context` | Pipeline verified 2026-01-27 |
 | UC-C3 | Change deployment strategy | ✅ | ✅ | ✅ | `uc-c3-deployment-strategy` | Pipeline verified 2026-01-27 |
