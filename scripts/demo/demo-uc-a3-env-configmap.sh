@@ -51,6 +51,9 @@ DEMO_CONFIGMAP="${DEMO_APP}-config"
 TARGET_ENV="dev"
 OTHER_ENVS=("stage" "prod")
 
+# Only check for MRs targeting this branch in postflight (auto-promote MRs are expected)
+DEMO_QUIESCENT_BRANCHES="$TARGET_ENV"
+
 # GitLab CLI path
 GITLAB_CLI="${PROJECT_ROOT}/scripts/04-operations/gitlab-cli.sh"
 

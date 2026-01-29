@@ -49,6 +49,9 @@ DEMO_APP_CUE="exampleApp"  # CUE identifier
 TARGET_ENV="dev"
 OTHER_ENVS=("stage" "prod")
 
+# Only check for MRs targeting this branch in postflight (auto-promote MRs are expected)
+DEMO_QUIESCENT_BRANCHES="$TARGET_ENV"
+
 # Debug Service name (created when debug: true)
 DEBUG_SERVICE="${DEMO_APP}-debug"
 

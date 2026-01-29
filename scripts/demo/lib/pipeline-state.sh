@@ -59,10 +59,17 @@ _ps_get_jenkins_crumb() {
 
 # Check for open MRs in both repos
 # Populates STATE_OPEN_MRS array
+# If DEMO_QUIESCENT_BRANCHES is set (space-separated list), only includes MRs targeting those branches
 _check_open_mrs() {
     STATE_OPEN_MRS=()
 
     local repos=("${APP_REPO_PATH:-p2c/example-app}" "${DEPLOYMENTS_REPO_PATH:-p2c/k8s-deployments}")
+
+    # Build target branch filter if set
+    local target_branches=()
+    if [[ -n "${DEMO_QUIESCENT_BRANCHES:-}" ]]; then
+        read -ra target_branches <<< "$DEMO_QUIESCENT_BRANCHES"
+    fi
 
     for repo in "${repos[@]}"; do
         local encoded_repo=$(_ps_encode_project "$repo")
@@ -77,7 +84,25 @@ _check_open_mrs() {
 
         if [[ "$count" -gt 0 ]]; then
             while IFS= read -r line; do
-                STATE_OPEN_MRS+=("$line")
+                # If filtering by target branches, check if this MR targets one of them
+                if [[ ${#target_branches[@]} -gt 0 ]]; then
+                    local mr_target
+                    mr_target=$(echo "$response" | jq -r --arg iid "$(echo "$line" | cut -d'|' -f2)" '.[] | select(.iid == ($iid | tonumber)) | .target_branch' 2>/dev/null)
+
+                    local include_mr=false
+                    for branch in "${target_branches[@]}"; do
+                        if [[ "$mr_target" == "$branch" ]]; then
+                            include_mr=true
+                            break
+                        fi
+                    done
+
+                    if [[ "$include_mr" == "true" ]]; then
+                        STATE_OPEN_MRS+=("$line")
+                    fi
+                else
+                    STATE_OPEN_MRS+=("$line")
+                fi
             done < <(echo "$response" | jq -r --arg repo "$repo" '.[] | "\($repo)|\(.iid)|\(.title)|\(.web_url)"' 2>/dev/null)
         fi
     done
