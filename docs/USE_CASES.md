@@ -399,8 +399,8 @@ While preserving:
 
 | ID | Use Case | CUE Support | Demo Script | Pipeline Verified | Branch | Notes |
 |----|----------|-------------|-------------|-------------------|--------|-------|
-| UC-A1 | Adjust replica count | ✅ | ✅ | 🔲 | `uc-a1-replicas` | CUE already supports replicas field |
-| UC-A2 | Enable debug mode | ✅ | ✅ | 🔲 | `uc-a2-debug-mode` | CUE already supports debug field |
+| UC-A1 | Adjust replica count | ✅ | ✅ | ✅ | `uc-a1-replicas` | Pipeline verified 2026-01-29 |
+| UC-A2 | Enable debug mode | ✅ | ✅ | ✅ | `uc-a2-debug-mode` | Pipeline verified 2026-01-29 |
 | UC-A3 | Env-specific ConfigMap | ✅ | ✅ | ✅ | `uc-a3-env-configmap` | Pipeline verified 2026-01-27 |
 | UC-B1 | Add app env var | ✅ | ✅ | ✅ | `uc-b1-app-env-var` | Pipeline verified 2026-01-27 |
 | UC-B2 | Add app annotation | ✅ | ✅ | ✅ | `uc-b2-app-annotation` | Pipeline verified 2026-01-28 |
