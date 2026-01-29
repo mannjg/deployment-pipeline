@@ -352,6 +352,7 @@ Env (env.cue per branch)
 |--------|----------|---------------------|
 | [`scripts/demo/demo-uc-c1-default-label.sh`](../scripts/demo/demo-uc-c1-default-label.sh) | UC-C1 | Platform-wide label propagates to all apps in all envs |
 | [`scripts/demo/demo-uc-c4-prometheus-annotations.sh`](../scripts/demo/demo-uc-c4-prometheus-annotations.sh) | UC-C4 | Platform-wide pod annotations propagate to all apps |
+| [`scripts/demo/demo-uc-c5-app-override.sh`](../scripts/demo/demo-uc-c5-app-override.sh) | UC-C5 | App (postgres) overrides platform default; multi-app comparison |
 | [`scripts/demo/demo-uc-c2-security-context.sh`](../scripts/demo/demo-uc-c2-security-context.sh) | UC-C2 | Platform-wide pod security context (runAsNonRoot) |
 | [`scripts/demo/demo-uc-c3-deployment-strategy.sh`](../scripts/demo/demo-uc-c3-deployment-strategy.sh) | UC-C3 | Platform-wide zero-downtime deployment strategy |
 | [`scripts/demo/demo-uc-c6-platform-env-override.sh`](../scripts/demo/demo-uc-c6-platform-env-override.sh) | UC-C6 | Platform default with environment override; prod can diverge |
@@ -359,8 +360,8 @@ Env (env.cue per branch)
 ### Future Demos (Phase 3+)
 
 Additional demos can be added to cover:
-- Complex override chains (UC-C5, UC-C6)
-- Multi-app scenarios
+- Category D operational scenarios (emergency hotfix, rollback, etc.)
+- Additional multi-app scenarios
 
 ---
 
@@ -412,7 +413,7 @@ While preserving:
 | UC-C2 | Add security context | ✅ | ✅ | ✅ | `uc-c2-security-context` | Pipeline verified 2026-01-27 |
 | UC-C3 | Change deployment strategy | ✅ | ✅ | ✅ | `uc-c3-deployment-strategy` | Pipeline verified 2026-01-27 |
 | UC-C4 | Add standard pod annotation | ✅ | ✅ | ✅ | `uc-c4-prometheus-annotations` | Pipeline verified 2026-01-21 |
-| UC-C5 | Platform default + app override | 🔲 | 🔲 | 🔲 | — | Multi-app pivot (uses postgres) |
+| UC-C5 | Platform default + app override | ✅ | ✅ | 🔲 | `uc-c5-app-override` | Multi-app: postgres overrides platform default |
 | UC-C6 | Platform default + env override | ✅ | ✅ | ✅ | `uc-c6-platform-env-override` | Pipeline verified 2026-01-22 |
 | UC-D1 | Emergency hotfix to prod | 🔲 | 🔲 | 🔲 | — | Requires direct env MR support |
 | UC-D2 | Cherry-pick promotion (multi-app) | 🔲 | 🔲 | 🔲 | — | Requires multi-app promotion tooling |
