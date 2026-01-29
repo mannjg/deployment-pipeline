@@ -15,19 +15,19 @@ exampleApp: core.#App & {
 	// App-level environment variables (applied to all instances across all environments)
 	appEnvVars: [
 		{
-			name: "QUARKUS_HTTP_PORT"
+			name:  "QUARKUS_HTTP_PORT"
 			value: "8080"
 		},
 		{
-			name: "QUARKUS_LOG_CONSOLE_ENABLE"
+			name:  "QUARKUS_LOG_CONSOLE_ENABLE"
 			value: "true"
 		},
 		{
-			name: "REDIS_URL"
+			name:  "REDIS_URL"
 			value: "redis://redis.cache.svc.cluster.local:6379"
 		},
 		{
-			name: "REDIS_TIMEOUT_SECONDS"
+			name:  "REDIS_TIMEOUT_SECONDS"
 			value: "5"
 		},
 		// Database connection configuration

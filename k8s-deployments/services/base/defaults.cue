@@ -233,7 +233,7 @@ package base
 // Applications can override these to project different secrets, configmaps, or cluster resources.
 
 #DefaultProjectedSecretItems: [
-	{key: "db-user", path:     "database/username"},
+	{key: "db-user", path: "database/username"},
 	{key: "db-password", path: "database/password"},
 ]
 
@@ -260,7 +260,7 @@ package base
 // Default pod metadata to expose to containers via downward API.
 
 #DefaultDownwardAPIItems: [
-	{path: "pod/name", fieldRef: fieldPath:      "metadata.name"},
+	{path: "pod/name", fieldRef: fieldPath: "metadata.name"},
 	{path: "pod/namespace", fieldRef: fieldPath: "metadata.namespace"},
 ]
 

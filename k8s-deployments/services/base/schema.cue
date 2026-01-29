@@ -173,8 +173,8 @@ import "deployments.local/k8s-deployments/k8s"
 
 			// Optional specific items to mount (instead of all keys)
 			items?: [...{
-				key:  string
-				path: string
+				key:   string
+				path:  string
 				mode?: int
 			}]
 		}
