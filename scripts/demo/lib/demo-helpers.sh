@@ -392,13 +392,29 @@ demo_preflight_check() {
         exit 1
     fi
 
-    if check_pipeline_quiescent; then
-        demo_verify "Pipeline is quiescent - ready to start"
-        return 0
-    fi
+    # Wait briefly for transient items (agent pods, etc.) to clear
+    # This handles race conditions between reset completing and demo starting
+    local wait_timeout="${DEMO_PREFLIGHT_WAIT:-15}"
+    local wait_interval=3
+    local elapsed=0
 
-    # Pipeline is dirty - display state
-    demo_warn "Pipeline has pending work:"
+    while [[ $elapsed -lt $wait_timeout ]]; do
+        if check_pipeline_quiescent; then
+            demo_verify "Pipeline is quiescent - ready to start"
+            return 0
+        fi
+
+        # Only show waiting message after first check fails
+        if [[ $elapsed -eq 0 ]]; then
+            demo_info "Waiting for pipeline activity to settle..."
+        fi
+
+        sleep $wait_interval
+        elapsed=$((elapsed + wait_interval))
+    done
+
+    # Still not quiescent after waiting - display state
+    demo_warn "Pipeline has pending work after ${wait_timeout}s:"
     display_pipeline_state
 
     # Determine cleanup approach
