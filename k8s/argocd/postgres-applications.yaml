@@ -1,0 +1,75 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres-dev
+  namespace: argocd
+  labels:
+    app: postgres
+    environment: dev
+spec:
+  project: default
+  source:
+    repoURL: https://gitlab.jmann.local/p2c/k8s-deployments.git
+    targetRevision: dev
+    path: manifests/postgres
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres-stage
+  namespace: argocd
+  labels:
+    app: postgres
+    environment: stage
+spec:
+  project: default
+  source:
+    repoURL: https://gitlab.jmann.local/p2c/k8s-deployments.git
+    targetRevision: stage
+    path: manifests/postgres
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: stage
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres-prod
+  namespace: argocd
+  labels:
+    app: postgres
+    environment: prod
+spec:
+  project: default
+  source:
+    repoURL: https://gitlab.jmann.local/p2c/k8s-deployments.git
+    targetRevision: prod
+    path: manifests/postgres
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
