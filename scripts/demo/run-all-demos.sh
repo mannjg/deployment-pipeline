@@ -44,6 +44,7 @@ DEMO_ORDER=(
     "UC-C2:demo-uc-c2-security-context.sh:Platform-wide pod security context:dev,stage,prod"
     "UC-C3:demo-uc-c3-deployment-strategy.sh:Platform-wide zero-downtime deployment strategy:dev,stage,prod"
     "UC-C4:demo-uc-c4-prometheus-annotations.sh:Platform-wide pod annotations:dev,stage,prod"
+    "UC-C5:demo-uc-c5-app-override.sh:Platform default with app override:dev,stage,prod"
     "UC-C6:demo-uc-c6-platform-env-override.sh:Platform default with env override:dev,stage,prod"
 )
 
