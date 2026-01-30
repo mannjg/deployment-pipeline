@@ -213,6 +213,10 @@ else
     exit 1
 fi
 
+# Capture promotion MR count before rollback (bad deploy creates one, which is expected)
+PRE_ROLLBACK_MR_COUNT=$("$GITLAB_CLI" mr promotion-pending p2c/k8s-deployments prod 2>/dev/null | wc -l || echo "0")
+demo_info "Existing promotion MRs to prod: $PRE_ROLLBACK_MR_COUNT (from bad deploy, expected)"
+
 # ---------------------------------------------------------------------------
 # Step 5: Execute Rollback
 # ---------------------------------------------------------------------------
@@ -267,20 +271,24 @@ fi
 
 demo_step 7 "Verify No Cascading Promotion"
 
-demo_info "Checking that no auto-promotion MR was created..."
-demo_info "(The [no-promote] marker should have prevented this)"
+demo_info "Checking that no NEW auto-promotion MR was created by the rollback..."
+demo_info "(The revert commit detection should have prevented this)"
 
 # Wait a moment for any MR to be created
 sleep 10
 
-# Check for promotion MRs to prod created after our rollback
-pending_prod_mrs=$("$GITLAB_CLI" mr promotion-pending p2c/k8s-deployments prod 2>/dev/null || true)
+# Check for promotion MRs - count should be same as before rollback
+POST_ROLLBACK_MR_COUNT=$("$GITLAB_CLI" mr promotion-pending p2c/k8s-deployments prod 2>/dev/null | wc -l || echo "0")
+demo_info "Promotion MRs to prod after rollback: $POST_ROLLBACK_MR_COUNT"
 
-if [[ -z "$pending_prod_mrs" ]]; then
-    demo_verify "No promotion MR to prod was created (correct!)"
+if [[ "$POST_ROLLBACK_MR_COUNT" -le "$PRE_ROLLBACK_MR_COUNT" ]]; then
+    demo_verify "No new promotion MR was created by rollback (correct!)"
+    if [[ "$PRE_ROLLBACK_MR_COUNT" -gt 0 ]]; then
+        demo_info "(Note: $PRE_ROLLBACK_MR_COUNT existing MR(s) from bad deploy remain open - close them after investigation)"
+    fi
 else
-    demo_fail "Unexpected promotion MR(s) found: $pending_prod_mrs"
-    demo_info "The [no-promote] marker may not be working"
+    demo_fail "Rollback created a promotion MR (should not happen)"
+    demo_info "Pre-rollback count: $PRE_ROLLBACK_MR_COUNT, post-rollback: $POST_ROLLBACK_MR_COUNT"
     exit 1
 fi
 
