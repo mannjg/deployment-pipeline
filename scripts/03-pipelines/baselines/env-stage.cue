@@ -34,12 +34,12 @@ stage: exampleApp: apps.exampleApp & {
 
 			resources: {
 				requests: {
-					cpu:    "500m"
-					memory: "512Mi"
+					cpu:    "100m"
+					memory: "256Mi"
 				}
 				limits: {
-					cpu:    "1000m"
-					memory: "1Gi"
+					cpu:    "500m"
+					memory: "512Mi"
 				}
 			}
 
@@ -96,16 +96,16 @@ stage: postgres: apps.postgres & {
 		deployment: {
 			image: "{{POSTGRES_IMAGE}}"
 
-			replicas: 2
+			replicas: 1
 
 			resources: {
 				requests: {
-					cpu:    "500m"
-					memory: "512Mi"
+					cpu:    "100m"
+					memory: "256Mi"
 				}
 				limits: {
-					cpu:    "1000m"
-					memory: "1Gi"
+					cpu:    "500m"
+					memory: "512Mi"
 				}
 			}
 

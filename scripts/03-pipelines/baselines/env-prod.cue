@@ -33,12 +33,12 @@ prod: exampleApp: apps.exampleApp & {
 
 			resources: {
 				requests: {
-					cpu:    "2000m"
-					memory: "1Gi"
+					cpu:    "100m"
+					memory: "256Mi"
 				}
 				limits: {
-					cpu:    "2000m"
-					memory: "2Gi"
+					cpu:    "500m"
+					memory: "512Mi"
 				}
 			}
 
@@ -95,16 +95,16 @@ prod: postgres: apps.postgres & {
 		deployment: {
 			image: "{{POSTGRES_IMAGE}}"
 
-			replicas: 3
+			replicas: 2
 
 			resources: {
 				requests: {
-					cpu:    "2000m"
-					memory: "1Gi"
+					cpu:    "100m"
+					memory: "256Mi"
 				}
 				limits: {
-					cpu:    "2000m"
-					memory: "2Gi"
+					cpu:    "500m"
+					memory: "512Mi"
 				}
 			}
 
