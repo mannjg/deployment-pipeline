@@ -95,6 +95,9 @@ Commands:
 
   mr close <project> <iid>          Close a merge request
 
+  mr promotion-pending <project> <target_branch>
+                                    List open MRs from promote-* branches targeting branch
+
   branch list <project> [options]   List branches
     --pattern <glob>                Filter by pattern (e.g., "update-dev-*")
 
@@ -288,6 +291,27 @@ cmd_mr_diff() {
     else
         echo "$response" | jq '.changes[] | {old_path, new_path, diff}'
     fi
+}
+
+cmd_mr_promotion_pending() {
+    if [[ $# -lt 2 ]]; then
+        log_error "Usage: gitlab-cli.sh mr promotion-pending <project> <target_branch>"
+        exit 1
+    fi
+
+    local project="$1"
+    local target_branch="$2"
+    local source_pattern="${3:-promote-${target_branch}-}"
+
+    local encoded_project
+    encoded_project=$(encode_project "$project")
+
+    local response
+    response=$(gitlab_api GET "/projects/${encoded_project}/merge_requests?state=opened&target_branch=${target_branch}") || exit 1
+
+    # Filter by source branch pattern and return IIDs
+    echo "$response" | jq -r --arg pattern "$source_pattern" \
+        '.[] | select(.source_branch | startswith($pattern)) | .iid' 2>/dev/null
 }
 
 # =============================================================================
@@ -684,6 +708,7 @@ case "$1" in
             diff) cmd_mr_diff "$@" ;;
             merge) cmd_mr_merge "$@" ;;
             close) cmd_mr_close "$@" ;;
+            promotion-pending) cmd_mr_promotion_pending "$@" ;;
             *) log_error "Unknown mr subcommand: $subcommand"; exit 1 ;;
         esac
         ;;
