@@ -190,3 +190,38 @@ echo "$MODIFIED_ENV_CUE" | "$GITLAB_CLI" file update p2c/k8s-deployments "env.cu
     exit 1
 }
 demo_verify "Hotfix pushed to feature branch"
+
+# ---------------------------------------------------------------------------
+# Step 4: Create Direct MR to Prod
+# ---------------------------------------------------------------------------
+
+demo_step 4 "Create Direct MR to Prod"
+
+demo_info "Creating MR directly to $TARGET_ENV (bypassing dev/stage)"
+
+# Create MR from feature branch to prod
+demo_action "Creating MR: $FEATURE_BRANCH → $TARGET_ENV..."
+mr_iid=$(create_mr "$FEATURE_BRANCH" "$TARGET_ENV" "HOTFIX: Increase $DEMO_KEY to $DEMO_VALUE [UC-D1]")
+
+# ---------------------------------------------------------------------------
+# Step 5: Wait for Pipeline and Merge
+# ---------------------------------------------------------------------------
+
+demo_step 5 "Wait for Pipeline and Merge"
+
+# Wait for MR pipeline (Jenkins generates manifests)
+demo_action "Waiting for Jenkins CI to validate and generate manifests..."
+wait_for_mr_pipeline "$mr_iid" || exit 1
+
+# Verify MR contains expected changes
+demo_action "Verifying MR contains expected changes..."
+assert_mr_contains_diff "$mr_iid" "env.cue" "$DEMO_KEY" || exit 1
+assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "$DEMO_KEY" || exit 1
+demo_verify "MR contains CUE change and regenerated manifests"
+
+# Capture ArgoCD baseline before merge
+argocd_baseline=$(get_argocd_revision "${DEMO_APP}-${TARGET_ENV}")
+
+# Merge MR
+demo_info "Merging emergency hotfix to production..."
+accept_mr "$mr_iid" || exit 1
