@@ -359,10 +359,16 @@ Env (env.cue per branch)
 | [`scripts/demo/demo-uc-c3-deployment-strategy.sh`](../scripts/demo/demo-uc-c3-deployment-strategy.sh) | UC-C3 | Platform-wide zero-downtime deployment strategy |
 | [`scripts/demo/demo-uc-c6-platform-env-override.sh`](../scripts/demo/demo-uc-c6-platform-env-override.sh) | UC-C6 | Platform default with environment override; prod can diverge |
 
+### Operational Demos (Phase 3)
+
+| Script | Use Case | What It Demonstrates |
+|--------|----------|---------------------|
+| [`scripts/demo/demo-uc-d3-rollback.sh`](../scripts/demo/demo-uc-d3-rollback.sh) | UC-D3 | Environment rollback via git revert; [no-promote] prevents cascade |
+
 ### Future Demos (Phase 3+)
 
 Additional demos can be added to cover:
-- Category D operational scenarios (emergency hotfix, rollback, etc.)
+- Category D operational scenarios (emergency hotfix, cherry-pick, etc.)
 - Additional multi-app scenarios
 
 ---
@@ -419,7 +425,7 @@ While preserving:
 | UC-C6 | Platform default + env override | ✅ | ✅ | ✅ | `uc-c6-platform-env-override` | Pipeline verified 2026-01-22 |
 | UC-D1 | Emergency hotfix to prod | 🔲 | 🔲 | 🔲 | — | Requires direct env MR support |
 | UC-D2 | Cherry-pick promotion (multi-app) | 🔲 | 🔲 | 🔲 | — | Requires multi-app promotion tooling |
-| UC-D3 | Environment rollback | 🔲 | 🔲 | 🔲 | — | GitOps rollback pattern |
+| UC-D3 | Environment rollback | ✅ | ✅ | 🔲 | `uc-d3-rollback` | GitOps rollback via git revert; [no-promote] prevents cascade |
 | UC-D4 | Re-promote single app | 🔲 | 🔲 | 🔲 | — | Requires app-scoped promotion |
 | UC-D5 | Skip environment (dev→prod) | 🔲 | 🔲 | 🔲 | — | Requires direct env MR support |
 
