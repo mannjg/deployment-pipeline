@@ -127,7 +127,6 @@ for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env environment..."
     assert_pod_annotation_equals "$env" "$UNAFFECTED_APP" "$DEMO_ANNOTATION_KEY" "$PLATFORM_DEFAULT_VALUE" || exit 1
     # Postgres may or may not have the annotation initially - just note the state
-    local postgres_val
     postgres_val=$(kubectl get deployment "$OVERRIDE_APP" -n "$env" \
         -o jsonpath="{.spec.template.metadata.annotations.prometheus\\.io/scrape}" 2>/dev/null || echo "not-set")
     demo_info "  postgres.$DEMO_ANNOTATION_KEY = $postgres_val"
