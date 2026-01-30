@@ -204,7 +204,7 @@ for env in "${ENVIRONMENTS[@]}"; do
         # Verify MR contains expected changes
         demo_action "Verifying MR contains CUE and manifest changes..."
         assert_mr_contains_diff "$mr_iid" "services/apps/postgres.cue" "podAnnotations" || exit 1
-        assert_mr_contains_diff "$mr_iid" "manifests/postgres/postgres.yaml" "prometheus.io/scrape.*false" || exit 1
+        assert_mr_contains_diff "$mr_iid" "manifests/postgres/postgres.yaml" 'prometheus.io/scrape: "false"' || exit 1
 
         # Capture baseline time BEFORE merge
         next_promotion_baseline=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -222,7 +222,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
         # Verify MR contains manifest changes
         demo_action "Verifying MR contains manifest changes..."
-        assert_mr_contains_diff "$mr_iid" "manifests/postgres/postgres.yaml" "prometheus.io/scrape.*false" || exit 1
+        assert_mr_contains_diff "$mr_iid" "manifests/postgres/postgres.yaml" 'prometheus.io/scrape: "false"' || exit 1
 
         # Capture baseline time BEFORE merge
         next_promotion_baseline=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
