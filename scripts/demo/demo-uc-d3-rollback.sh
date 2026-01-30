@@ -219,10 +219,40 @@ fi
 
 demo_step 5 "Execute Rollback"
 
-# Wait a moment to ensure Jenkins has processed the bad deploy and created any MRs
-sleep 15
+# Wait for the bad deploy's Jenkins build to complete (it creates the promotion MR)
+# Note: ArgoCD sync in Step 4 can complete BEFORE Jenkins finishes creating the promotion MR.
+# We must wait for Jenkins to fully complete AND for any post-build MR creation.
+#
+# The Jenkins build on the stage branch is triggered by the MR merge. We need to wait for
+# this build to complete (not just the MR's CI build on the feature branch).
+demo_action "Waiting for bad deploy's stage branch build to complete..."
 
-# Capture promotion MR count AFTER bad deploy is fully processed
+# Get current build number as baseline
+JENKINS_BASELINE=$(get_jenkins_build_number "$TARGET_ENV" 2>/dev/null || echo "0")
+
+# Wait for a new build to complete (the one triggered by the merge)
+JENKINS_WAIT_TIMEOUT=120
+JENKINS_WAIT_ELAPSED=0
+while [[ $JENKINS_WAIT_ELAPSED -lt $JENKINS_WAIT_TIMEOUT ]]; do
+    CURRENT_BUILD=$(get_jenkins_build_number "$TARGET_ENV" 2>/dev/null || echo "0")
+    if [[ "$CURRENT_BUILD" -gt "$JENKINS_BASELINE" ]]; then
+        # New build detected, check if it's done
+        BUILD_STATUS=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+            "${JENKINS_URL_EXTERNAL}/job/${DEPLOYMENTS_REPO_NAME:-k8s-deployments}/job/${TARGET_ENV}/${CURRENT_BUILD}/api/json" 2>/dev/null | jq -r '.building // true')
+        if [[ "$BUILD_STATUS" != "true" ]]; then
+            demo_info "Stage branch build #${CURRENT_BUILD} completed"
+            break
+        fi
+    fi
+    sleep 5
+    JENKINS_WAIT_ELAPSED=$((JENKINS_WAIT_ELAPSED + 5))
+done
+
+# Additional wait for GitLab MR creation (happens at end of Jenkins build)
+sleep 5
+demo_verify "Jenkins build completed"
+
+# Capture promotion MR count AFTER bad deploy Jenkins build is fully processed
 PRE_ROLLBACK_MR_COUNT=$("$GITLAB_CLI" mr promotion-pending p2c/k8s-deployments prod 2>/dev/null | wc -l || echo "0")
 demo_info "Promotion MRs to prod before rollback: $PRE_ROLLBACK_MR_COUNT (from bad deploy, expected)"
 
@@ -371,7 +401,29 @@ EOF
 
 demo_step 10 "Cleanup"
 
-# Verify pipeline is quiescent after demo
+# Close the promotion MR from the bad deploy (in a real scenario, you'd investigate first)
+demo_action "Closing promotion MR from bad deploy (cleanup)..."
+if [[ "$PRE_ROLLBACK_MR_COUNT" -gt 0 ]]; then
+    # Find and close promotion MRs targeting prod, and delete their branches
+    # Note: mr promotion-pending returns just the IID numbers, one per line
+    while read -r mr_iid; do
+        [[ -z "$mr_iid" ]] && continue
+        # Get the source branch before closing
+        source_branch=$("$GITLAB_CLI" mr get p2c/k8s-deployments "$mr_iid" 2>/dev/null | jq -r '.source_branch // empty')
+        demo_info "Closing MR !${mr_iid}..."
+        "$GITLAB_CLI" mr close p2c/k8s-deployments "$mr_iid" 2>/dev/null || true
+        # Delete the orphaned branch
+        if [[ -n "$source_branch" ]]; then
+            demo_info "Deleting branch ${source_branch}..."
+            "$GITLAB_CLI" branch delete p2c/k8s-deployments "$source_branch" 2>/dev/null || true
+        fi
+    done < <("$GITLAB_CLI" mr promotion-pending p2c/k8s-deployments prod 2>/dev/null)
+    demo_verify "Promotion MR(s) and branches cleaned up"
+else
+    demo_info "No promotion MRs to close"
+fi
+
+# Now verify pipeline is quiescent after cleanup
 demo_postflight_check
 
 demo_action "Returning to original branch: $ORIGINAL_BRANCH"
