@@ -76,3 +76,36 @@ ORIGINAL_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
 
 # Setup cleanup
 demo_cleanup_on_exit "$ORIGINAL_BRANCH"
+
+# ---------------------------------------------------------------------------
+# Step 1: Verify Prerequisites
+# ---------------------------------------------------------------------------
+
+demo_step 1 "Verify Prerequisites"
+
+demo_action "Checking kubectl connectivity..."
+if ! kubectl cluster-info &>/dev/null; then
+    demo_fail "Cannot connect to Kubernetes cluster"
+    exit 1
+fi
+demo_verify "Connected to Kubernetes cluster"
+
+demo_action "Checking ArgoCD applications..."
+for env in "$TARGET_ENV" "${OTHER_ENVS[@]}"; do
+    if kubectl get application "${DEMO_APP}-${env}" -n "${ARGOCD_NAMESPACE}" &>/dev/null; then
+        demo_verify "ArgoCD app ${DEMO_APP}-${env} exists"
+    else
+        demo_fail "ArgoCD app ${DEMO_APP}-${env} not found"
+        exit 1
+    fi
+done
+
+demo_action "Checking ConfigMaps exist in all environments..."
+for env in "$TARGET_ENV" "${OTHER_ENVS[@]}"; do
+    if kubectl get configmap "$DEMO_CONFIGMAP" -n "$env" &>/dev/null; then
+        demo_verify "ConfigMap $DEMO_CONFIGMAP exists in $env"
+    else
+        demo_fail "ConfigMap $DEMO_CONFIGMAP not found in $env"
+        exit 1
+    fi
+done
