@@ -109,3 +109,22 @@ for env in "$TARGET_ENV" "${OTHER_ENVS[@]}"; do
         exit 1
     fi
 done
+
+# ---------------------------------------------------------------------------
+# Step 2: Verify Baseline State
+# ---------------------------------------------------------------------------
+
+demo_step 2 "Verify Baseline State"
+
+demo_info "Confirming '$DEMO_KEY' does not exist in any environment..."
+
+for env in "$TARGET_ENV" "${OTHER_ENVS[@]}"; do
+    demo_action "Checking $env..."
+    assert_configmap_entry_absent "$env" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
+        demo_warn "Key '$DEMO_KEY' already exists in $env - demo may have stale state"
+        demo_info "Run reset-demo-state.sh to clean up"
+        exit 1
+    }
+done
+
+demo_verify "Baseline confirmed: '$DEMO_KEY' absent from all environments"
