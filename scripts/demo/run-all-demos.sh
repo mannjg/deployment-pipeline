@@ -46,6 +46,8 @@ DEMO_ORDER=(
     "UC-C4:demo-uc-c4-prometheus-annotations.sh:Platform-wide pod annotations:dev,stage,prod"
     "UC-C5:demo-uc-c5-app-override.sh:Platform default with app override:dev,stage,prod"
     "UC-C6:demo-uc-c6-platform-env-override.sh:Platform default with env override:dev,stage,prod"
+    # Category D: Operational Scenarios
+    "UC-D3:demo-uc-d3-rollback.sh:Environment rollback (GitOps revert):stage"
 )
 
 # Colors
