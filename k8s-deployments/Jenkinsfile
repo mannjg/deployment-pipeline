@@ -576,9 +576,15 @@ Build: ${env.BUILD_URL}
                             commitMessages = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
                             echo "Direct push detected - checking HEAD commit for [no-promote]"
                         }
-                        env.NO_PROMOTE = commitMessages.contains('[no-promote]') ? 'true' : 'false'
+                        // Check for [no-promote] flag OR revert commits (rollbacks shouldn't cascade)
+                        def isRevert = commitMessages.startsWith('Revert "') || commitMessages.contains('\nRevert "')
+                        env.NO_PROMOTE = (commitMessages.contains('[no-promote]') || isRevert) ? 'true' : 'false'
                         if (env.NO_PROMOTE == 'true') {
-                            echo "INFO: [no-promote] flag detected - skipping promotion MR creation"
+                            if (isRevert) {
+                                echo "INFO: Revert commit detected - skipping promotion MR creation (rollbacks don't cascade)"
+                            } else {
+                                echo "INFO: [no-promote] flag detected - skipping promotion MR creation"
+                            }
                         }
 
                         if (!env.GITLAB_URL) {
