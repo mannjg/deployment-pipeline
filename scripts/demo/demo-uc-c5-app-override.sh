@@ -8,16 +8,18 @@
 # "Platform sets Prometheus scraping on, but postgres needs it off"
 #
 # What This Demonstrates:
-# - Platform layer sets prometheus.io/scrape: "true" for all apps (UC-C4)
+# - Platform baseline has prometheus.io/scrape: "true" for all apps
 # - App layer (postgres.cue) overrides to prometheus.io/scrape: "false"
 # - example-app keeps the platform default (scraping enabled)
 # - postgres gets the app override (scraping disabled)
 #
 # Prerequisites:
-# - UC-C4 has been run (platform has prometheus.io/scrape: "true")
 # - Postgres ArgoCD applications exist (postgres-dev/stage/prod)
 # - Pipeline infrastructure running (Jenkins, ArgoCD)
 # - Run from deployment-pipeline root
+#
+# Note: The platform baseline (services/core/app.cue) includes prometheus.io/scrape: "true"
+# so this demo works after reset without needing to run UC-C4 first.
 
 set -euo pipefail
 

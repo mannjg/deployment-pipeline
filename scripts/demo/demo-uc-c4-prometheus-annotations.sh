@@ -5,7 +5,7 @@
 # in all environments through the CUE layering system.
 #
 # Use Case UC-C4:
-# "As a platform team, we want all pods to be scraped by Prometheus by default"
+# "As a platform team, we want to set a default Prometheus scrape interval for all pods"
 #
 # What This Demonstrates:
 # - Changes to services/core/ and services/resources/ propagate to ALL apps in ALL environments
@@ -13,10 +13,12 @@
 # - Pipeline generates manifests (not the human)
 # - Apps/environments can override annotations if needed
 #
-# CUE Changes Required:
-# 1. services/core/app.cue - Add defaultPodAnnotations struct
-# 2. services/core/app.cue - Pass defaultPodAnnotations to deployment template
-# 3. services/resources/deployment.cue - Accept and use defaultPodAnnotations
+# Note: The platform baseline already includes prometheus.io/scrape, /port, /path
+# in defaultPodAnnotations. This demo adds scrape-interval to demonstrate
+# how platform teams can add new annotations that propagate to all apps.
+#
+# CUE Changes Made:
+# 1. services/core/app.cue - Add prometheus.io/scrape-interval to defaultPodAnnotations
 #
 # Prerequisites:
 # - Environment branches (dev/stage/prod) exist in GitLab
@@ -38,10 +40,10 @@ source "${SCRIPT_DIR}/lib/pipeline-wait.sh"
 # CONFIGURATION
 # ============================================================================
 
-DEMO_ANNOTATION_KEY="prometheus.io/scrape"
-DEMO_ANNOTATION_VALUE="true"
-DEMO_ANNOTATION_PORT_KEY="prometheus.io/port"
-DEMO_ANNOTATION_PORT_VALUE="8080"
+# Note: prometheus.io/scrape, /port, /path are already in platform baseline
+# This demo adds scrape-interval to demonstrate the mechanism
+DEMO_ANNOTATION_KEY="prometheus.io/scrape-interval"
+DEMO_ANNOTATION_VALUE="30s"
 DEMO_APP="example-app"
 ENVIRONMENTS=("dev" "stage" "prod")
 
@@ -53,21 +55,14 @@ ENVIRONMENTS=("dev" "stage" "prod")
 CUE_EDIT="${SCRIPT_DIR}/lib/cue-edit.py"
 
 add_prometheus_annotations() {
-    demo_action "Adding Prometheus annotations using cue-edit.py..."
+    demo_action "Adding Prometheus scrape-interval annotation using cue-edit.py..."
 
-    # Add prometheus.io/scrape annotation
-    if ! python3 "${CUE_EDIT}" platform-annotation add "prometheus.io/scrape" "true"; then
-        demo_fail "Failed to add prometheus.io/scrape annotation"
+    # Add prometheus.io/scrape-interval annotation
+    if ! python3 "${CUE_EDIT}" platform-annotation add "$DEMO_ANNOTATION_KEY" "$DEMO_ANNOTATION_VALUE"; then
+        demo_fail "Failed to add $DEMO_ANNOTATION_KEY annotation"
         return 1
     fi
-    demo_verify "Added prometheus.io/scrape annotation"
-
-    # Add prometheus.io/port annotation
-    if ! python3 "${CUE_EDIT}" platform-annotation add "prometheus.io/port" "8080"; then
-        demo_fail "Failed to add prometheus.io/port annotation"
-        return 1
-    fi
-    demo_verify "Added prometheus.io/port annotation"
+    demo_verify "Added $DEMO_ANNOTATION_KEY annotation"
 
     return 0
 }
@@ -116,10 +111,29 @@ for env in "${ENVIRONMENTS[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-# Step 2: Make CUE Changes (Platform Layer)
+# Step 2: Verify Baseline State
 # ---------------------------------------------------------------------------
 
-demo_step 2 "Add Default Pod Annotations to Platform Layer"
+demo_step 2 "Verify Baseline State"
+
+demo_info "Confirming '$DEMO_ANNOTATION_KEY' does not exist in any environment..."
+
+for env in "${ENVIRONMENTS[@]}"; do
+    demo_action "Checking $env..."
+    assert_pod_annotation_absent "$env" "$DEMO_APP" "$DEMO_ANNOTATION_KEY" || {
+        demo_warn "Annotation '$DEMO_ANNOTATION_KEY' already exists in $env - demo may have stale state"
+        demo_info "Run reset-demo-state.sh to clean up"
+        exit 1
+    }
+done
+
+demo_verify "Baseline confirmed: '$DEMO_ANNOTATION_KEY' absent from all environments"
+
+# ---------------------------------------------------------------------------
+# Step 3: Make CUE Changes (Platform Layer)
+# ---------------------------------------------------------------------------
+
+demo_step 3 "Add Default Pod Annotations to Platform Layer"
 
 demo_info "Adding annotation to defaultPodAnnotations in services/core/app.cue"
 demo_info "  (deployment.cue infrastructure already supports defaultPodAnnotations)"
@@ -134,10 +148,10 @@ echo "  services/resources/deployment.cue:"
 git diff --stat services/resources/deployment.cue 2>/dev/null || echo "    (no diff available)"
 
 # ---------------------------------------------------------------------------
-# Step 3: Push CUE Changes via GitLab API
+# Step 4: Push CUE Changes via GitLab API
 # ---------------------------------------------------------------------------
 
-demo_step 3 "Push CUE Changes to GitLab"
+demo_step 4 "Push CUE Changes to GitLab"
 
 # Generate feature branch name
 FEATURE_BRANCH="uc-c4-prometheus-annotations-$(date +%s)"
@@ -178,10 +192,10 @@ demo_verify "Feature branch pushed"
 git checkout services/core/app.cue services/resources/deployment.cue 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
-# Step 4: MR-Gated Promotion Through Environments
+# Step 5: MR-Gated Promotion Through Environments
 # ---------------------------------------------------------------------------
 
-demo_step 4 "MR-Gated Promotion Through Environments"
+demo_step 5 "MR-Gated Promotion Through Environments"
 
 # Track baseline time for promotion MR detection
 next_promotion_baseline=""
@@ -203,8 +217,8 @@ for env in "${ENVIRONMENTS[@]}"; do
         # Verify MR contains expected changes
         # Note: deployment.cue infrastructure is already in place, only app.cue changes
         demo_action "Verifying MR contains CUE and manifest changes..."
-        assert_mr_contains_diff "$mr_iid" "services/core/app.cue" "defaultPodAnnotations" || exit 1
-        assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "prometheus.io/scrape" || exit 1
+        assert_mr_contains_diff "$mr_iid" "services/core/app.cue" "$DEMO_ANNOTATION_KEY" || exit 1
+        assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "$DEMO_ANNOTATION_KEY" || exit 1
 
         # Capture baseline time BEFORE merge
         next_promotion_baseline=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -222,7 +236,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
         # Verify MR contains expected changes
         demo_action "Verifying MR contains manifest changes..."
-        assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "prometheus.io/scrape" || exit 1
+        assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "$DEMO_ANNOTATION_KEY" || exit 1
 
         # Capture baseline time BEFORE merge
         next_promotion_baseline=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -237,43 +251,38 @@ for env in "${ENVIRONMENTS[@]}"; do
     # Verify K8s state
     demo_action "Verifying annotation in K8s deployment..."
     assert_pod_annotation_equals "$env" "$DEMO_APP" "$DEMO_ANNOTATION_KEY" "$DEMO_ANNOTATION_VALUE" || exit 1
-    assert_pod_annotation_equals "$env" "$DEMO_APP" "$DEMO_ANNOTATION_PORT_KEY" "$DEMO_ANNOTATION_PORT_VALUE" || exit 1
 
     demo_verify "Promotion to $env complete"
     echo ""
 done
 
 # ---------------------------------------------------------------------------
-# Step 5: Cross-Environment Verification
+# Step 6: Cross-Environment Verification
 # ---------------------------------------------------------------------------
 
-demo_step 5 "Cross-Environment Verification"
+demo_step 6 "Cross-Environment Verification"
 
-demo_info "Verifying Prometheus annotations propagated to ALL environments..."
+demo_info "Verifying Prometheus scrape-interval propagated to ALL environments..."
 
 assert_env_propagation "deployment" "$DEMO_APP" \
-    "{.spec.template.metadata.annotations.prometheus\\.io/scrape}" \
+    "{.spec.template.metadata.annotations.prometheus\\.io/scrape-interval}" \
     "$DEMO_ANNOTATION_VALUE" \
     "${ENVIRONMENTS[@]}" || exit 1
 
-assert_env_propagation "deployment" "$DEMO_APP" \
-    "{.spec.template.metadata.annotations.prometheus\\.io/port}" \
-    "$DEMO_ANNOTATION_PORT_VALUE" \
-    "${ENVIRONMENTS[@]}" || exit 1
-
 # ---------------------------------------------------------------------------
-# Step 6: Summary
+# Step 7: Summary
 # ---------------------------------------------------------------------------
 
-demo_step 6 "Summary"
+demo_step 7 "Summary"
 
 cat << EOF
 
   This demo validated UC-C4: Add Standard Pod Annotation to All Deployments
 
   What happened:
-  1. Added prometheus annotations to defaultPodAnnotations in services/core/app.cue
-  2. Pushed CUE changes only (no manual manifest generation)
+  1. Verified baseline (scrape-interval annotation absent from all envs)
+  2. Added $DEMO_ANNOTATION_KEY to defaultPodAnnotations in services/core/app.cue
+  3. Pushed CUE changes only (no manual manifest generation)
   4. Promoted through environments using GitOps pattern:
      - Feature branch -> dev: Manual MR (pipeline generates manifests)
      - dev -> stage: Jenkins auto-created promotion MR
@@ -282,25 +291,29 @@ cat << EOF
      - Pipeline generated/validated manifests
      - Merged MR after pipeline passed
      - ArgoCD synced the change
-     - Verified annotations appear in K8s pods
+     - Verified annotation appears in K8s pods
 
   Key Observations:
   - Human only changed CUE (the intent)
   - Pipeline generated YAML (the implementation)
-  - Prometheus annotations propagated to ALL environments
-  - Apps can override with "prometheus.io/scrape": "false" if needed
+  - Platform annotation propagated to ALL apps in ALL environments
+  - Apps/environments can override this value if needed
 
-  Annotations Added:
+  Platform Baseline (already in services/core/app.cue):
   - prometheus.io/scrape: "true"
   - prometheus.io/port: "8080"
+  - prometheus.io/path: "/metrics"
+
+  Annotation Added by This Demo:
+  - $DEMO_ANNOTATION_KEY: "$DEMO_ANNOTATION_VALUE"
 
 EOF
 
 # ---------------------------------------------------------------------------
-# Cleanup
+# Step 8: Cleanup
 # ---------------------------------------------------------------------------
 
-demo_step 7 "Cleanup"
+demo_step 8 "Cleanup"
 
 # Verify pipeline is quiescent after demo
 demo_postflight_check

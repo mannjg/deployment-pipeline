@@ -107,11 +107,12 @@ Changes made to `services/apps/<app>.cue`. These **SHOULD propagate** to all env
 
 | Aspect | Detail |
 |--------|--------|
-| **Story** | "As a platform team, we want Prometheus to scrape example-app in all environments" |
+| **Story** | "As a platform team, we want to set app-specific Prometheus scrape timeout" |
 | **Change Location** | `services/apps/example-app.cue` → `appConfig.deployment.podAnnotations` |
-| **Change** | Add `"prometheus.io/scrape": "true"`, `"prometheus.io/port": "8080"` |
+| **Change** | Add `"prometheus.io/scrape-timeout": "30s"` |
 | **Expected Behavior** | All envs get the annotation; env.cue doesn't need to specify it |
 | **Validates** | App-level appConfig fields inherit to all envs via CUE unification |
+| **Note** | Uses scrape-timeout (not scrape) since prometheus.io/scrape is set at platform level |
 
 ### UC-B3: Add App-Level ConfigMap Entry
 
@@ -196,11 +197,12 @@ Changes made to `services/base/` (defaults/schema) or `services/core/` (template
 
 | Aspect | Detail |
 |--------|--------|
-| **Story** | "As a platform team, we want all pods to be scraped by Prometheus by default" |
-| **Change Location** | `services/core/app.cue` or `services/resources/deployment.cue` |
-| **Change** | Add default `podAnnotations: {"prometheus.io/scrape": "true"}` |
-| **Expected Behavior** | All deployments get Prometheus annotation; apps can override to "false" if needed |
-| **Validates** | Platform-wide defaults with opt-out capability |
+| **Story** | "As a platform team, we want to set a default Prometheus scrape interval for all pods" |
+| **Change Location** | `services/core/app.cue` → `defaultPodAnnotations` |
+| **Change** | Add `"prometheus.io/scrape-interval": "30s"` to defaultPodAnnotations |
+| **Expected Behavior** | All deployments get the scrape-interval annotation; apps/envs can override if needed |
+| **Validates** | Platform-wide defaults propagate to all apps in all environments |
+| **Note** | The baseline already includes `prometheus.io/scrape: "true"`, `/port`, `/path`. This demo adds a new annotation to demonstrate the mechanism. |
 
 ### UC-C5: Platform Default with App Override
 
