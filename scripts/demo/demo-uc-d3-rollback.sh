@@ -232,8 +232,10 @@ demo_info "Using rollback-environment.sh tool..."
 # Capture ArgoCD baseline before rollback
 argocd_baseline=$(get_argocd_revision "${DEMO_APP}-${TARGET_ENV}")
 
-demo_action "Executing rollback..."
-"$ROLLBACK_CLI" "$TARGET_ENV" --reason "UC-D3 Demo: Rolling back bad config change" || {
+# Use --force since demo creates a pending promotion MR from the bad deploy
+# In production, you would close that MR first or explicitly choose to override
+demo_action "Executing rollback (with --force since bad deploy created promotion MR)..."
+"$ROLLBACK_CLI" "$TARGET_ENV" --reason "UC-D3 Demo: Rolling back bad config change" --force || {
     demo_fail "Rollback command failed"
     exit 1
 }
