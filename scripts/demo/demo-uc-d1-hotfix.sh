@@ -260,3 +260,136 @@ done
 
 demo_verify "HOTFIX CONFIRMED: Only $TARGET_ENV has '$DEMO_KEY'"
 demo_verify "ISOLATION CONFIRMED: dev and stage are unchanged"
+
+# ---------------------------------------------------------------------------
+# Step 8: Summary
+# ---------------------------------------------------------------------------
+
+demo_step 8 "Summary"
+
+cat << EOF
+
+  This demo validated UC-D1: Emergency Hotfix to Production
+
+  Scenario:
+  "Prod is experiencing API timeouts. Need to increase timeout immediately
+   without waiting for dev→stage→prod promotion."
+
+  What happened:
+  1. Created feature branch FROM PROD (not dev!)
+  2. Applied emergency fix: $DEMO_KEY=$DEMO_VALUE
+  3. Created MR directly to $TARGET_ENV (bypassing dev/stage)
+  4. Jenkins CI validated and regenerated manifests
+  5. Merged MR to $TARGET_ENV
+  6. ArgoCD synced the hotfix
+  7. Verified:
+     - $TARGET_ENV ConfigMap HAS '$DEMO_KEY=$DEMO_VALUE'
+     - dev ConfigMap does NOT have '$DEMO_KEY'
+     - stage ConfigMap does NOT have '$DEMO_KEY'
+
+  Key Observations:
+  - Emergency fixes can bypass the promotion chain
+  - Direct-to-prod MRs work correctly
+  - GitOps workflow is preserved (audit trail via MR)
+  - Other environments are NOT affected
+  - env.cue structure is maintained
+
+  Operational Pattern:
+    Production incident detected
+        |
+        v
+    Create branch from PROD (not dev!)
+        |
+        v
+    Apply emergency fix
+        |
+        v
+    Create MR: feature → prod (direct)
+        |
+        v
+    CI validates, merge MR
+        |
+        v
+    ArgoCD syncs fix to prod
+        |
+        v
+    Incident resolved (dev/stage unchanged)
+        |
+        v
+    [Later] Backport fix to dev/stage if needed
+
+EOF
+
+# ---------------------------------------------------------------------------
+# Step 9: Cleanup
+# ---------------------------------------------------------------------------
+
+demo_step 9 "Cleanup"
+
+demo_info "Reverting the hotfix to restore clean state..."
+
+# Get current env.cue from prod (with the hotfix)
+HOTFIX_ENV_CUE=$(get_file_from_branch "$TARGET_ENV" "env.cue")
+
+# Remove the hotfix key using cue-edit.py
+TEMP_CUE="${K8S_DEPLOYMENTS_DIR}/.temp-env-cue.cue"
+echo "$HOTFIX_ENV_CUE" > "$TEMP_CUE"
+
+python3 "${CUE_EDIT}" env-configmap remove "$TEMP_CUE" "$TARGET_ENV" "$DEMO_APP_CUE" "$DEMO_KEY"
+
+REVERTED_ENV_CUE=$(cat "$TEMP_CUE")
+rm -f "$TEMP_CUE"
+
+# Create cleanup branch
+CLEANUP_BRANCH="uc-d1-cleanup-$(date +%s)"
+
+demo_action "Creating cleanup branch '$CLEANUP_BRANCH' from $TARGET_ENV..."
+"$GITLAB_CLI" branch create p2c/k8s-deployments "$CLEANUP_BRANCH" --from "$TARGET_ENV" >/dev/null || {
+    demo_fail "Failed to create cleanup branch"
+    exit 1
+}
+
+demo_action "Pushing cleanup to GitLab..."
+echo "$REVERTED_ENV_CUE" | "$GITLAB_CLI" file update p2c/k8s-deployments "env.cue" \
+    --ref "$CLEANUP_BRANCH" \
+    --message "chore: remove $DEMO_KEY hotfix (UC-D1 cleanup)" \
+    --stdin >/dev/null || {
+    demo_fail "Failed to push cleanup"
+    exit 1
+}
+
+# Create and merge cleanup MR
+demo_action "Creating cleanup MR..."
+cleanup_mr_iid=$(create_mr "$CLEANUP_BRANCH" "$TARGET_ENV" "Cleanup: Remove $DEMO_KEY hotfix [UC-D1]")
+
+demo_action "Waiting for cleanup CI..."
+wait_for_mr_pipeline "$cleanup_mr_iid" || exit 1
+
+# Capture ArgoCD baseline before cleanup merge
+cleanup_argocd_baseline=$(get_argocd_revision "${DEMO_APP}-${TARGET_ENV}")
+
+demo_action "Merging cleanup MR..."
+accept_mr "$cleanup_mr_iid" || exit 1
+
+demo_action "Waiting for ArgoCD to sync cleanup..."
+wait_for_argocd_sync "${DEMO_APP}-${TARGET_ENV}" "$cleanup_argocd_baseline" || exit 1
+
+# Verify cleanup worked
+demo_action "Verifying hotfix key removed from prod..."
+assert_configmap_entry_absent "$TARGET_ENV" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
+    demo_fail "Cleanup failed: '$DEMO_KEY' still exists in $TARGET_ENV"
+    exit 1
+}
+demo_verify "Cleanup complete: '$DEMO_KEY' removed from $TARGET_ENV"
+
+# Verify pipeline is quiescent after demo
+demo_postflight_check
+
+demo_action "Returning to original branch: $ORIGINAL_BRANCH"
+git checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
+
+demo_info "Feature branches left in GitLab for reference:"
+demo_info "  - $FEATURE_BRANCH (hotfix)"
+demo_info "  - $CLEANUP_BRANCH (cleanup)"
+
+demo_complete
