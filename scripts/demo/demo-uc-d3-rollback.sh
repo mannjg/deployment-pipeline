@@ -213,15 +213,18 @@ else
     exit 1
 fi
 
-# Capture promotion MR count before rollback (bad deploy creates one, which is expected)
-PRE_ROLLBACK_MR_COUNT=$("$GITLAB_CLI" mr promotion-pending p2c/k8s-deployments prod 2>/dev/null | wc -l || echo "0")
-demo_info "Existing promotion MRs to prod: $PRE_ROLLBACK_MR_COUNT (from bad deploy, expected)"
-
 # ---------------------------------------------------------------------------
 # Step 5: Execute Rollback
 # ---------------------------------------------------------------------------
 
 demo_step 5 "Execute Rollback"
+
+# Wait a moment to ensure Jenkins has processed the bad deploy and created any MRs
+sleep 15
+
+# Capture promotion MR count AFTER bad deploy is fully processed
+PRE_ROLLBACK_MR_COUNT=$("$GITLAB_CLI" mr promotion-pending p2c/k8s-deployments prod 2>/dev/null | wc -l || echo "0")
+demo_info "Promotion MRs to prod before rollback: $PRE_ROLLBACK_MR_COUNT (from bad deploy, expected)"
 
 demo_info "Simulating: 'Stage has bad config! Roll it back!'"
 demo_info "Using rollback-environment.sh tool..."
