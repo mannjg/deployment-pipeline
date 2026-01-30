@@ -425,7 +425,7 @@ While preserving:
 | UC-C6 | Platform default + env override | ✅ | ✅ | ✅ | `uc-c6-platform-env-override` | Pipeline verified 2026-01-22 |
 | UC-D1 | Emergency hotfix to prod | 🔲 | 🔲 | 🔲 | — | Requires direct env MR support |
 | UC-D2 | Cherry-pick promotion (multi-app) | 🔲 | 🔲 | 🔲 | — | Requires multi-app promotion tooling |
-| UC-D3 | Environment rollback | ✅ | ✅ | 🔲 | `uc-d3-rollback` | GitOps rollback via git revert; [no-promote] prevents cascade |
+| UC-D3 | Environment rollback | ✅ | ✅ | ✅ | `uc-d3-rollback` | Pipeline verified 2026-01-30; GitOps rollback via git revert; [no-promote] prevents cascade |
 | UC-D4 | Re-promote single app | 🔲 | 🔲 | 🔲 | — | Requires app-scoped promotion |
 | UC-D5 | Skip environment (dev→prod) | 🔲 | 🔲 | 🔲 | — | Requires direct env MR support |
 
