@@ -73,12 +73,13 @@ import (
 
 	// Default pod annotations applied to all deployments
 	// Merged with any podAnnotations provided via appConfig.deployment.podAnnotations
+	// Uses default (*value | type) pattern to allow apps/envs to override
 	defaultPodAnnotations: {
 		// Platform-wide: Enable Prometheus scraping by default
 		// Apps can override to "false" if needed (demonstrated in UC-C5)
-		"prometheus.io/scrape": "true"
-		"prometheus.io/port":   "8080"
-		"prometheus.io/path":   "/metrics"
+		"prometheus.io/scrape": *"true" | string
+		"prometheus.io/port":   *"8080" | string
+		"prometheus.io/path":   *"/metrics" | string
 		...
 	}
 
