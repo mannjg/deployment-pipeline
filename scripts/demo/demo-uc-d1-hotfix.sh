@@ -128,3 +128,65 @@ for env in "$TARGET_ENV" "${OTHER_ENVS[@]}"; do
 done
 
 demo_verify "Baseline confirmed: '$DEMO_KEY' absent from all environments"
+
+# ---------------------------------------------------------------------------
+# Step 3: Create Hotfix Branch from Prod
+# ---------------------------------------------------------------------------
+
+demo_step 3 "Create Hotfix Branch from Prod"
+
+demo_info "CRITICAL: Creating branch from PROD (not dev!) for emergency hotfix"
+demo_info "This bypasses the normal dev→stage→prod promotion chain"
+
+# Get current env.cue content from prod branch
+demo_action "Fetching $TARGET_ENV's env.cue from GitLab..."
+PROD_ENV_CUE=$(get_file_from_branch "$TARGET_ENV" "env.cue")
+
+if [[ -z "$PROD_ENV_CUE" ]]; then
+    demo_fail "Could not fetch env.cue from $TARGET_ENV branch"
+    exit 1
+fi
+demo_verify "Retrieved $TARGET_ENV's env.cue"
+
+# Check if entry already exists
+if echo "$PROD_ENV_CUE" | grep -q "\"$DEMO_KEY\""; then
+    demo_warn "Key '$DEMO_KEY' already exists in $TARGET_ENV's env.cue"
+    demo_info "Run reset-demo-state.sh to clean up"
+    exit 1
+fi
+
+# Modify the content using cue-edit.py
+demo_action "Adding emergency ConfigMap fix: $DEMO_KEY=$DEMO_VALUE"
+demo_info "Scenario: API timeouts in prod, need to increase timeout immediately"
+
+# Create temp file for cue-edit.py (must be in k8s-deployments for CUE module context)
+TEMP_CUE="${K8S_DEPLOYMENTS_DIR}/.temp-env-cue.cue"
+echo "$PROD_ENV_CUE" > "$TEMP_CUE"
+
+python3 "${CUE_EDIT}" env-configmap add "$TEMP_CUE" "$TARGET_ENV" "$DEMO_APP_CUE" \
+    "$DEMO_KEY" "$DEMO_VALUE"
+
+MODIFIED_ENV_CUE=$(cat "$TEMP_CUE")
+rm -f "$TEMP_CUE"
+
+demo_verify "Modified env.cue with emergency fix"
+
+# Generate feature branch name
+FEATURE_BRANCH="uc-d1-hotfix-$(date +%s)"
+
+demo_action "Creating branch '$FEATURE_BRANCH' from $TARGET_ENV in GitLab..."
+"$GITLAB_CLI" branch create p2c/k8s-deployments "$FEATURE_BRANCH" --from "$TARGET_ENV" >/dev/null || {
+    demo_fail "Failed to create branch in GitLab"
+    exit 1
+}
+demo_verify "Created branch $FEATURE_BRANCH from $TARGET_ENV (not dev!)"
+
+demo_action "Pushing hotfix to GitLab..."
+echo "$MODIFIED_ENV_CUE" | "$GITLAB_CLI" file update p2c/k8s-deployments "env.cue" \
+    --ref "$FEATURE_BRANCH" \
+    --message "hotfix: increase $DEMO_KEY to $DEMO_VALUE [emergency]" \
+    --stdin >/dev/null || {
+    demo_fail "Failed to update file in GitLab"
+    exit 1
+}
+demo_verify "Hotfix pushed to feature branch"
