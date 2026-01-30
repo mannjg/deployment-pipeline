@@ -149,8 +149,9 @@ fi
 demo_verify "Retrieved $TARGET_ENV's env.cue"
 
 # Add ConfigMap entry using cue-edit.py
+# Note: Temp file must be in k8s-deployments so cue-edit.py finds CUE module context
 demo_action "Adding ConfigMap entry..."
-TEMP_CUE=$(mktemp)
+TEMP_CUE="${K8S_DEPLOYMENTS_DIR}/.temp-env-cue.tmp"
 echo "$STAGE_ENV_CUE" > "$TEMP_CUE"
 
 python3 "${CUE_EDIT}" env-configmap add "$TEMP_CUE" "$TARGET_ENV" "exampleApp" \
