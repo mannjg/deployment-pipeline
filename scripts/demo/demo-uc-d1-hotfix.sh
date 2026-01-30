@@ -225,3 +225,38 @@ argocd_baseline=$(get_argocd_revision "${DEMO_APP}-${TARGET_ENV}")
 # Merge MR
 demo_info "Merging emergency hotfix to production..."
 accept_mr "$mr_iid" || exit 1
+
+# ---------------------------------------------------------------------------
+# Step 6: Wait for ArgoCD Sync
+# ---------------------------------------------------------------------------
+
+demo_step 6 "Wait for ArgoCD Sync"
+
+# Wait for ArgoCD to sync prod
+wait_for_argocd_sync "${DEMO_APP}-${TARGET_ENV}" "$argocd_baseline" || exit 1
+
+demo_verify "$TARGET_ENV environment synced with hotfix"
+
+# ---------------------------------------------------------------------------
+# Step 7: Verify Hotfix and Environment Isolation
+# ---------------------------------------------------------------------------
+
+demo_step 7 "Verify Hotfix and Environment Isolation"
+
+demo_info "Verifying '$DEMO_KEY' exists ONLY in $TARGET_ENV..."
+
+# Verify prod HAS the entry
+demo_action "Checking $TARGET_ENV (should HAVE the fix)..."
+assert_configmap_entry "$TARGET_ENV" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$DEMO_VALUE" || exit 1
+
+# Verify dev/stage do NOT have the entry
+for env in "${OTHER_ENVS[@]}"; do
+    demo_action "Checking $env (should NOT have the fix)..."
+    assert_configmap_entry_absent "$env" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
+        demo_fail "ISOLATION VIOLATED: $env has '$DEMO_KEY' but should not!"
+        exit 1
+    }
+done
+
+demo_verify "HOTFIX CONFIRMED: Only $TARGET_ENV has '$DEMO_KEY'"
+demo_verify "ISOLATION CONFIRMED: dev and stage are unchanged"
