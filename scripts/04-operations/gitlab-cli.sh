@@ -115,6 +115,9 @@ Commands:
     --ref <branch>                  Branch/tag (default: main)
     --limit <n>                     Number of commits (default: 10)
 
+  commit revert <project> <sha> --branch <branch>
+                                    Revert a commit on a branch
+
   env image <project> <env>         Get deployed image tag for an environment
     --app <name>                    App name in CUE (default: exampleApp)
 
@@ -525,6 +528,56 @@ cmd_commit_list() {
     echo "$response" | jq -r '.[] | "\(.short_id) \(.created_at | split("T")[0]) \(.title)"'
 }
 
+cmd_commit_revert() {
+    if [[ $# -lt 1 ]]; then
+        log_error "Usage: gitlab-cli.sh commit revert <project> <sha> --branch <branch>"
+        exit 1
+    fi
+
+    local project="$1"
+    local sha="${2:-}"
+    shift
+    [[ -n "$sha" ]] && shift
+
+    local branch=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --branch) branch="$2"; shift 2 ;;
+            *) log_error "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+
+    if [[ -z "$sha" || -z "$branch" ]]; then
+        log_error "Usage: gitlab-cli.sh commit revert <project> <sha> --branch <branch>"
+        exit 1
+    fi
+
+    local encoded_project
+    encoded_project=$(encode_project "$project")
+
+    local response
+    response=$(curl -sk -X POST \
+        -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"branch\":\"$branch\"}" \
+        "${GITLAB_URL}/api/v4/projects/${encoded_project}/repository/commits/${sha}/revert" 2>/dev/null)
+
+    # Check for success (response contains commit id)
+    if echo "$response" | jq -e '.id' &>/dev/null; then
+        local new_sha title
+        new_sha=$(echo "$response" | jq -r '.short_id')
+        title=$(echo "$response" | jq -r '.title')
+        echo "Reverted $sha → $new_sha: $title"
+        return 0
+    else
+        local error
+        error=$(echo "$response" | jq -r '.message // .error // "Unknown error"')
+        log_error "Failed to revert commit: $error"
+        exit 1
+    fi
+}
+
 # =============================================================================
 # Environment Commands
 # =============================================================================
@@ -666,13 +719,14 @@ case "$1" in
     commit)
         shift
         if [[ $# -lt 1 ]]; then
-            log_error "Usage: gitlab-cli.sh commit <list> ..."
+            log_error "Usage: gitlab-cli.sh commit <list|revert> ..."
             exit 1
         fi
         subcommand="$1"
         shift
         case "$subcommand" in
             list) cmd_commit_list "$@" ;;
+            revert) cmd_commit_revert "$@" ;;
             *) log_error "Unknown commit subcommand: $subcommand"; exit 1 ;;
         esac
         ;;
