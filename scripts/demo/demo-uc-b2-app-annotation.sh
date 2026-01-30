@@ -5,7 +5,7 @@
 # environments through the GitOps pipeline.
 #
 # Use Case UC-B2:
-# "As a platform team, we want Prometheus to scrape example-app in all environments"
+# "As a platform team, we want to set app-specific Prometheus scrape timeout"
 #
 # What This Demonstrates:
 # - Changes to services/apps/example-app.cue flow through promotion chain
@@ -13,7 +13,7 @@
 # - All environments (dev/stage/prod) receive the same app-level configuration
 #
 # Flow:
-#   1. Add prometheus.io/scrape annotation to services/apps/example-app.cue
+#   1. Add prometheus.io/scrape-timeout annotation to services/apps/example-app.cue
 #   2. Create MR: feature -> dev
 #   3. Promote through dev -> stage -> prod
 #   4. Verify all envs have the prometheus annotation
@@ -38,8 +38,8 @@ source "${SCRIPT_DIR}/lib/pipeline-wait.sh"
 # CONFIGURATION
 # ============================================================================
 
-DEMO_ANNOTATION_KEY="prometheus.io/scrape"
-DEMO_ANNOTATION_VALUE="true"
+DEMO_ANNOTATION_KEY="prometheus.io/scrape-timeout"
+DEMO_ANNOTATION_VALUE="30s"
 DEMO_APP="example-app"
 DEMO_APP_CUE="exampleApp"  # CUE identifier
 APP_CUE_PATH="services/apps/example-app.cue"
