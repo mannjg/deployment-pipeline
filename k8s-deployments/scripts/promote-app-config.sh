@@ -45,11 +45,12 @@ log_debug() { echo -e "${BLUE}[DEBUG]${NC} $1"; }
 # Parse arguments
 SOURCE_ENV=""
 TARGET_ENV=""
+ONLY_APPS=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
-            echo "Usage: $0 <source-env> <target-env>"
+            echo "Usage: $0 [OPTIONS] <source-env> <target-env>"
             echo ""
             echo "Promotes app configuration from source to target environment."
             echo "Preserves environment-specific fields (namespace, replicas, resources, debug)."
@@ -58,10 +59,21 @@ while [[ $# -gt 0 ]]; do
             echo "  source-env    Source environment (dev, stage)"
             echo "  target-env    Target environment (stage, prod)"
             echo ""
+            echo "Options:"
+            echo "  --only-apps <apps>  Comma-separated list of CUE identifiers to promote"
+            echo "                      (e.g., exampleApp,postgres). If omitted, all apps"
+            echo "                      are promoted."
+            echo "  -h, --help          Show this help message"
+            echo ""
             echo "Example:"
             echo "  git checkout stage"
             echo "  $0 dev stage"
+            echo "  $0 --only-apps exampleApp dev stage"
             exit 0
+            ;;
+        --only-apps)
+            ONLY_APPS="$2"
+            shift 2
             ;;
         *)
             if [[ -z "$SOURCE_ENV" ]]; then
@@ -176,6 +188,16 @@ SKIPPED_COUNT=0
 
 # Process each app
 for APP in $APPS; do
+    # Filter apps if --only-apps is specified
+    if [[ -n "$ONLY_APPS" ]]; then
+        # Check if APP is in the comma-separated ONLY_APPS list
+        if ! echo ",$ONLY_APPS," | grep -q ",$APP,"; then
+            log_info "Skipping app: $APP (not in --only-apps filter)"
+            : $((SKIPPED_COUNT++))
+            continue
+        fi
+    fi
+
     log_info "Processing app: $APP"
 
     # Check if app exists in target
@@ -251,6 +273,9 @@ rm -f "$BACKUP_FILE"
 log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 log_info "Promotion Summary: $SOURCE_ENV -> $TARGET_ENV"
 log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+if [[ -n "$ONLY_APPS" ]]; then
+    log_info "  App filter:     $ONLY_APPS"
+fi
 log_info "  Platform layer: $([ "$PLATFORM_CHANGED" = true ] && echo "changed" || echo "unchanged")"
 log_info "  App images:     $PROMOTED_COUNT promoted, $SKIPPED_COUNT skipped"
 log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
