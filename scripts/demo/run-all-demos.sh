@@ -49,6 +49,7 @@ DEMO_ORDER=(
     # Category D: Operational Scenarios
     "UC-D1:demo-uc-d1-hotfix.sh:Emergency hotfix to production:prod"
     "UC-D3:demo-uc-d3-rollback.sh:Environment rollback (GitOps revert):stage"
+    "UC-D5:demo-uc-d5-skip-env.sh:Skip environment (dev→prod direct):dev,prod"
 )
 
 # Colors
