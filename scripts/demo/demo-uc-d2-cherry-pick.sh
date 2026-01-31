@@ -460,27 +460,30 @@ demo_action "Creating cleanup branch..."
 
 # Clone, revert, push
 CLEANUP_DIR=$(mktemp -d)
-GIT_SSL_NO_VERIFY=true git clone --quiet --branch "$CLEANUP_BRANCH" "$GITLAB_K8S_URL" "$CLEANUP_DIR" || {
+CLEANUP_CLONE_OK=false
+GIT_SSL_NO_VERIFY=true git clone --quiet --branch "$CLEANUP_BRANCH" "$GITLAB_K8S_URL" "$CLEANUP_DIR" && CLEANUP_CLONE_OK=true
+
+if [[ "$CLEANUP_CLONE_OK" == "true" ]]; then
+    cd "$CLEANUP_DIR"
+
+    # Update image back to baseline
+    ./scripts/update-app-image.sh "$TARGET_ENV" "$APP_TO_PROMOTE" "$STAGE_APP_IMAGE_BASELINE" || {
+        demo_warn "Failed to revert image - manual cleanup may be needed"
+    }
+
+    # Regenerate manifests
+    ./scripts/generate-manifests.sh "$TARGET_ENV" >/dev/null
+
+    git add -A
+    git commit -m "chore: revert example-app to baseline [UC-D2 cleanup] [no-promote]" >/dev/null
+    git push origin "$CLEANUP_BRANCH" --quiet
+
+    cd "$K8S_DEPLOYMENTS_DIR"
+    rm -rf "$CLEANUP_DIR"
+else
     demo_warn "Failed to clone cleanup branch - manual cleanup may be needed"
     rm -rf "$CLEANUP_DIR"
-}
-
-cd "$CLEANUP_DIR"
-
-# Update image back to baseline
-./scripts/update-app-image.sh "$TARGET_ENV" "$APP_TO_PROMOTE" "$STAGE_APP_IMAGE_BASELINE" || {
-    demo_warn "Failed to revert image - manual cleanup may be needed"
-}
-
-# Regenerate manifests
-./scripts/generate-manifests.sh "$TARGET_ENV" >/dev/null
-
-git add -A
-git commit -m "chore: revert example-app to baseline [UC-D2 cleanup] [no-promote]" >/dev/null
-git push origin "$CLEANUP_BRANCH" --quiet
-
-cd "$K8S_DEPLOYMENTS_DIR"
-rm -rf "$CLEANUP_DIR"
+fi
 
 # Create and merge cleanup MR
 demo_action "Creating cleanup MR..."
