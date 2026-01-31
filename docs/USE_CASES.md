@@ -365,6 +365,7 @@ Env (env.cue per branch)
 |--------|----------|---------------------|
 | [`scripts/demo/demo-uc-d1-hotfix.sh`](../scripts/demo/demo-uc-d1-hotfix.sh) | UC-D1 | Emergency hotfix bypasses promotion chain; direct MR to prod |
 | [`scripts/demo/demo-uc-d3-rollback.sh`](../scripts/demo/demo-uc-d3-rollback.sh) | UC-D3 | Environment rollback via git revert; [no-promote] prevents cascade |
+| [`scripts/demo/demo-uc-d5-skip-env.sh`](../scripts/demo/demo-uc-d5-skip-env.sh) | UC-D5 | Emergency skip-promotion bypasses broken stage; direct dev→prod MR |
 
 ### Future Demos (Phase 3+)
 
@@ -428,7 +429,7 @@ While preserving:
 | UC-D2 | Cherry-pick promotion (multi-app) | 🔲 | 🔲 | 🔲 | — | Requires multi-app promotion tooling |
 | UC-D3 | Environment rollback | ✅ | ✅ | ✅ | `uc-d3-rollback` | Pipeline verified 2026-01-30; GitOps rollback via git revert; [no-promote] prevents cascade |
 | UC-D4 | Re-promote single app | 🔲 | 🔲 | 🔲 | — | Requires app-scoped promotion |
-| UC-D5 | Skip environment (dev→prod) | 🔲 | 🔲 | 🔲 | — | Requires direct env MR support |
+| UC-D5 | Skip environment (dev→prod direct) | ✅ | ✅ | 🔲 | `uc-d5-skip-env` | Direct dev→prod MR bypassing stage |
 
 **Status Legend:**
 - 🔲 Not started
