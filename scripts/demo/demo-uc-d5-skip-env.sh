@@ -130,4 +130,98 @@ done
 
 demo_verify "Baseline confirmed: '$DEMO_KEY' absent from all environments"
 
-# Steps 3-10 will be added in subsequent tasks...
+# ---------------------------------------------------------------------------
+# Step 3: Add Urgent Change to Dev
+# ---------------------------------------------------------------------------
+
+demo_step 3 "Add Urgent Change to Dev"
+
+demo_info "Scenario: Critical security patch needs to be deployed urgently"
+demo_info "Adding ConfigMap entry: $DEMO_KEY=$DEMO_VALUE"
+
+# Get current env.cue content from dev branch
+demo_action "Fetching $SOURCE_ENV's env.cue from GitLab..."
+DEV_ENV_CUE=$(get_file_from_branch "$SOURCE_ENV" "env.cue")
+
+if [[ -z "$DEV_ENV_CUE" ]]; then
+    demo_fail "Could not fetch env.cue from $SOURCE_ENV branch"
+    exit 1
+fi
+demo_verify "Retrieved $SOURCE_ENV's env.cue"
+
+# Check if entry already exists
+if echo "$DEV_ENV_CUE" | grep -q "\"$DEMO_KEY\""; then
+    demo_warn "Key '$DEMO_KEY' already exists in $SOURCE_ENV's env.cue"
+    demo_info "Run reset-demo-state.sh to clean up"
+    exit 1
+fi
+
+# Modify the content using cue-edit.py
+demo_action "Adding ConfigMap entry: $DEMO_KEY=$DEMO_VALUE"
+
+# Create temp file for cue-edit.py (must be in k8s-deployments for CUE module context)
+TEMP_CUE="${K8S_DEPLOYMENTS_DIR}/.temp-env-cue.cue"
+echo "$DEV_ENV_CUE" > "$TEMP_CUE"
+
+python3 "${CUE_EDIT}" env-configmap add "$TEMP_CUE" "$SOURCE_ENV" "$DEMO_APP_CUE" \
+    "$DEMO_KEY" "$DEMO_VALUE"
+
+MODIFIED_DEV_CUE=$(cat "$TEMP_CUE")
+rm -f "$TEMP_CUE"
+
+demo_verify "Modified env.cue with urgent fix"
+
+# Generate feature branch name
+DEV_FEATURE_BRANCH="uc-d5-dev-$(date +%s)"
+
+demo_action "Creating branch '$DEV_FEATURE_BRANCH' from $SOURCE_ENV in GitLab..."
+"$GITLAB_CLI" branch create p2c/k8s-deployments "$DEV_FEATURE_BRANCH" --from "$SOURCE_ENV" >/dev/null || {
+    demo_fail "Failed to create branch in GitLab"
+    exit 1
+}
+demo_verify "Created branch $DEV_FEATURE_BRANCH from $SOURCE_ENV"
+
+demo_action "Pushing change to GitLab..."
+echo "$MODIFIED_DEV_CUE" | "$GITLAB_CLI" file update p2c/k8s-deployments "env.cue" \
+    --ref "$DEV_FEATURE_BRANCH" \
+    --message "feat: add $DEMO_KEY=$DEMO_VALUE [UC-D5 security patch]" \
+    --stdin >/dev/null || {
+    demo_fail "Failed to update file in GitLab"
+    exit 1
+}
+demo_verify "Change pushed to feature branch"
+
+# ---------------------------------------------------------------------------
+# Step 4: Create and Merge Dev MR
+# ---------------------------------------------------------------------------
+
+demo_step 4 "Create and Merge Dev MR"
+
+demo_info "Merging security patch to $SOURCE_ENV via standard MR workflow"
+
+# Create MR from feature branch to dev
+demo_action "Creating MR: $DEV_FEATURE_BRANCH → $SOURCE_ENV..."
+dev_mr_iid=$(create_mr "$DEV_FEATURE_BRANCH" "$SOURCE_ENV" "feat: Add $DEMO_KEY security patch [UC-D5]")
+
+# Wait for MR pipeline (Jenkins generates manifests)
+demo_action "Waiting for Jenkins CI to validate and generate manifests..."
+wait_for_mr_pipeline "$dev_mr_iid" || exit 1
+
+# Capture ArgoCD baseline before merge
+dev_argocd_baseline=$(get_argocd_revision "${DEMO_APP}-${SOURCE_ENV}")
+
+# Merge MR
+demo_info "Merging to $SOURCE_ENV..."
+accept_mr "$dev_mr_iid" || exit 1
+
+# Wait for ArgoCD to sync dev
+demo_action "Waiting for ArgoCD to sync $SOURCE_ENV..."
+wait_for_argocd_sync "${DEMO_APP}-${SOURCE_ENV}" "$dev_argocd_baseline" || exit 1
+
+# Verify dev has the change
+demo_action "Verifying $SOURCE_ENV has the change..."
+assert_configmap_entry "$SOURCE_ENV" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$DEMO_VALUE" || exit 1
+
+demo_verify "Security patch deployed to $SOURCE_ENV"
+
+# Steps 5-10 will be added in subsequent tasks...
