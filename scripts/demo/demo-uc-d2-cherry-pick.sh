@@ -262,7 +262,8 @@ WORK_DIR=$(mktemp -d)
 demo_action "Cloning branch for local promotion..."
 # Clone from GitLab k8s-deployments repo
 GITLAB_K8S_URL="https://gitlab.jmann.local/p2c/k8s-deployments.git"
-git -c http.sslVerify=false clone --quiet --branch "$FEATURE_BRANCH" "$GITLAB_K8S_URL" "$WORK_DIR" || {
+export GIT_SSL_NO_VERIFY=true
+git clone --quiet --branch "$FEATURE_BRANCH" "$GITLAB_K8S_URL" "$WORK_DIR" || {
     demo_fail "Failed to clone branch $FEATURE_BRANCH from GitLab"
     rm -rf "$WORK_DIR"
     exit 1
@@ -290,7 +291,7 @@ demo_verify "Manifests generated"
 
 # Commit changes locally
 git add -A
-git commit -m "feat: cherry-pick promote $APP_TO_PROMOTE from $SOURCE_ENV to $TARGET_ENV [UC-D2]
+git commit -m "feat: cherry-pick promote $APP_TO_PROMOTE from $SOURCE_ENV to $TARGET_ENV [UC-D2] [no-promote]
 
 Selective promotion using --only-apps filter.
 Promoted: $APP_TO_PROMOTE
@@ -461,7 +462,7 @@ demo_action "Creating cleanup branch..."
 # Clone, revert, push
 CLEANUP_DIR=$(mktemp -d)
 CLEANUP_CLONE_OK=false
-git -c http.sslVerify=false clone --quiet --branch "$CLEANUP_BRANCH" "$GITLAB_K8S_URL" "$CLEANUP_DIR" && CLEANUP_CLONE_OK=true
+git clone --quiet --branch "$CLEANUP_BRANCH" "$GITLAB_K8S_URL" "$CLEANUP_DIR" && CLEANUP_CLONE_OK=true
 
 if [[ "$CLEANUP_CLONE_OK" == "true" ]]; then
     cd "$CLEANUP_DIR"
