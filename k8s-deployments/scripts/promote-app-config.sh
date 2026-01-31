@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Promote configuration from source environment to target environment
-# Syncs platform/app layers and promotes CI/CD-managed image tags.
+# Syncs platform/app layers and promotes all app image tags.
 #
 # Usage: ./promote-app-config.sh <source-env> <target-env>
 #
@@ -10,7 +10,7 @@ set -euo pipefail
 #   - services/base/  - Base defaults and schemas
 #   - services/core/  - Shared templates (defaultLabels, #App)
 #   - services/apps/  - App definitions
-#   - deployment.image in env.cue (CI/CD managed)
+#   - deployment.image in env.cue (all apps, including 3rd party)
 #
 # What gets PRESERVED (via CUE unification):
 #   - Target's env.cue values: namespace, replicas, resources, debug, labels.environment
@@ -211,8 +211,8 @@ for APP in $APPS; do
     # Update target env.cue using awk for precise replacement
     # We update field by field to preserve CUE structure
 
-    # 1. Update image if present and CI/CD managed
-    if [[ -n "$SOURCE_IMAGE" ]] && echo "$SOURCE_IMAGE" | grep -qE "docker\.jmann\.local/p2c/"; then
+    # 1. Update image if present
+    if [[ -n "$SOURCE_IMAGE" ]]; then
         log_info "  Updating image: $SOURCE_IMAGE"
         "${SCRIPT_DIR}/update-app-image.sh" "$TARGET_ENV" "$APP" "$SOURCE_IMAGE" || {
             log_error "Failed to update image for $APP"
