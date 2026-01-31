@@ -48,6 +48,7 @@ DEMO_ORDER=(
     "UC-C6:demo-uc-c6-platform-env-override.sh:Platform default with env override:dev,stage,prod"
     # Category D: Operational Scenarios
     "UC-D1:demo-uc-d1-hotfix.sh:Emergency hotfix to production:prod"
+    "UC-D2:demo-uc-d2-cherry-pick.sh:Cherry-pick promotion (selective apps):dev,stage"
     "UC-D3:demo-uc-d3-rollback.sh:Environment rollback (GitOps revert):stage"
     "UC-D4:demo-uc-d4-3rd-party-upgrade.sh:3rd party dependency upgrade (postgres):dev,stage,prod"
     "UC-D5:demo-uc-d5-skip-env.sh:Skip environment (dev→prod direct):dev,prod"
