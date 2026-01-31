@@ -224,4 +224,114 @@ assert_configmap_entry "$SOURCE_ENV" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$DEMO_VALUE"
 
 demo_verify "Security patch deployed to $SOURCE_ENV"
 
-# Steps 5-10 will be added in subsequent tasks...
+# ---------------------------------------------------------------------------
+# Step 5: Simulate Stage Unavailable
+# ---------------------------------------------------------------------------
+
+demo_step 5 "Simulate Stage Unavailable"
+
+demo_info "SCENARIO: Stage environment is broken/unavailable"
+demo_info "Normal promotion (dev → stage → prod) would be blocked"
+demo_info "We need to skip stage and promote directly to prod"
+demo_warn "This is an emergency bypass - not normal operation!"
+
+# Note: We don't actually break stage. The demo shows that we CAN
+# skip it when needed. In reality, stage might be:
+# - Out of disk space
+# - Stuck deployment
+# - Network issues
+# - Undergoing maintenance
+
+demo_info ""
+demo_info "Stage status: [SIMULATED BROKEN]"
+demo_info "Decision: Skip stage, promote dev → prod directly"
+
+# ---------------------------------------------------------------------------
+# Step 6: Direct Dev→Prod Promotion (Skipping Stage)
+# ---------------------------------------------------------------------------
+
+demo_step 6 "Direct Dev→Prod Promotion (Skipping Stage)"
+
+demo_info "CRITICAL: Creating promotion branch from DEV directly to PROD"
+demo_info "This bypasses the normal dev → stage → prod chain"
+
+# Get current env.cue from prod branch (we need to preserve prod's settings)
+demo_action "Fetching $TARGET_ENV's env.cue from GitLab..."
+PROD_ENV_CUE=$(get_file_from_branch "$TARGET_ENV" "env.cue")
+
+if [[ -z "$PROD_ENV_CUE" ]]; then
+    demo_fail "Could not fetch env.cue from $TARGET_ENV branch"
+    exit 1
+fi
+demo_verify "Retrieved $TARGET_ENV's env.cue"
+
+# Add the same change to prod's env.cue
+demo_action "Adding ConfigMap entry to prod: $DEMO_KEY=$DEMO_VALUE"
+
+TEMP_CUE="${K8S_DEPLOYMENTS_DIR}/.temp-env-cue.cue"
+echo "$PROD_ENV_CUE" > "$TEMP_CUE"
+
+python3 "${CUE_EDIT}" env-configmap add "$TEMP_CUE" "$TARGET_ENV" "$DEMO_APP_CUE" \
+    "$DEMO_KEY" "$DEMO_VALUE"
+
+MODIFIED_PROD_CUE=$(cat "$TEMP_CUE")
+rm -f "$TEMP_CUE"
+
+demo_verify "Modified prod env.cue with security patch"
+
+# Generate feature branch name for prod promotion
+PROD_FEATURE_BRANCH="uc-d5-skip-$(date +%s)"
+
+demo_action "Creating branch '$PROD_FEATURE_BRANCH' from $TARGET_ENV in GitLab..."
+"$GITLAB_CLI" branch create p2c/k8s-deployments "$PROD_FEATURE_BRANCH" --from "$TARGET_ENV" >/dev/null || {
+    demo_fail "Failed to create branch in GitLab"
+    exit 1
+}
+demo_verify "Created branch $PROD_FEATURE_BRANCH from $TARGET_ENV"
+
+demo_action "Pushing skip-promotion to GitLab..."
+echo "$MODIFIED_PROD_CUE" | "$GITLAB_CLI" file update p2c/k8s-deployments "env.cue" \
+    --ref "$PROD_FEATURE_BRANCH" \
+    --message "feat: SKIP-PROMOTE $DEMO_KEY=$DEMO_VALUE from dev [UC-D5 emergency]" \
+    --stdin >/dev/null || {
+    demo_fail "Failed to update file in GitLab"
+    exit 1
+}
+demo_verify "Skip-promotion pushed to feature branch"
+
+# ---------------------------------------------------------------------------
+# Step 7: Create and Merge Prod MR
+# ---------------------------------------------------------------------------
+
+demo_step 7 "Create and Merge Prod MR"
+
+demo_info "Creating MR directly to $TARGET_ENV (skipping $SKIPPED_ENV)"
+
+# Create MR from feature branch to prod (DIRECT)
+demo_action "Creating MR: $PROD_FEATURE_BRANCH → $TARGET_ENV..."
+prod_mr_iid=$(create_mr "$PROD_FEATURE_BRANCH" "$TARGET_ENV" "SKIP-PROMOTE: $DEMO_KEY security patch [UC-D5]")
+
+# Wait for MR pipeline (Jenkins generates manifests)
+demo_action "Waiting for Jenkins CI to validate and generate manifests..."
+wait_for_mr_pipeline "$prod_mr_iid" || exit 1
+
+# Verify MR contains expected changes
+demo_action "Verifying MR contains expected changes..."
+assert_mr_contains_diff "$prod_mr_iid" "env.cue" "$DEMO_KEY" || exit 1
+assert_mr_contains_diff "$prod_mr_iid" "manifests/.*\\.yaml" "$DEMO_KEY" || exit 1
+demo_verify "MR contains CUE change and regenerated manifests"
+
+# Capture ArgoCD baseline before merge
+prod_argocd_baseline=$(get_argocd_revision "${DEMO_APP}-${TARGET_ENV}")
+
+# Merge MR
+demo_info "Merging emergency skip-promotion to $TARGET_ENV..."
+accept_mr "$prod_mr_iid" || exit 1
+
+# Wait for ArgoCD to sync prod
+demo_action "Waiting for ArgoCD to sync $TARGET_ENV..."
+wait_for_argocd_sync "${DEMO_APP}-${TARGET_ENV}" "$prod_argocd_baseline" || exit 1
+
+demo_verify "$TARGET_ENV environment synced with security patch"
+
+# Steps 8-10 will be added in subsequent tasks...
