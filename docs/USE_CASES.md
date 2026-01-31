@@ -427,7 +427,7 @@ While preserving:
 | UC-C5 | Platform default + app override | ✅ | ✅ | ✅ | `uc-c5-app-override` | Pipeline verified 2026-01-30; multi-app: postgres overrides platform default |
 | UC-C6 | Platform default + env override | ✅ | ✅ | ✅ | `uc-c6-platform-env-override` | Pipeline verified 2026-01-22 |
 | UC-D1 | Emergency hotfix to prod | ✅ | ✅ | ✅ | `uc-d1-hotfix` | Pipeline verified 2026-01-30; Direct-to-prod MR bypassing dev/stage |
-| UC-D2 | Cherry-pick promotion (multi-app) | 🔲 | 🔲 | 🔲 | — | Requires multi-app promotion tooling |
+| UC-D2 | Cherry-pick promotion (multi-app) | 🚧 | 🚧 | — | `uc-d2-cherry-pick` | Implemented; pending pipeline verification |
 | UC-D3 | Environment rollback | ✅ | ✅ | ✅ | `uc-d3-rollback` | Pipeline verified 2026-01-30; GitOps rollback via git revert; [no-promote] prevents cascade |
 | UC-D4 | 3rd Party Dependency Rollout | ✅ | ✅ | ✅ | `uc-d4-3rd-party-upgrade` | Pipeline verified 2026-01-31; 3rd party images promoted through environments |
 | UC-D5 | Skip environment (dev→prod direct) | ✅ | ✅ | ✅ | `uc-d5-skip-env` | Pipeline verified 2026-01-31; Direct dev→prod MR bypassing stage |
