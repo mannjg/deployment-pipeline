@@ -449,10 +449,10 @@ DEV_CLEANUP_BRANCH="uc-d5-cleanup-dev-$(date +%s)"
 "$GITLAB_CLI" branch create p2c/k8s-deployments "$DEV_CLEANUP_BRANCH" --from "$SOURCE_ENV" >/dev/null
 echo "$DEV_CLEANED_CUE" | "$GITLAB_CLI" file update p2c/k8s-deployments "env.cue" \
     --ref "$DEV_CLEANUP_BRANCH" \
-    --message "chore: remove $DEMO_KEY (UC-D5 cleanup)" \
+    --message "chore: remove $DEMO_KEY [no-promote] [UC-D5 cleanup]" \
     --stdin >/dev/null
 
-dev_cleanup_mr_iid=$(create_mr "$DEV_CLEANUP_BRANCH" "$SOURCE_ENV" "Cleanup: Remove $DEMO_KEY [UC-D5]")
+dev_cleanup_mr_iid=$(create_mr "$DEV_CLEANUP_BRANCH" "$SOURCE_ENV" "Cleanup: Remove $DEMO_KEY [no-promote] [UC-D5]")
 wait_for_mr_pipeline "$dev_cleanup_mr_iid" || exit 1
 dev_cleanup_argocd_baseline=$(get_argocd_revision "${DEMO_APP}-${SOURCE_ENV}")
 accept_mr "$dev_cleanup_mr_iid" || exit 1
@@ -472,15 +472,28 @@ PROD_CLEANUP_BRANCH="uc-d5-cleanup-prod-$(date +%s)"
 "$GITLAB_CLI" branch create p2c/k8s-deployments "$PROD_CLEANUP_BRANCH" --from "$TARGET_ENV" >/dev/null
 echo "$PROD_CLEANED_CUE" | "$GITLAB_CLI" file update p2c/k8s-deployments "env.cue" \
     --ref "$PROD_CLEANUP_BRANCH" \
-    --message "chore: remove $DEMO_KEY (UC-D5 cleanup)" \
+    --message "chore: remove $DEMO_KEY [no-promote] [UC-D5 cleanup]" \
     --stdin >/dev/null
 
-prod_cleanup_mr_iid=$(create_mr "$PROD_CLEANUP_BRANCH" "$TARGET_ENV" "Cleanup: Remove $DEMO_KEY [UC-D5]")
+prod_cleanup_mr_iid=$(create_mr "$PROD_CLEANUP_BRANCH" "$TARGET_ENV" "Cleanup: Remove $DEMO_KEY [no-promote] [UC-D5]")
 wait_for_mr_pipeline "$prod_cleanup_mr_iid" || exit 1
 prod_cleanup_argocd_baseline=$(get_argocd_revision "${DEMO_APP}-${TARGET_ENV}")
 accept_mr "$prod_cleanup_mr_iid" || exit 1
 wait_for_argocd_sync "${DEMO_APP}-${TARGET_ENV}" "$prod_cleanup_argocd_baseline" || exit 1
 demo_verify "$TARGET_ENV cleaned up"
+
+# Close any orphaned promotion MRs to stage (created when we merged to dev, but never merged since we skipped stage)
+# Also delete the source branches to avoid "lingering branch" warnings
+demo_action "Closing orphaned promotion MRs to $SKIPPED_ENV..."
+STAGE_MRS=$("$GITLAB_CLI" mr list p2c/k8s-deployments --state opened --target "$SKIPPED_ENV" 2>/dev/null || echo "[]")
+PROMOTE_MRS_DATA=$(echo "$STAGE_MRS" | jq -r 'if type == "array" then . else [.] end | map(select(.source_branch | startswith("promote-"))) | .[] | "\(.iid) \(.source_branch)"')
+while IFS=' ' read -r mr_iid source_branch; do
+    [[ -z "$mr_iid" ]] && continue
+    demo_info "Closing orphaned promotion MR !$mr_iid and deleting branch $source_branch"
+    "$GITLAB_CLI" mr close p2c/k8s-deployments "$mr_iid" >/dev/null 2>&1 || true
+    "$GITLAB_CLI" branch delete p2c/k8s-deployments "$source_branch" >/dev/null 2>&1 || true
+done <<< "$PROMOTE_MRS_DATA"
+demo_verify "Orphaned promotion MRs closed"
 
 # Verify cleanup worked
 demo_action "Verifying cleanup..."
