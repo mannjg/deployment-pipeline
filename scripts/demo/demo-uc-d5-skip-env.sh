@@ -334,4 +334,98 @@ wait_for_argocd_sync "${DEMO_APP}-${TARGET_ENV}" "$prod_argocd_baseline" || exit
 
 demo_verify "$TARGET_ENV environment synced with security patch"
 
-# Steps 8-10 will be added in subsequent tasks...
+# ---------------------------------------------------------------------------
+# Step 8: Verify Skip Isolation
+# ---------------------------------------------------------------------------
+
+demo_step 8 "Verify Skip Isolation"
+
+demo_info "Verifying '$DEMO_KEY' exists in $SOURCE_ENV and $TARGET_ENV but NOT in $SKIPPED_ENV..."
+
+# Verify dev HAS the entry
+demo_action "Checking $SOURCE_ENV (should HAVE the fix)..."
+assert_configmap_entry "$SOURCE_ENV" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$DEMO_VALUE" || exit 1
+
+# Verify prod HAS the entry
+demo_action "Checking $TARGET_ENV (should HAVE the fix)..."
+assert_configmap_entry "$TARGET_ENV" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$DEMO_VALUE" || exit 1
+
+# Verify stage does NOT have the entry
+demo_action "Checking $SKIPPED_ENV (should NOT have the fix)..."
+assert_configmap_entry_absent "$SKIPPED_ENV" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
+    demo_fail "SKIP VIOLATED: $SKIPPED_ENV has '$DEMO_KEY' but should not!"
+    exit 1
+}
+
+demo_verify "SKIP CONFIRMED: $SOURCE_ENV and $TARGET_ENV have '$DEMO_KEY'"
+demo_verify "ISOLATION CONFIRMED: $SKIPPED_ENV is unchanged (still doesn't have '$DEMO_KEY')"
+
+# ---------------------------------------------------------------------------
+# Step 9: Summary
+# ---------------------------------------------------------------------------
+
+demo_step 9 "Summary"
+
+cat << EOF
+
+  This demo validated UC-D5: Skip Environment (Dev → Prod Direct)
+
+  Scenario:
+  "Critical security patch needs to go to prod. Stage is broken/unavailable
+   and we cannot wait for it to be fixed."
+
+  What happened:
+  1. Added security patch to $SOURCE_ENV: $DEMO_KEY=$DEMO_VALUE
+  2. Merged to $SOURCE_ENV via standard MR workflow
+  3. Simulated $SKIPPED_ENV being unavailable
+  4. Created skip-promotion branch from $TARGET_ENV
+  5. Applied same change to $TARGET_ENV's env.cue
+  6. Created MR directly to $TARGET_ENV (bypassing $SKIPPED_ENV)
+  7. Jenkins CI validated and regenerated manifests
+  8. Merged MR to $TARGET_ENV
+  9. Verified:
+     - $SOURCE_ENV ConfigMap HAS '$DEMO_KEY=$DEMO_VALUE'
+     - $TARGET_ENV ConfigMap HAS '$DEMO_KEY=$DEMO_VALUE'
+     - $SKIPPED_ENV ConfigMap does NOT have '$DEMO_KEY'
+
+  Key Observations:
+  - Emergency skip-promotion can bypass broken environments
+  - Direct-to-prod MRs work correctly (preserve env.cue settings)
+  - GitOps workflow is preserved (audit trail via MR)
+  - Skipped environment is NOT affected
+  - Normal flow can resume once $SKIPPED_ENV is fixed
+
+  Realignment Path (after $SKIPPED_ENV is fixed):
+    Option A: Next normal promotion catches $SKIPPED_ENV up automatically
+    Option B: Manual promotion from $SOURCE_ENV → $SKIPPED_ENV if urgent
+
+  Operational Pattern:
+    Urgent change tested in dev
+        |
+        v
+    Stage broken/unavailable
+        |
+        v
+    Create branch from PROD
+        |
+        v
+    Apply change to prod's env.cue
+        |
+        v
+    Create MR: feature → prod (direct)
+        |
+        v
+    CI validates, merge MR
+        |
+        v
+    ArgoCD syncs fix to prod
+        |
+        v
+    Change in prod (stage still unchanged)
+        |
+        v
+    [Later] Stage comes back → normal flow resumes
+
+EOF
+
+# Step 10 will be added in subsequent tasks...
