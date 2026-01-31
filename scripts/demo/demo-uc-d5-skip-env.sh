@@ -428,4 +428,82 @@ cat << EOF
 
 EOF
 
-# Step 10 will be added in subsequent tasks...
+# ---------------------------------------------------------------------------
+# Step 10: Cleanup
+# ---------------------------------------------------------------------------
+
+demo_step 10 "Cleanup"
+
+demo_info "Removing the test key to restore clean state..."
+
+# Cleanup dev
+demo_action "Cleaning up $SOURCE_ENV..."
+DEV_CLEANUP_CUE=$(get_file_from_branch "$SOURCE_ENV" "env.cue")
+TEMP_CUE="${K8S_DEPLOYMENTS_DIR}/.temp-env-cue.cue"
+echo "$DEV_CLEANUP_CUE" > "$TEMP_CUE"
+python3 "${CUE_EDIT}" env-configmap remove "$TEMP_CUE" "$SOURCE_ENV" "$DEMO_APP_CUE" "$DEMO_KEY"
+DEV_CLEANED_CUE=$(cat "$TEMP_CUE")
+rm -f "$TEMP_CUE"
+
+DEV_CLEANUP_BRANCH="uc-d5-cleanup-dev-$(date +%s)"
+"$GITLAB_CLI" branch create p2c/k8s-deployments "$DEV_CLEANUP_BRANCH" --from "$SOURCE_ENV" >/dev/null
+echo "$DEV_CLEANED_CUE" | "$GITLAB_CLI" file update p2c/k8s-deployments "env.cue" \
+    --ref "$DEV_CLEANUP_BRANCH" \
+    --message "chore: remove $DEMO_KEY (UC-D5 cleanup)" \
+    --stdin >/dev/null
+
+dev_cleanup_mr_iid=$(create_mr "$DEV_CLEANUP_BRANCH" "$SOURCE_ENV" "Cleanup: Remove $DEMO_KEY [UC-D5]")
+wait_for_mr_pipeline "$dev_cleanup_mr_iid" || exit 1
+dev_cleanup_argocd_baseline=$(get_argocd_revision "${DEMO_APP}-${SOURCE_ENV}")
+accept_mr "$dev_cleanup_mr_iid" || exit 1
+wait_for_argocd_sync "${DEMO_APP}-${SOURCE_ENV}" "$dev_cleanup_argocd_baseline" || exit 1
+demo_verify "$SOURCE_ENV cleaned up"
+
+# Cleanup prod
+demo_action "Cleaning up $TARGET_ENV..."
+PROD_CLEANUP_CUE=$(get_file_from_branch "$TARGET_ENV" "env.cue")
+TEMP_CUE="${K8S_DEPLOYMENTS_DIR}/.temp-env-cue.cue"
+echo "$PROD_CLEANUP_CUE" > "$TEMP_CUE"
+python3 "${CUE_EDIT}" env-configmap remove "$TEMP_CUE" "$TARGET_ENV" "$DEMO_APP_CUE" "$DEMO_KEY"
+PROD_CLEANED_CUE=$(cat "$TEMP_CUE")
+rm -f "$TEMP_CUE"
+
+PROD_CLEANUP_BRANCH="uc-d5-cleanup-prod-$(date +%s)"
+"$GITLAB_CLI" branch create p2c/k8s-deployments "$PROD_CLEANUP_BRANCH" --from "$TARGET_ENV" >/dev/null
+echo "$PROD_CLEANED_CUE" | "$GITLAB_CLI" file update p2c/k8s-deployments "env.cue" \
+    --ref "$PROD_CLEANUP_BRANCH" \
+    --message "chore: remove $DEMO_KEY (UC-D5 cleanup)" \
+    --stdin >/dev/null
+
+prod_cleanup_mr_iid=$(create_mr "$PROD_CLEANUP_BRANCH" "$TARGET_ENV" "Cleanup: Remove $DEMO_KEY [UC-D5]")
+wait_for_mr_pipeline "$prod_cleanup_mr_iid" || exit 1
+prod_cleanup_argocd_baseline=$(get_argocd_revision "${DEMO_APP}-${TARGET_ENV}")
+accept_mr "$prod_cleanup_mr_iid" || exit 1
+wait_for_argocd_sync "${DEMO_APP}-${TARGET_ENV}" "$prod_cleanup_argocd_baseline" || exit 1
+demo_verify "$TARGET_ENV cleaned up"
+
+# Verify cleanup worked
+demo_action "Verifying cleanup..."
+assert_configmap_entry_absent "$SOURCE_ENV" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
+    demo_fail "Cleanup failed: '$DEMO_KEY' still exists in $SOURCE_ENV"
+    exit 1
+}
+assert_configmap_entry_absent "$TARGET_ENV" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
+    demo_fail "Cleanup failed: '$DEMO_KEY' still exists in $TARGET_ENV"
+    exit 1
+}
+demo_verify "Cleanup complete: '$DEMO_KEY' removed from $SOURCE_ENV and $TARGET_ENV"
+
+# Verify pipeline is quiescent after demo
+demo_postflight_check
+
+demo_action "Returning to original branch: $ORIGINAL_BRANCH"
+git checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
+
+demo_info "Feature branches left in GitLab for reference:"
+demo_info "  - $DEV_FEATURE_BRANCH (dev change)"
+demo_info "  - $PROD_FEATURE_BRANCH (skip promotion)"
+demo_info "  - $DEV_CLEANUP_BRANCH (dev cleanup)"
+demo_info "  - $PROD_CLEANUP_BRANCH (prod cleanup)"
+
+demo_complete
