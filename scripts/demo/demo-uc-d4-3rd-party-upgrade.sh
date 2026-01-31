@@ -277,7 +277,8 @@ STAGE_MR_IID=""
 
 while [[ $ELAPSED -lt $TIMEOUT ]]; do
     MR_JSON=$("$GITLAB_CLI" mr list p2c/k8s-deployments --state opened --target stage 2>/dev/null || echo "[]")
-    STAGE_MR_IID=$(echo "$MR_JSON" | jq -r '[.[] | select(.source_branch | startswith("promote-stage-"))] | first | .iid // empty')
+    # Handle both single object and array responses from gitlab-cli
+    STAGE_MR_IID=$(echo "$MR_JSON" | jq -r 'if type == "array" then . else [.] end | map(select(.source_branch | startswith("promote-stage-"))) | first | .iid // empty')
 
     if [[ -n "$STAGE_MR_IID" ]]; then
         demo_verify "Found promotion MR !$STAGE_MR_IID to stage"
@@ -354,7 +355,8 @@ PROD_MR_IID=""
 
 while [[ $ELAPSED -lt $TIMEOUT ]]; do
     MR_JSON=$("$GITLAB_CLI" mr list p2c/k8s-deployments --state opened --target prod 2>/dev/null || echo "[]")
-    PROD_MR_IID=$(echo "$MR_JSON" | jq -r '[.[] | select(.source_branch | startswith("promote-prod-"))] | first | .iid // empty')
+    # Handle both single object and array responses from gitlab-cli
+    PROD_MR_IID=$(echo "$MR_JSON" | jq -r 'if type == "array" then . else [.] end | map(select(.source_branch | startswith("promote-prod-"))) | first | .iid // empty')
 
     if [[ -n "$PROD_MR_IID" ]]; then
         demo_verify "Found promotion MR !$PROD_MR_IID to prod"
@@ -505,7 +507,7 @@ for env in prod stage dev; do
 
     echo "$REVERTED_CUE" | "$GITLAB_CLI" file update p2c/k8s-deployments "env.cue" \
         --ref "$CLEANUP_BRANCH" \
-        --message "chore(deps): revert postgres to $ORIGINAL_IMAGE [UC-D4 cleanup]" \
+        --message "chore(deps): revert postgres to $ORIGINAL_IMAGE [no-promote] [UC-D4 cleanup]" \
         --stdin >/dev/null
 
     # Create and merge cleanup MR
