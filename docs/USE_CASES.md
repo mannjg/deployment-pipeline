@@ -265,16 +265,16 @@ Changes that bypass or modify the normal promotion chain. These handle real-worl
 | **Constraint** | Must not affect other environments; should be auditable |
 | **Validates** | GitOps rollback works; ArgoCD correctly syncs reverted state |
 
-### UC-D4: Re-Promote Single App
+### UC-D4: 3rd Party Dependency Rollout
 
 | Aspect | Detail |
 |--------|--------|
-| **Story** | "Postgres promotion to stage failed. Re-run promotion for postgres only, don't touch example-app" |
-| **Trigger** | Manual trigger of promotion for specific app |
-| **Change** | Re-run promote-app-config.sh for single app |
-| **Expected Behavior** | Only postgres config is re-promoted; example-app stays as-is on stage |
-| **Constraint** | Requires app-scoped promotion capability |
-| **Validates** | Promotion is recoverable and app-scoped |
+| **Story** | "As a platform team, I need to upgrade postgres from 16 to 17, testing in dev first, then promoting through stage→prod independently of example-app" |
+| **Trigger** | Image tag update in dev's env.cue, then normal promotion workflow |
+| **Change** | 3rd party image update flows through dev→stage→prod |
+| **Expected Behavior** | All environments get the upgraded image; example-app unchanged |
+| **Constraint** | Requires promotion to support non-CI/CD images |
+| **Validates** | 3rd party images promoted correctly; app independence maintained |
 
 ### UC-D5: Skip Environment (Dev → Prod Direct)
 
@@ -313,7 +313,7 @@ Changes that bypass or modify the normal promotion chain. These handle real-worl
 | **D: Operational** | UC-D1 | Emergency hotfix to prod | Direct MR to `prod` | Bypasses chain |
 | | UC-D2 | Cherry-pick promotion (multi-app) | Selective promotion MR | Per-app control |
 | | UC-D3 | Environment rollback | Revert MR or branch reset | Single env affected |
-| | UC-D4 | Re-promote single app | Manual promotion trigger | Per-app recovery |
+| | UC-D4 | 3rd party dependency rollout | Image update + promotion | All envs for dependency |
 | | UC-D5 | Skip environment | Direct dev→prod MR | Bypasses intermediate env |
 
 ### Override Hierarchy
@@ -365,6 +365,7 @@ Env (env.cue per branch)
 |--------|----------|---------------------|
 | [`scripts/demo/demo-uc-d1-hotfix.sh`](../scripts/demo/demo-uc-d1-hotfix.sh) | UC-D1 | Emergency hotfix bypasses promotion chain; direct MR to prod |
 | [`scripts/demo/demo-uc-d3-rollback.sh`](../scripts/demo/demo-uc-d3-rollback.sh) | UC-D3 | Environment rollback via git revert; [no-promote] prevents cascade |
+| [`scripts/demo/demo-uc-d4-3rd-party-upgrade.sh`](../scripts/demo/demo-uc-d4-3rd-party-upgrade.sh) | UC-D4 | 3rd party image (postgres) promoted through dev→stage→prod |
 | [`scripts/demo/demo-uc-d5-skip-env.sh`](../scripts/demo/demo-uc-d5-skip-env.sh) | UC-D5 | Emergency skip-promotion bypasses broken stage; direct dev→prod MR |
 
 ### Future Demos (Phase 3+)
@@ -428,7 +429,7 @@ While preserving:
 | UC-D1 | Emergency hotfix to prod | ✅ | ✅ | ✅ | `uc-d1-hotfix` | Pipeline verified 2026-01-30; Direct-to-prod MR bypassing dev/stage |
 | UC-D2 | Cherry-pick promotion (multi-app) | 🔲 | 🔲 | 🔲 | — | Requires multi-app promotion tooling |
 | UC-D3 | Environment rollback | ✅ | ✅ | ✅ | `uc-d3-rollback` | Pipeline verified 2026-01-30; GitOps rollback via git revert; [no-promote] prevents cascade |
-| UC-D4 | Re-promote single app | 🔲 | 🔲 | 🔲 | — | Requires app-scoped promotion |
+| UC-D4 | 3rd Party Dependency Rollout | ✅ | ✅ | 🔲 | `uc-d4-3rd-party-upgrade` | Promotion handles all images, not just CI/CD-managed |
 | UC-D5 | Skip environment (dev→prod direct) | ✅ | ✅ | ✅ | `uc-d5-skip-env` | Pipeline verified 2026-01-31; Direct dev→prod MR bypassing stage |
 
 **Status Legend:**
