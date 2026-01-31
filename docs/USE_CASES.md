@@ -429,7 +429,7 @@ While preserving:
 | UC-D2 | Cherry-pick promotion (multi-app) | 🔲 | 🔲 | 🔲 | — | Requires multi-app promotion tooling |
 | UC-D3 | Environment rollback | ✅ | ✅ | ✅ | `uc-d3-rollback` | Pipeline verified 2026-01-30; GitOps rollback via git revert; [no-promote] prevents cascade |
 | UC-D4 | Re-promote single app | 🔲 | 🔲 | 🔲 | — | Requires app-scoped promotion |
-| UC-D5 | Skip environment (dev→prod direct) | ✅ | ✅ | 🔲 | `uc-d5-skip-env` | Direct dev→prod MR bypassing stage |
+| UC-D5 | Skip environment (dev→prod direct) | ✅ | ✅ | ✅ | `uc-d5-skip-env` | Pipeline verified 2026-01-31; Direct dev→prod MR bypassing stage |
 
 **Status Legend:**
 - 🔲 Not started
