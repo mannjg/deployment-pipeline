@@ -34,6 +34,13 @@ fi
 # Load demo helpers for pipeline state checks
 source "$REPO_ROOT/scripts/demo/lib/demo-helpers.sh"
 
+# MR workflow configuration (required before sourcing mr-workflow.sh)
+export MR_WORKFLOW_TIMEOUT=300
+export MR_WORKFLOW_POLL_INTERVAL=10
+
+# Load MR workflow helpers for GitLab operations
+source "$REPO_ROOT/scripts/lib/mr-workflow.sh"
+
 # Fetch credentials from K8s secrets
 # Uses secret names/keys from infra.env
 load_credentials_from_secrets() {
@@ -208,15 +215,17 @@ check_nexus_release_exists() {
 bump_version() {
     log_step "Bumping version in example-app/pom.xml..."
 
-    local pom_file="$REPO_ROOT/example-app/pom.xml"
+    # Get pom.xml from GitLab (not local - we use MR workflow)
+    local gitlab_cli="$REPO_ROOT/scripts/04-operations/gitlab-cli.sh"
+    local pom_content=$("$gitlab_cli" file get "$GITLAB_PROJECT_PATH" pom.xml --ref main 2>/dev/null)
 
-    if [[ ! -f "$pom_file" ]]; then
-        log_fail "pom.xml not found at $pom_file"
+    if [[ -z "$pom_content" ]]; then
+        log_fail "Could not fetch pom.xml from GitLab"
         exit 1
     fi
 
     # Extract current version (handles X.Y.Z or X.Y.Z-SNAPSHOT)
-    local current_version=$(grep -m1 '<version>' "$pom_file" | sed 's/.*<version>\(.*\)<\/version>.*/\1/')
+    local current_version=$(echo "$pom_content" | grep -m1 '<version>' | sed 's/.*<version>\(.*\)<\/version>.*/\1/')
 
     # Parse version parts
     local base_version="${current_version%-SNAPSHOT}"
@@ -252,46 +261,49 @@ bump_version() {
 
     log_info "Version: $current_version -> $new_version"
 
-    # Update pom.xml (first <version> tag after <artifactId>example-app</artifactId>)
-    sed -i "0,/<version>$current_version<\/version>/s//<version>$new_version<\/version>/" "$pom_file"
+    # Update pom.xml content
+    local new_pom_content=$(echo "$pom_content" | sed "0,/<version>$current_version<\/version>/s//<version>$new_version<\/version>/")
 
     # Export for later use
     export NEW_VERSION="$new_version"
     export NEW_VERSION_TAG="${new_version%-SNAPSHOT}"  # Tag without SNAPSHOT
+    export CURRENT_POM_CONTENT="$pom_content"
+    export NEW_POM_CONTENT="$new_pom_content"
 }
 
 # -----------------------------------------------------------------------------
-# Git Operations
+# Git Operations (via MR workflow)
 # -----------------------------------------------------------------------------
 commit_and_push() {
-    log_step "Committing and pushing to GitLab..."
+    log_step "Creating version bump MR on GitLab..."
 
-    cd "$REPO_ROOT"
+    # All changes to GitLab repos go through MRs (not subtree push)
+    # This simulates the real developer workflow
 
-    # Stage the pom.xml change
-    git add example-app/pom.xml
+    local timestamp=$(date +%s)
+    local branch_name="version-bump-${NEW_VERSION}-${timestamp}"
+    local title="chore: bump version to $NEW_VERSION [pipeline-validation]"
+    local commit_message="chore: bump version to $NEW_VERSION [pipeline-validation]"
 
-    # Commit with identifiable message
-    git commit -m "chore: bump version to $NEW_VERSION [pipeline-validation]"
+    # Encode pom.xml content for MR workflow
+    local pom_b64=$(echo "$NEW_POM_CONTENT" | base64 -w0)
 
-    # Push to origin first (GitHub - full monorepo)
-    log_info "Pushing to origin (GitHub)..."
-    git push origin main
+    log_info "Creating feature branch and MR..."
 
-    # Sync subtree to GitLab
-    log_info "Syncing to GitLab..."
-    GIT_SSL_NO_VERIFY=true git subtree push --prefix=example-app gitlab-app main 2>&1 || {
-        log_fail "Failed to sync to GitLab"
+    # Use MR workflow: create branch → commit → create MR → wait for CI → merge
+    if mw_complete_mr_workflow \
+        "$GITLAB_PROJECT_PATH" \
+        "main" \
+        "$branch_name" \
+        "$title" \
+        "$commit_message" \
+        "pom.xml:base64:$pom_b64"; then
+        log_pass "Version bump MR !$MW_RESULT_MR_IID merged to main"
         echo ""
-        echo "--- Diagnostic ---"
-        echo "Check that 'gitlab-app' remote is configured:"
-        git remote -v | grep gitlab-app || echo "Remote not found"
-        echo "--- End Diagnostic ---"
+    else
+        log_fail "Failed to create/merge version bump MR"
         exit 1
-    }
-
-    log_pass "Committed and pushed to GitLab"
-    echo ""
+    fi
 }
 
 # -----------------------------------------------------------------------------

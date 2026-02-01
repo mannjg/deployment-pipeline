@@ -351,7 +351,7 @@ cleanup_example_app() {
 
     log_step "Phase 2b: Cleaning up example-app demo artifacts..."
 
-    # Get current files from main
+    # Get current files from GitLab main branch
     local current_java=$("$gitlab_cli" file get "$app_repo" src/main/java/com/example/app/GreetingService.java --ref main 2>/dev/null)
     local current_cue=$("$gitlab_cli" file get "$app_repo" deployment/app.cue --ref main 2>/dev/null)
 
@@ -385,7 +385,8 @@ cleanup_example_app() {
         return 0
     fi
 
-    # Use MR workflow to avoid creating commits that diverge from local subtree
+    # Use MR workflow to make changes via GitLab API
+    # This is the correct approach - all changes to GitLab repos go through MRs
     log_info "  Creating cleanup MR for example-app/main..."
 
     local timestamp=$(date +%s)
@@ -415,15 +416,6 @@ Automated cleanup by reset-demo-state.sh"
         "$commit_message" \
         "${files_for_mr[@]}"; then
         log_info "  ✓ Cleanup MR !$MW_RESULT_MR_IID merged to example-app/main"
-
-        # Sync the cleanup back to local subtree so we don't diverge
-        log_info "  Syncing cleanup to local subtree..."
-        if "$REPO_ROOT/scripts/04-operations/sync-to-gitlab.sh" --pull-only example-app 2>/dev/null; then
-            log_info "  ✓ Local subtree synced"
-        else
-            log_warn "  Could not sync subtree (may need manual: git subtree pull)"
-        fi
-
         return 0
     else
         log_error "  Failed to create/merge cleanup MR for example-app"
@@ -709,10 +701,12 @@ main() {
     cleanup_gitlab_orphan_branches "$DEPLOYMENTS_REPO_PATH"
 
     # Phase 2b: Clean up example-app (optional)
+    # NOTE: This creates an MR on GitLab, which may trigger Jenkins builds.
+    # If the cleanup includes pom.xml changes, it will cascade to k8s-deployments.
     if [[ "$RESET_EXAMPLE_APP" == "true" ]]; then
         cleanup_example_app
 
-        # The cleanup MR merge triggers Jenkins → creates new MR to k8s-deployments
+        # The cleanup MR merge may trigger Jenkins → creates new MR to k8s-deployments
         # Wait for that cascade to finish and clean up any new MRs
         log_info ""
         log_info "Waiting for example-app cleanup cascade to complete..."
