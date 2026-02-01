@@ -205,6 +205,36 @@ accept_mr() {
     local mr_iid="$1"
     local project="${DEPLOYMENTS_REPO_PATH:-p2c/k8s-deployments}"
     local encoded_project=$(_encode_project "$project")
+    local merge_wait_timeout=30
+    local elapsed=0
+
+    # Wait for GitLab to finish evaluating merge eligibility
+    # After pipeline passes, GitLab needs time to update merge_status from "checking"
+    while [[ $elapsed -lt $merge_wait_timeout ]]; do
+        local mr_info
+        mr_info=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "${GITLAB_URL_EXTERNAL}/api/v4/projects/${encoded_project}/merge_requests/$mr_iid" 2>/dev/null)
+
+        local merge_status
+        merge_status=$(echo "$mr_info" | jq -r '.merge_status // "unknown"')
+
+        if [[ "$merge_status" == "can_be_merged" ]]; then
+            break
+        elif [[ "$merge_status" == "cannot_be_merged" ]]; then
+            local has_conflicts
+            has_conflicts=$(echo "$mr_info" | jq -r '.has_conflicts // false')
+            demo_fail "MR !$mr_iid cannot be merged (conflicts: $has_conflicts)"
+            return 1
+        fi
+
+        # Still checking or other transient state - wait
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+
+    if [[ $elapsed -ge $merge_wait_timeout ]]; then
+        demo_warn "Timeout waiting for merge eligibility, attempting merge anyway..."
+    fi
 
     demo_action "Merging MR !$mr_iid..."
 
