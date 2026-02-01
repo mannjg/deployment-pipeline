@@ -200,7 +200,8 @@ demo_verify "Updated pom.xml version to $NEW_VERSION"
 
 demo_step 4 "Push Changes to GitLab"
 
-FEATURE_BRANCH="uc-e2-code-config-$(date +%s)"
+# Use feature/ prefix to match Jenkins branch discovery pattern
+FEATURE_BRANCH="feature/uc-e2-code-config-$(date +%s)"
 
 demo_action "Creating branch '$FEATURE_BRANCH' from main in example-app..."
 "$GITLAB_CLI" branch create p2c/example-app "$FEATURE_BRANCH" --from main >/dev/null
@@ -269,9 +270,56 @@ export APP_MR_IID
 
 demo_step 5 "Wait for Example-App CI"
 
-demo_info "Waiting for Jenkins to build example-app and create k8s-deployments MR..."
+demo_info "Waiting for Jenkins to build and test the MR branch..."
+demo_info "Per WORKFLOWS.md: MR creation triggers Unit + Integration tests"
 
-# Merge the example-app MR (simulate developer approval)
+# Trigger Jenkins scan to discover the new feature branch
+demo_action "Triggering Jenkins branch scan for example-app..."
+trigger_jenkins_scan "example-app"
+
+# Wait for MR pipeline to complete (tests on feature branch)
+demo_action "Waiting for MR pipeline (tests) to complete..."
+
+MR_PIPELINE_TIMEOUT=180
+MR_ELAPSED=0
+while [[ $MR_ELAPSED -lt $MR_PIPELINE_TIMEOUT ]]; do
+    MR_INFO=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "${GITLAB_URL_EXTERNAL}/api/v4/projects/${ENCODED_PROJECT}/merge_requests/$APP_MR_IID")
+
+    PIPELINE_STATUS=$(echo "$MR_INFO" | jq -r '.head_pipeline.status // empty')
+
+    case "$PIPELINE_STATUS" in
+        success)
+            demo_verify "MR pipeline passed (tests successful)"
+            break
+            ;;
+        failed)
+            demo_fail "MR pipeline failed - tests did not pass"
+            exit 1
+            ;;
+        running|pending|created)
+            demo_info "Pipeline: $PIPELINE_STATUS (${MR_ELAPSED}s)"
+            ;;
+        *)
+            # Re-trigger scan periodically if pipeline not started
+            if [[ $((MR_ELAPSED % 30)) -eq 0 ]] && [[ $MR_ELAPSED -gt 0 ]]; then
+                demo_info "Re-triggering Jenkins scan..."
+                trigger_jenkins_scan "example-app" >/dev/null 2>&1
+            fi
+            demo_info "Waiting for pipeline to start... (${MR_ELAPSED}s)"
+            ;;
+    esac
+
+    sleep 10
+    MR_ELAPSED=$((MR_ELAPSED + 10))
+done
+
+if [[ $MR_ELAPSED -ge $MR_PIPELINE_TIMEOUT ]]; then
+    demo_warn "Timeout waiting for MR pipeline - proceeding with merge"
+    demo_info "(Jenkins may not be configured to build feature branches)"
+fi
+
+# Merge the example-app MR (simulate developer approval after tests pass)
 demo_action "Merging example-app MR !$APP_MR_IID..."
 MERGE_RESULT=$(curl -sk -X PUT \
     -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
@@ -284,10 +332,9 @@ else
     exit 1
 fi
 
-# Wait for Jenkins to build and create k8s-deployments MR
+# Wait for Jenkins to build main branch and create k8s-deployments MR
 demo_action "Waiting for Jenkins build on example-app/main..."
 
-# Use jenkins-cli.sh to wait for the build
 JENKINS_CLI="${PROJECT_ROOT}/scripts/04-operations/jenkins-cli.sh"
 "$JENKINS_CLI" wait example-app/main --timeout 300 || {
     demo_fail "Jenkins build failed or timed out"

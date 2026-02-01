@@ -157,7 +157,8 @@ demo_info "New (bad) version: $NEW_VERSION"
 MODIFIED_POM=$(echo "$CURRENT_POM" | sed "0,/<version>$CURRENT_VERSION<\/version>/s//<version>$NEW_VERSION<\/version>/")
 
 # Create branch and push
-BAD_VERSION_BRANCH="uc-e4-bad-version-$(date +%s)"
+# Use feature/ prefix to match Jenkins branch discovery pattern
+BAD_VERSION_BRANCH="feature/uc-e4-bad-version-$(date +%s)"
 ENCODED_APP_PROJECT=$(echo "p2c/example-app" | sed 's/\//%2F/g')
 
 demo_action "Creating branch '$BAD_VERSION_BRANCH'..."
