@@ -298,6 +298,7 @@ commit_and_push() {
 # Jenkins Build
 # -----------------------------------------------------------------------------
 wait_for_jenkins_build() {
+    local baseline_build="${1:-}"  # Optional: baseline build number passed by caller
     log_step "Waiting for Jenkins build..."
 
     local start_timeout="${JENKINS_BUILD_START_TIMEOUT:-300}"
@@ -307,9 +308,15 @@ wait_for_jenkins_build() {
     local build_number=""
     local build_url=""
 
-    # Get the last build number before we triggered
-    local last_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
-        "$JENKINS_URL/job/$JENKINS_JOB_NAME/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
+    # Use provided baseline or get current build number
+    # IMPORTANT: Caller should capture baseline BEFORE triggering the build
+    local last_build
+    if [[ -n "$baseline_build" ]]; then
+        last_build="$baseline_build"
+    else
+        last_build=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+            "$JENKINS_URL/job/$JENKINS_JOB_NAME/lastBuild/api/json" 2>/dev/null | jq -r '.number // 0')
+    fi
 
     # Wait for a new build to start (separate timeout for webhook/scan delay)
     log_info "Waiting for new build (last was #$last_build, timeout ${start_timeout}s)..."
@@ -1021,6 +1028,19 @@ get_jenkins_baseline() {
     fi
 }
 
+# Get example-app Jenkins build baseline
+# Used to capture build number BEFORE pushing to GitLab
+get_example_app_baseline() {
+    local response
+    response=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+        "$JENKINS_URL/job/$JENKINS_JOB_NAME/lastBuild/api/json" 2>/dev/null) || true
+    if echo "$response" | jq empty 2>/dev/null; then
+        echo "$response" | jq -r '.number // 0'
+    else
+        echo "0"
+    fi
+}
+
 # -----------------------------------------------------------------------------
 # Get ArgoCD Revision Baseline
 # Helper to capture revision BEFORE triggering an action
@@ -1152,8 +1172,12 @@ main() {
     demo_preflight_check
 
     bump_version
+
+    # Capture example-app build baseline BEFORE pushing (to avoid race with webhook)
+    local example_app_baseline=$(get_example_app_baseline)
+
     commit_and_push
-    wait_for_jenkins_build
+    wait_for_jenkins_build "$example_app_baseline"
 
     # Capture baselines BEFORE merging (to avoid race conditions)
     local dev_baseline=$(get_jenkins_baseline "dev")
