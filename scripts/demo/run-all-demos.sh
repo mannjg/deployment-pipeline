@@ -23,11 +23,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Reset script
 RESET_SCRIPT="$REPO_ROOT/scripts/03-pipelines/reset-demo-state.sh"
 
-# Verification order: validate-pipeline first, then demos by category
+# Verification order: UC-E1 (app lifecycle) first, then demos by category
 # Format: "ID:script:description:branches"
 DEMO_ORDER=(
-    # Core: App code lifecycle (SNAPSHOT → RC → Release)
-    "validate-pipeline:../test/validate-pipeline.sh:App code lifecycle across dev/stage/prod:dev,stage,prod"
+    # Category E: App code lifecycle (SNAPSHOT → RC → Release)
+    "UC-E1:demo-uc-e1-app-deployment.sh:App version deployment (full promotion):dev,stage,prod"
     # Category A: Environment-Specific (dev only)
     "UC-A1:demo-uc-a1-replicas.sh:Adjust replica count (isolated):dev"
     "UC-A2:demo-uc-a2-debug-mode.sh:Enable debug mode (isolated):dev"

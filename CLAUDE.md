@@ -88,8 +88,8 @@ This script resets demo state AND propagates core files from main to env branche
 |----------|----------|
 | Initial bootstrap (first time) | `git push origin main` → `sync-to-gitlab.sh` → `setup-gitlab-env-branches.sh` |
 | After k8s-deployments core changes | `git push origin main` → `sync-to-gitlab.sh` → `reset-demo-state.sh` |
-| After example-app changes only | `git push origin main` → `validate-pipeline.sh` (syncs example-app internally) |
-| Demo reset / validation | `reset-demo-state.sh` → `validate-pipeline.sh` |
+| After example-app changes only | `git push origin main` → `demo-uc-e1-app-deployment.sh` (syncs example-app internally) |
+| Demo reset / validation | `reset-demo-state.sh` → `run-all-demos.sh` |
 
 ## Repository Layout
 

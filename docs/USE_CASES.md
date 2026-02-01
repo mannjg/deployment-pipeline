@@ -1,8 +1,8 @@
 # K8s-Deployments Use Cases
 
-This document defines the demonstration use cases for k8s-deployments, showcasing how platform teams manage Kubernetes configurations across environments using CUE-based GitOps.
+This document defines the demonstration use cases for the deployment pipeline, showcasing how platform teams manage Kubernetes configurations across environments using CUE-based GitOps.
 
-These use cases are **independent of any application's code lifecycle** (which is demonstrated by `validate-pipeline.sh`). Instead, they focus on infrastructure and configuration changes that flow through the CUE layering system.
+**Categories A-D** focus on infrastructure and configuration changes that flow through the CUE layering system. **Category E** covers the application code lifecycle from commit to production.
 
 ## Overview
 
@@ -289,6 +289,30 @@ Changes that bypass or modify the normal promotion chain. These handle real-worl
 
 ---
 
+## Category E: Application Code Lifecycle
+
+Changes that originate from the **application repository** (example-app), not k8s-deployments. These demonstrate the complete CI/CD flow from code commit through production deployment.
+
+| Aspect | Detail |
+|--------|--------|
+| **Trigger** | Code change pushed to app repo (example-app) |
+| **Flow** | App CI → Image build → MR to k8s-deployments → Manifest generation → Promotion chain |
+| **Key Difference** | Categories A-D modify k8s-deployments directly; Category E starts from app code |
+
+### UC-E1: App Version Deployment (Full Promotion)
+
+| Aspect | Detail |
+|--------|--------|
+| **Story** | "As a developer, I push a new app version and it flows through dev→stage→prod with proper version lifecycle" |
+| **Trigger** | Version bump in `example-app/pom.xml`, push to GitLab |
+| **Flow** | 1. Jenkins builds app, publishes SNAPSHOT to Nexus, pushes image<br>2. App CI creates MR to k8s-deployments dev branch<br>3. Merge → k8s-deployments CI generates manifests<br>4. ArgoCD syncs dev<br>5. Auto-promotion MR created for stage (version becomes RC)<br>6. Merge → CI → ArgoCD syncs stage<br>7. Auto-promotion MR created for prod (version becomes Release)<br>8. Merge → CI → ArgoCD syncs prod |
+| **Expected Behavior** | Same git commit deployed to all envs with version lifecycle: SNAPSHOT (dev) → RC (stage) → Release (prod) |
+| **Validates** | End-to-end pipeline: webhooks, builds, artifact publishing, MR automation, manifest generation, GitOps sync, version lifecycle |
+
+**Demo Script:** [`scripts/demo/demo-uc-e1-app-deployment.sh`](../scripts/demo/demo-uc-e1-app-deployment.sh) (implements UC-E1)
+
+---
+
 ## Use Case Summary
 
 ### All Use Cases at a Glance
@@ -315,6 +339,7 @@ Changes that bypass or modify the normal promotion chain. These handle real-worl
 | | UC-D3 | Environment rollback | Revert MR or branch reset | Single env affected |
 | | UC-D4 | 3rd party dependency rollout | Image update + promotion | All envs for dependency |
 | | UC-D5 | Skip environment | Direct dev→prod MR | Bypasses intermediate env |
+| **E: App Lifecycle** | UC-E1 | App version deployment | App repo code change | dev → stage → prod |
 
 ### Override Hierarchy
 
@@ -364,15 +389,16 @@ Env (env.cue per branch)
 | Script | Use Case | What It Demonstrates |
 |--------|----------|---------------------|
 | [`scripts/demo/demo-uc-d1-hotfix.sh`](../scripts/demo/demo-uc-d1-hotfix.sh) | UC-D1 | Emergency hotfix bypasses promotion chain; direct MR to prod |
+| [`scripts/demo/demo-uc-d2-cherry-pick.sh`](../scripts/demo/demo-uc-d2-cherry-pick.sh) | UC-D2 | Cherry-pick promotion; selective app promotion with --only-apps filter |
 | [`scripts/demo/demo-uc-d3-rollback.sh`](../scripts/demo/demo-uc-d3-rollback.sh) | UC-D3 | Environment rollback via git revert; [no-promote] prevents cascade |
 | [`scripts/demo/demo-uc-d4-3rd-party-upgrade.sh`](../scripts/demo/demo-uc-d4-3rd-party-upgrade.sh) | UC-D4 | 3rd party image (postgres) promoted through dev→stage→prod |
 | [`scripts/demo/demo-uc-d5-skip-env.sh`](../scripts/demo/demo-uc-d5-skip-env.sh) | UC-D5 | Emergency skip-promotion bypasses broken stage; direct dev→prod MR |
 
-### Future Demos (Phase 3+)
+### App Lifecycle Demos (Phase 4)
 
-Additional demos can be added to cover:
-- Category D operational scenarios (emergency hotfix, cherry-pick, etc.)
-- Additional multi-app scenarios
+| Script | Use Case | What It Demonstrates |
+|--------|----------|---------------------|
+| [`scripts/demo/demo-uc-e1-app-deployment.sh`](../scripts/demo/demo-uc-e1-app-deployment.sh) | UC-E1 | Full app lifecycle: code commit → build → dev → stage → prod with version lifecycle |
 
 ---
 
@@ -427,10 +453,11 @@ While preserving:
 | UC-C5 | Platform default + app override | ✅ | ✅ | ✅ | `uc-c5-app-override` | Pipeline verified 2026-01-30; multi-app: postgres overrides platform default |
 | UC-C6 | Platform default + env override | ✅ | ✅ | ✅ | `uc-c6-platform-env-override` | Pipeline verified 2026-01-22 |
 | UC-D1 | Emergency hotfix to prod | ✅ | ✅ | ✅ | `uc-d1-hotfix` | Pipeline verified 2026-01-30; Direct-to-prod MR bypassing dev/stage |
-| UC-D2 | Cherry-pick promotion (multi-app) | ✅ | ✅ | — | `uc-d2-cherry-pick` | Pipeline verified 2026-01-31; Selective app promotion with --only-apps filter |
+| UC-D2 | Cherry-pick promotion (multi-app) | ✅ | ✅ | ✅ | `uc-d2-cherry-pick` | Pipeline verified 2026-02-01; Selective app promotion with --only-apps filter |
 | UC-D3 | Environment rollback | ✅ | ✅ | ✅ | `uc-d3-rollback` | Pipeline verified 2026-01-30; GitOps rollback via git revert; [no-promote] prevents cascade |
 | UC-D4 | 3rd Party Dependency Rollout | ✅ | ✅ | ✅ | `uc-d4-3rd-party-upgrade` | Pipeline verified 2026-01-31; 3rd party images promoted through environments |
 | UC-D5 | Skip environment (dev→prod direct) | ✅ | ✅ | ✅ | `uc-d5-skip-env` | Pipeline verified 2026-01-31; Direct dev→prod MR bypassing stage |
+| UC-E1 | App version deployment (full promotion) | ✅ | ✅ | ✅ | `validate-pipeline` | Pipeline verified 2026-02-01; Full app lifecycle with version semantics |
 
 **Status Legend:**
 - 🔲 Not started

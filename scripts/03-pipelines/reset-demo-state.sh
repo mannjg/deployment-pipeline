@@ -20,7 +20,7 @@
 # What it preserves:
 #   - CI/CD-managed image tags in env.cue
 #   - Environment branches (dev, stage, prod, main)
-#   - App version in pom.xml (validate-pipeline.sh manages version bumps)
+#   - App version in pom.xml (demo-uc-e1-app-deployment.sh manages version bumps)
 #
 # Baseline files: scripts/03-pipelines/baselines/env-{dev,stage,prod}.cue
 #
@@ -621,7 +621,7 @@ main() {
     log_info "Next steps:"
     log_info "  1. Commit any local changes: git add -A && git commit -m 'chore: reset demo state'"
     log_info "  2. Push to GitHub: git push origin main"
-    log_info "  3. Run validation: ./scripts/test/validate-pipeline.sh"
+    log_info "  3. Run validation: ./scripts/demo/run-all-demos.sh"
     log_info "  4. Run demo: ./scripts/demo/demo-uc-c1-default-label.sh"
 }
 
