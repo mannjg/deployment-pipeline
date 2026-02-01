@@ -185,15 +185,69 @@ if [[ -z "$APP_MR_IID" ]]; then
 fi
 demo_verify "Created app MR !$APP_MR_IID"
 
+# Wait for MR pipeline to pass before merging
+demo_action "Waiting for MR pipeline to complete..."
+
+# Trigger Jenkins scan to discover the feature branch
+trigger_jenkins_scan "example-app" >/dev/null 2>&1
+
+MR_PIPELINE_TIMEOUT=180
+MR_ELAPSED=0
+while [[ $MR_ELAPSED -lt $MR_PIPELINE_TIMEOUT ]]; do
+    MR_INFO=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        "${GITLAB_URL_EXTERNAL}/api/v4/projects/${ENCODED_APP_PROJECT}/merge_requests/$APP_MR_IID")
+
+    PIPELINE_STATUS=$(echo "$MR_INFO" | jq -r '.head_pipeline.status // empty')
+
+    case "$PIPELINE_STATUS" in
+        success)
+            demo_verify "MR pipeline passed"
+            break
+            ;;
+        failed)
+            demo_fail "MR pipeline failed"
+            exit 1
+            ;;
+        running|pending|created)
+            demo_info "Pipeline: $PIPELINE_STATUS (${MR_ELAPSED}s)"
+            ;;
+        *)
+            if [[ $((MR_ELAPSED % 30)) -eq 0 ]] && [[ $MR_ELAPSED -gt 0 ]]; then
+                trigger_jenkins_scan "example-app" >/dev/null 2>&1
+            fi
+            demo_info "Waiting for pipeline... (${MR_ELAPSED}s)"
+            ;;
+    esac
+
+    sleep 10
+    MR_ELAPSED=$((MR_ELAPSED + 10))
+done
+
+if [[ $MR_ELAPSED -ge $MR_PIPELINE_TIMEOUT ]]; then
+    demo_warn "Timeout waiting for MR pipeline - proceeding with merge"
+fi
+
+# Capture timestamp BEFORE merge to wait for builds triggered AFTER this point
+PRE_MERGE_TIMESTAMP=$(($(date +%s) * 1000))
+
 demo_action "Merging app MR !$APP_MR_IID..."
-curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-    "${GITLAB_URL_EXTERNAL}/api/v4/projects/${ENCODED_APP_PROJECT}/merge_requests/$APP_MR_IID/merge" >/dev/null
+MERGE_RESULT=$(curl -sk -X PUT -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+    "${GITLAB_URL_EXTERNAL}/api/v4/projects/${ENCODED_APP_PROJECT}/merge_requests/$APP_MR_IID/merge")
+
+if [[ $(echo "$MERGE_RESULT" | jq -r '.state') != "merged" ]]; then
+    demo_fail "Failed to merge MR: $(echo "$MERGE_RESULT" | jq -r '.message // "unknown error"')"
+    exit 1
+fi
 
 demo_verify "App MR merged, triggering Jenkins build"
 
-# Wait for Jenkins to build
-demo_action "Waiting for Jenkins build..."
-"$JENKINS_CLI" wait example-app/main --timeout 300 || {
+# Trigger Jenkins scan to ensure it picks up the merge (webhook may be delayed)
+demo_action "Triggering Jenkins scan..."
+trigger_jenkins_scan "example-app" >/dev/null 2>&1
+
+# Wait for Jenkins to build - IMPORTANT: use --after to wait for NEW build
+demo_action "Waiting for Jenkins build (after merge)..."
+"$JENKINS_CLI" wait example-app/main --timeout 300 --after "$PRE_MERGE_TIMESTAMP" || {
     demo_fail "Jenkins build failed"
     exit 1
 }
@@ -280,32 +334,15 @@ if [[ -z "$PROD_ENV_CUE" ]]; then
 fi
 
 # Extract the current image tag from env.cue for replacement
-# The format in env.cue is: image: "registry/app:tag"
-# We need to find and replace the tag portion
-
-# Use awk to find and replace the image line within the exampleApp section
-# This is safer than regex patterns that might match unintended lines
-MODIFIED_ENV_CUE=$(echo "$PROD_ENV_CUE" | awk -v good_tag="$GOOD_TAG" '
-BEGIN { in_example_app = 0; in_deployment = 0 }
-/prod:[[:space:]]*exampleApp:/ { in_example_app = 1 }
-/^[a-z]+:[[:space:]]*[a-zA-Z]+:/ && !/prod:[[:space:]]*exampleApp:/ { in_example_app = 0; in_deployment = 0 }
-in_example_app && /deployment:/ { in_deployment = 1 }
-in_deployment && /image:[[:space:]]*"/ {
-    # Replace the tag portion of the image (everything after the last colon in the quoted string)
-    sub(/:[^":]+\"/, ":" good_tag "\"")
-}
-{ print }
-')
+# The format in env.cue is: image: "registry/path/app:tag"
+# We need to replace only the tag portion (after the last colon in the quoted string)
+#
+# Using sed with pattern: (image:[[:space:]]*"[^"]+):([^"]+)"
+#   - Captures everything before the tag colon: image: "docker.jmann.local/p2c/example-app
+#   - Replaces the tag portion (after the last colon) with the good tag
+MODIFIED_ENV_CUE=$(echo "$PROD_ENV_CUE" | sed -E "s|(image:[[:space:]]*\"[^\"]+):([^\"]+)\"|\1:${GOOD_TAG}\"|")
 
 # Verify the modification worked
-if ! echo "$MODIFIED_ENV_CUE" | grep -q "$GOOD_TAG"; then
-    demo_warn "awk replacement may not have worked, trying alternative method..."
-    # Alternative: use sed to replace the full image line
-    # This handles the case where the image format is: image: "registry/path/app:tag"
-    MODIFIED_ENV_CUE=$(echo "$PROD_ENV_CUE" | sed -E "s|(image:[[:space:]]*\"[^:]+/[^:]+:)[^\"]+(\")|\\1${GOOD_TAG}\\2|g")
-fi
-
-# Verify again
 if ! echo "$MODIFIED_ENV_CUE" | grep -q "$GOOD_TAG"; then
     demo_fail "Could not modify env.cue to set image tag to $GOOD_TAG"
     exit 1
