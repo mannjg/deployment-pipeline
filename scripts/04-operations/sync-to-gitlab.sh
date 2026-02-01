@@ -68,7 +68,7 @@ if [[ -n "$PULL_ONLY" ]]; then
                 exit 1
             fi
             echo -e "${YELLOW}Pulling example-app from GitLab...${NC}"
-            if GIT_SSL_NO_VERIFY=true git subtree pull --prefix=example-app gitlab-app "$BRANCH" -m "Merge example-app from GitLab" 2>&1; then
+            if GIT_SSL_NO_VERIFY=true git subtree pull --prefix=example-app gitlab-app "$BRANCH" -m "Merge example-app from GitLab" --allow-unrelated-histories 2>&1; then
                 echo -e "${GREEN}  ✓ example-app pulled${NC}"
                 exit 0
             else
