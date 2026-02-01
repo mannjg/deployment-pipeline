@@ -377,6 +377,10 @@ spec:
         }
 
         stage('Update Dev Environment') {
+            when {
+                // Only update dev from main branch - feature branches are for MR CI only
+                branch 'main'
+            }
             steps {
                 script {
                     deployToEnvironment(

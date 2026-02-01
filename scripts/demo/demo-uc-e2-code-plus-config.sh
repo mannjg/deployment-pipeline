@@ -319,6 +319,10 @@ if [[ $MR_ELAPSED -ge $MR_PIPELINE_TIMEOUT ]]; then
     demo_info "(Jenkins may not be configured to build feature branches)"
 fi
 
+# Capture current timestamp BEFORE merge to wait for builds triggered AFTER this point
+# Jenkins uses milliseconds for timestamps
+PRE_MERGE_TIMESTAMP=$(($(date +%s) * 1000))
+
 # Merge the example-app MR (simulate developer approval after tests pass)
 demo_action "Merging example-app MR !$APP_MR_IID..."
 MERGE_RESULT=$(curl -sk -X PUT \
@@ -333,10 +337,12 @@ else
 fi
 
 # Wait for Jenkins to build main branch and create k8s-deployments MR
-demo_action "Waiting for Jenkins build on example-app/main..."
+# IMPORTANT: Use --after to wait for a NEW build triggered by the merge,
+# not just any existing completed build
+demo_action "Waiting for Jenkins build on example-app/main (after merge)..."
 
 JENKINS_CLI="${PROJECT_ROOT}/scripts/04-operations/jenkins-cli.sh"
-"$JENKINS_CLI" wait example-app/main --timeout 300 || {
+"$JENKINS_CLI" wait example-app/main --timeout 300 --after "$PRE_MERGE_TIMESTAMP" || {
     demo_fail "Jenkins build failed or timed out"
     exit 1
 }
