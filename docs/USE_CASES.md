@@ -311,6 +311,43 @@ Changes that originate from the **application repository** (example-app), not k8
 
 **Demo Script:** [`scripts/demo/demo-uc-e1-app-deployment.sh`](../scripts/demo/demo-uc-e1-app-deployment.sh) (implements UC-E1)
 
+### UC-E2: App Code + Config Change Together
+
+| Aspect | Detail |
+|--------|--------|
+| **Story** | "As a developer, I push a code change that also requires a new environment variable, and both flow through the pipeline together" |
+| **Trigger** | Code change + `deployment/app.cue` modification in same commit |
+| **Flow** | 1. Developer modifies source code AND adds `appEnvVars` entry in `deployment/app.cue`<br>2. Jenkins builds app, publishes image<br>3. App CI creates MR to k8s-deployments dev with BOTH image tag update AND merged CUE config<br>4. Merge → manifests include new env var<br>5. Promotion MRs carry both changes through stage→prod |
+| **Expected Behavior** | New image AND new config deploy atomically; no partial state where image expects env var that doesn't exist |
+| **Validates** | Pipeline correctly extracts and merges `deployment/app.cue` changes alongside image updates |
+
+**Demo Script:** [`scripts/demo/demo-uc-e2-code-plus-config.sh`](../scripts/demo/demo-uc-e2-code-plus-config.sh)
+
+### UC-E3: Multiple App Versions In Flight
+
+| Aspect | Detail |
+|--------|--------|
+| **Story** | "Production runs v1.0.40, stage has v1.0.41 under QA review, dev has v1.0.42 for new feature testing — all simultaneously" |
+| **Trigger** | Normal development pace where promotions aren't instant |
+| **Setup** | Three consecutive version bumps with deliberate pauses between promotion merges |
+| **Expected Behavior** | Each environment maintains its own image tag in `env.cue`; promotions don't overwrite pending changes in other environments |
+| **Validates** | Environment isolation; promotion only moves the specific app version being promoted |
+
+*Note: This scenario emerges naturally during development. No dedicated demo script required.*
+
+### UC-E4: App-Level Rollback
+
+| Aspect | Detail |
+|--------|--------|
+| **Story** | "v1.0.42 deployed to prod has a bug. Roll back to v1.0.41 image while preserving prod's env.cue settings (replicas, resources)" |
+| **Trigger** | Direct MR to prod branch updating only the image tag |
+| **Change** | `deployment.image.tag: "1.0.42"` → `deployment.image.tag: "1.0.41"` |
+| **Expected Behavior** | Prod rolls back to previous image; prod's replicas/resources unchanged; dev/stage unaffected |
+| **Contrast with UC-D3** | D3 uses git revert (rolls back entire commit); E4 surgically changes only the image tag |
+| **Validates** | Image tag can be changed independently; env.cue structure supports targeted rollback |
+
+**Demo Script:** [`scripts/demo/demo-uc-e4-app-rollback.sh`](../scripts/demo/demo-uc-e4-app-rollback.sh)
+
 ---
 
 ## Use Case Summary
@@ -340,6 +377,9 @@ Changes that originate from the **application repository** (example-app), not k8
 | | UC-D4 | 3rd party dependency rollout | Image update + promotion | All envs for dependency |
 | | UC-D5 | Skip environment | Direct dev→prod MR | Bypasses intermediate env |
 | **E: App Lifecycle** | UC-E1 | App version deployment | App repo code change | dev → stage → prod |
+| | UC-E2 | App code + config change together | App repo + `deployment/app.cue` | dev → stage → prod |
+| | UC-E3 | Multiple app versions in flight | Normal dev pace | Env isolation |
+| | UC-E4 | App-level rollback | Direct MR to prod | Prod only, surgical |
 
 ### Override Hierarchy
 
@@ -458,6 +498,9 @@ While preserving:
 | UC-D4 | 3rd Party Dependency Rollout | ✅ | ✅ | ✅ | `uc-d4-3rd-party-upgrade` | Pipeline verified 2026-01-31; 3rd party images promoted through environments |
 | UC-D5 | Skip environment (dev→prod direct) | ✅ | ✅ | ✅ | `uc-d5-skip-env` | Pipeline verified 2026-01-31; Direct dev→prod MR bypassing stage |
 | UC-E1 | App version deployment (full promotion) | ✅ | ✅ | ✅ | `validate-pipeline` | Pipeline verified 2026-02-01; Full app lifecycle with version semantics |
+| UC-E2 | App code + config change together | ✅ | 🔲 | 🔲 | - | CUE supports appEnvVars in deployment/app.cue; demo script needed |
+| UC-E3 | Multiple app versions in flight | ✅ | N/A | 🔲 | - | Emerges naturally during development; no dedicated demo |
+| UC-E4 | App-level rollback | ✅ | 🔲 | 🔲 | - | Surgical image tag rollback; demo script needed |
 
 **Status Legend:**
 - 🔲 Not started
