@@ -711,6 +711,16 @@ main() {
     # Phase 2b: Clean up example-app (optional)
     if [[ "$RESET_EXAMPLE_APP" == "true" ]]; then
         cleanup_example_app
+
+        # The cleanup MR merge triggers Jenkins → creates new MR to k8s-deployments
+        # Wait for that cascade to finish and clean up any new MRs
+        log_info ""
+        log_info "Waiting for example-app cleanup cascade to complete..."
+        wait_for_pipeline_quiescence 180
+
+        # Close any MRs created by the cleanup cascade
+        log_info "Closing any MRs created by cleanup cascade..."
+        close_all_env_mrs "$DEPLOYMENTS_REPO_PATH"
     fi
 
     # Phase 3: Reset CUE configuration
