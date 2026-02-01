@@ -250,6 +250,12 @@ spec:
                             returnStdout: true
                         ).trim()
 
+                        // Capture full commit SHA for GitLab commit status reporting
+                        env.GIT_COMMIT_SHA = sh(
+                            script: "git rev-parse HEAD",
+                            returnStdout: true
+                        ).trim()
+
                         env.IMAGE_TAG = "${env.APP_VERSION}-${env.GIT_SHORT_HASH}"
 
                         // Validate IMAGE_TAG
@@ -266,6 +272,19 @@ spec:
                         echo "✓ Image tag: ${env.IMAGE_TAG}"
                         echo "✓ Push target: ${env.FULL_IMAGE}"
                         echo "✓ Deploy target: ${env.IMAGE_FOR_DEPLOY}"
+
+                        // Report "pending" status to GitLab so MR shows pipeline is running
+                        withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+                            sh """
+                                echo "Reporting pending status to GitLab for commit: ${env.GIT_COMMIT_SHA}"
+                                curl -s -X POST \
+                                    -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                                    -H "Content-Type: application/json" \
+                                    -d '{"state": "pending", "description": "Pipeline running", "context": "jenkins/example-app"}' \
+                                    "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fexample-app/statuses/${env.GIT_COMMIT_SHA}" \
+                                    || echo "Could not update commit status (non-fatal)"
+                            """
+                        }
                     }
                 }
             }
@@ -396,7 +415,8 @@ Once merged, k8s-deployments CI will generate manifests and ArgoCD will deploy t
 
     post {
         success {
-            echo """
+            script {
+                echo """
 =======================================================
 ✓ PIPELINE COMPLETED SUCCESSFULLY
 =======================================================
@@ -407,9 +427,25 @@ Image: ${env.FULL_IMAGE}
 Build URL: ${env.BUILD_URL}
 =======================================================
 """
+                // Report success status to GitLab
+                container('maven') {
+                    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+                        sh """
+                            echo "Reporting success status to GitLab for commit: ${env.GIT_COMMIT_SHA}"
+                            curl -s -X POST \
+                                -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                                -H "Content-Type: application/json" \
+                                -d '{"state": "success", "description": "Pipeline passed", "context": "jenkins/example-app"}' \
+                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fexample-app/statuses/${env.GIT_COMMIT_SHA}" \
+                                || echo "Could not update commit status"
+                        """
+                    }
+                }
+            }
         }
         failure {
-            echo """
+            script {
+                echo """
 =======================================================
 ✗ PIPELINE FAILED
 =======================================================
@@ -418,6 +454,21 @@ Build URL: ${env.BUILD_URL}
 Check logs above for error details
 =======================================================
 """
+                // Report failure status to GitLab
+                container('maven') {
+                    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+                        sh """
+                            echo "Reporting failure status to GitLab for commit: ${env.GIT_COMMIT_SHA}"
+                            curl -s -X POST \
+                                -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                                -H "Content-Type: application/json" \
+                                -d '{"state": "failed", "description": "Pipeline failed", "context": "jenkins/example-app"}' \
+                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fexample-app/statuses/${env.GIT_COMMIT_SHA}" \
+                                || echo "Could not update commit status"
+                        """
+                    }
+                }
+            }
         }
         always {
             container('maven') {
