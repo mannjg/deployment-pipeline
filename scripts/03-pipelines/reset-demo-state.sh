@@ -385,60 +385,48 @@ cleanup_example_app() {
         return 0
     fi
 
-    # Build commit payload
-    log_info "  Pushing cleanup commit to example-app/main..."
+    # Use MR workflow to avoid creating commits that diverge from local subtree
+    log_info "  Creating cleanup MR for example-app/main..."
 
-    local encoded_project=$(echo "$app_repo" | sed 's/\//%2F/g')
-    local actions="["
-    local first=true
+    local timestamp=$(date +%s)
+    local branch_name="cleanup-demo-artifacts-${timestamp}"
+    local title="chore: cleanup demo artifacts from example-app"
+    local commit_message="chore: cleanup demo artifacts from example-app
 
+Removes UC-E2 artifacts (UC_E2_FEATURE references) from source code.
+
+Automated cleanup by reset-demo-state.sh"
+
+    # Build files array for MR workflow
+    local files_for_mr=()
     for entry in "${files_to_update[@]}"; do
         local file_path="${entry%%:*}"
         local content="${entry#*:}"
-
-        [[ "$first" != "true" ]] && actions+=","
-        first=false
-
-        # Escape content for JSON
-        local escaped_content=$(echo "$content" | jq -sR .)
-        actions+="{\"action\":\"update\",\"file_path\":\"$file_path\",\"content\":$escaped_content}"
+        local content_b64=$(echo "$content" | base64 -w0)
+        files_for_mr+=("$file_path:base64:$content_b64")
     done
-    actions+="]"
 
-    local payload=$(jq -n \
-        --arg branch "main" \
-        --arg msg "chore: cleanup demo artifacts from example-app" \
-        --argjson actions "$actions" \
-        '{branch: $branch, commit_message: $msg, actions: $actions}')
+    # Execute MR workflow (creates branch, commits, MR, waits for CI, merges)
+    if mw_complete_mr_workflow \
+        "$app_repo" \
+        "main" \
+        "$branch_name" \
+        "$title" \
+        "$commit_message" \
+        "${files_for_mr[@]}"; then
+        log_info "  ✓ Cleanup MR !$MW_RESULT_MR_IID merged to example-app/main"
 
-    local result=$(curl -sk -X POST \
-        -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "$payload" \
-        "$GITLAB_URL_EXTERNAL/api/v4/projects/$encoded_project/repository/commits")
-
-    if echo "$result" | jq -e '.id' >/dev/null 2>&1; then
-        local commit_sha=$(echo "$result" | jq -r '.short_id')
-        log_info "  ✓ Cleanup commit pushed: $commit_sha"
-
-        # Wait for any triggered pipeline to complete
-        log_info "  Waiting for example-app pipeline to settle..."
-        sleep 10
-
-        # Check if a k8s-deployments MR was created and handle it
-        local k8s_encoded=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
-        local mrs=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-            "$GITLAB_URL_EXTERNAL/api/v4/projects/$k8s_encoded/merge_requests?state=opened&target_branch=dev" 2>/dev/null)
-
-        local cleanup_mr=$(echo "$mrs" | jq -r 'first(.[] | select(.title | contains("cleanup"))) | .iid // empty')
-        if [[ -n "$cleanup_mr" ]]; then
-            log_info "  Found cleanup MR !$cleanup_mr in k8s-deployments, merging..."
-            "$gitlab_cli" mr merge "$DEPLOYMENTS_REPO_PATH" "$cleanup_mr" >/dev/null 2>&1 || true
+        # Sync the cleanup back to local subtree so we don't diverge
+        log_info "  Syncing cleanup to local subtree..."
+        if "$REPO_ROOT/scripts/04-operations/sync-to-gitlab.sh" --pull-only example-app 2>/dev/null; then
+            log_info "  ✓ Local subtree synced"
+        else
+            log_warn "  Could not sync subtree (may need manual: git subtree pull)"
         fi
 
         return 0
     else
-        log_error "  Failed to push cleanup: $(echo "$result" | jq -r '.message // .')"
+        log_error "  Failed to create/merge cleanup MR for example-app"
         return 1
     fi
 }

@@ -14,6 +14,11 @@
 #
 # Usage:
 #   ./scripts/sync-to-gitlab.sh [branch]
+#   ./scripts/sync-to-gitlab.sh --pull-only example-app [branch]
+#
+# Options:
+#   --pull-only <repo>  Pull changes from GitLab into local subtree
+#                       Repo must be: example-app or k8s-deployments
 #
 # See docs/GIT_REMOTE_STRATEGY.md for full documentation.
 
@@ -22,13 +27,76 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/../.."
 
-BRANCH="${1:-main}"
+# Parse arguments
+PULL_ONLY=""
+BRANCH="main"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --pull-only)
+            PULL_ONLY="$2"
+            shift 2
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            exit 1
+            ;;
+        *)
+            BRANCH="$1"
+            shift
+            ;;
+    esac
+done
 
 # Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
+
+# Handle --pull-only mode
+if [[ -n "$PULL_ONLY" ]]; then
+    echo -e "${GREEN}=== Pulling subtree from GitLab ===${NC}"
+    echo "Repo: $PULL_ONLY"
+    echo "Branch: $BRANCH"
+    echo ""
+
+    case "$PULL_ONLY" in
+        example-app)
+            if ! git remote get-url gitlab-app &>/dev/null; then
+                echo -e "${RED}ERROR: Remote 'gitlab-app' not configured${NC}"
+                exit 1
+            fi
+            echo -e "${YELLOW}Pulling example-app from GitLab...${NC}"
+            if GIT_SSL_NO_VERIFY=true git subtree pull --prefix=example-app gitlab-app "$BRANCH" -m "Merge example-app from GitLab" 2>&1; then
+                echo -e "${GREEN}  ✓ example-app pulled${NC}"
+                exit 0
+            else
+                echo -e "${RED}  ✗ example-app pull failed${NC}"
+                exit 1
+            fi
+            ;;
+        k8s-deployments)
+            if ! git remote get-url gitlab-deployments &>/dev/null; then
+                echo -e "${RED}ERROR: Remote 'gitlab-deployments' not configured${NC}"
+                exit 1
+            fi
+            echo -e "${YELLOW}Pulling k8s-deployments from GitLab...${NC}"
+            if GIT_SSL_NO_VERIFY=true git subtree pull --prefix=k8s-deployments gitlab-deployments "$BRANCH" -m "Merge k8s-deployments from GitLab" 2>&1; then
+                echo -e "${GREEN}  ✓ k8s-deployments pulled${NC}"
+                exit 0
+            else
+                echo -e "${RED}  ✗ k8s-deployments pull failed${NC}"
+                exit 1
+            fi
+            ;;
+        *)
+            echo -e "${RED}ERROR: Unknown repo '$PULL_ONLY'${NC}"
+            echo "Valid repos: example-app, k8s-deployments"
+            exit 1
+            ;;
+    esac
+fi
 
 echo -e "${GREEN}=== Syncing subtrees to GitLab ===${NC}"
 echo "Branch: $BRANCH"
