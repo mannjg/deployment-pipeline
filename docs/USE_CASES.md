@@ -498,9 +498,9 @@ While preserving:
 | UC-D4 | 3rd Party Dependency Rollout | ✅ | ✅ | ✅ | `uc-d4-3rd-party-upgrade` | Pipeline verified 2026-01-31; 3rd party images promoted through environments |
 | UC-D5 | Skip environment (dev→prod direct) | ✅ | ✅ | ✅ | `uc-d5-skip-env` | Pipeline verified 2026-01-31; Direct dev→prod MR bypassing stage |
 | UC-E1 | App version deployment (full promotion) | ✅ | ✅ | ✅ | `validate-pipeline` | Pipeline verified 2026-02-01; Full app lifecycle with version semantics |
-| UC-E2 | App code + config change together | ✅ | 🔲 | 🔲 | - | CUE supports appEnvVars in deployment/app.cue; demo script needed |
+| UC-E2 | App code + config change together | ✅ | ✅ | ✅ | `uc-e2-code-plus-config` | Pipeline verified 2026-02-01; Code + config deployed atomically |
 | UC-E3 | Multiple app versions in flight | ✅ | N/A | 🔲 | - | Emerges naturally during development; no dedicated demo |
-| UC-E4 | App-level rollback | ✅ | 🔲 | 🔲 | - | Surgical image tag rollback; demo script needed |
+| UC-E4 | App-level rollback | ✅ | ✅ | ✅ | `uc-e4-app-rollback` | Pipeline verified 2026-02-01; Surgical image tag rollback preserves env settings |
 
 **Status Legend:**
 - 🔲 Not started

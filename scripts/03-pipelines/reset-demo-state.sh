@@ -46,6 +46,7 @@ BASELINES_DIR="$SCRIPT_DIR/baselines"
 
 # Parse command-line arguments
 BRANCHES="dev,stage,prod"  # Default: all branches
+RESET_EXAMPLE_APP=false    # Default: don't reset example-app
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -53,16 +54,22 @@ while [[ $# -gt 0 ]]; do
             BRANCHES="$2"
             shift 2
             ;;
+        --reset-example-app)
+            RESET_EXAMPLE_APP=true
+            shift
+            ;;
         --help|-h)
-            echo "Usage: $0 [--branches dev,stage,prod]"
+            echo "Usage: $0 [--branches dev,stage,prod] [--reset-example-app]"
             echo ""
             echo "Options:"
-            echo "  --branches  Comma-separated list of branches to reset (default: dev,stage,prod)"
+            echo "  --branches          Comma-separated list of branches to reset (default: dev,stage,prod)"
+            echo "  --reset-example-app Also reset example-app repo (cleans UC-E2 artifacts)"
             echo ""
             echo "Examples:"
             echo "  $0                        # Reset all branches"
             echo "  $0 --branches dev         # Reset dev only"
             echo "  $0 --branches dev,stage   # Reset dev and stage"
+            echo "  $0 --reset-example-app    # Reset all + clean example-app demo artifacts"
             exit 0
             ;;
         *)
@@ -76,6 +83,9 @@ done
 # Convert comma-separated branches to array
 IFS=',' read -ra BRANCH_LIST <<< "$BRANCHES"
 log_info "Target branches: ${BRANCH_LIST[*]}"
+if [[ "$RESET_EXAMPLE_APP" == "true" ]]; then
+    log_info "Example-app cleanup: enabled"
+fi
 
 if [[ -f "$REPO_ROOT/config/infra.env" ]]; then
     source "$REPO_ROOT/config/infra.env"
@@ -327,6 +337,110 @@ close_all_env_mrs() {
 
         log_info "  $target_branch: closed $count MRs"
     done
+}
+
+# =============================================================================
+# Phase 2b: Reset example-app repository (optional)
+# =============================================================================
+# Cleans up demo artifacts that UC-E2 and similar demos leave behind.
+# This is optional because most demos only modify k8s-deployments.
+
+cleanup_example_app() {
+    local gitlab_cli="$SCRIPT_DIR/../04-operations/gitlab-cli.sh"
+    local app_repo="$APP_REPO_PATH"  # From infra.env: p2c/example-app
+
+    log_step "Phase 2b: Cleaning up example-app demo artifacts..."
+
+    # Get current files from main
+    local current_java=$("$gitlab_cli" file get "$app_repo" src/main/java/com/example/app/GreetingService.java --ref main 2>/dev/null)
+    local current_cue=$("$gitlab_cli" file get "$app_repo" deployment/app.cue --ref main 2>/dev/null)
+
+    if [[ -z "$current_java" ]] || [[ -z "$current_cue" ]]; then
+        log_warn "Could not fetch example-app files, skipping cleanup"
+        return 0
+    fi
+
+    # Check if cleanup is needed (look for UC-E2 artifacts)
+    local needs_cleanup=false
+    local files_to_update=()
+
+    if echo "$current_java" | grep -q "UC_E2_FEATURE"; then
+        needs_cleanup=true
+        # Remove UC-E2 lines from GreetingService.java
+        local clean_java=$(echo "$current_java" | grep -v "UC-E2:" | grep -v "UC_E2_FEATURE" | grep -v "ucE2Feature")
+        files_to_update+=("src/main/java/com/example/app/GreetingService.java:$clean_java")
+        log_info "  Found UC-E2 artifacts in GreetingService.java"
+    fi
+
+    if echo "$current_cue" | grep -q "UC_E2_FEATURE"; then
+        needs_cleanup=true
+        # Remove UC-E2 block from deployment/app.cue using perl for multi-line
+        local clean_cue=$(echo "$current_cue" | perl -0777 -pe 's/\s*\{\s*name:\s*"UC_E2_FEATURE"\s*value:\s*"[^"]*"\s*\},?//gs')
+        files_to_update+=("deployment/app.cue:$clean_cue")
+        log_info "  Found UC-E2 artifacts in deployment/app.cue"
+    fi
+
+    if [[ "$needs_cleanup" != "true" ]]; then
+        log_info "  No demo artifacts found in example-app - already clean"
+        return 0
+    fi
+
+    # Build commit payload
+    log_info "  Pushing cleanup commit to example-app/main..."
+
+    local encoded_project=$(echo "$app_repo" | sed 's/\//%2F/g')
+    local actions="["
+    local first=true
+
+    for entry in "${files_to_update[@]}"; do
+        local file_path="${entry%%:*}"
+        local content="${entry#*:}"
+
+        [[ "$first" != "true" ]] && actions+=","
+        first=false
+
+        # Escape content for JSON
+        local escaped_content=$(echo "$content" | jq -sR .)
+        actions+="{\"action\":\"update\",\"file_path\":\"$file_path\",\"content\":$escaped_content}"
+    done
+    actions+="]"
+
+    local payload=$(jq -n \
+        --arg branch "main" \
+        --arg msg "chore: cleanup demo artifacts from example-app" \
+        --argjson actions "$actions" \
+        '{branch: $branch, commit_message: $msg, actions: $actions}')
+
+    local result=$(curl -sk -X POST \
+        -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$payload" \
+        "$GITLAB_URL_EXTERNAL/api/v4/projects/$encoded_project/repository/commits")
+
+    if echo "$result" | jq -e '.id' >/dev/null 2>&1; then
+        local commit_sha=$(echo "$result" | jq -r '.short_id')
+        log_info "  ✓ Cleanup commit pushed: $commit_sha"
+
+        # Wait for any triggered pipeline to complete
+        log_info "  Waiting for example-app pipeline to settle..."
+        sleep 10
+
+        # Check if a k8s-deployments MR was created and handle it
+        local k8s_encoded=$(echo "$DEPLOYMENTS_REPO_PATH" | sed 's/\//%2F/g')
+        local mrs=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "$GITLAB_URL_EXTERNAL/api/v4/projects/$k8s_encoded/merge_requests?state=opened&target_branch=dev" 2>/dev/null)
+
+        local cleanup_mr=$(echo "$mrs" | jq -r 'first(.[] | select(.title | contains("cleanup"))) | .iid // empty')
+        if [[ -n "$cleanup_mr" ]]; then
+            log_info "  Found cleanup MR !$cleanup_mr in k8s-deployments, merging..."
+            "$gitlab_cli" mr merge "$DEPLOYMENTS_REPO_PATH" "$cleanup_mr" >/dev/null 2>&1 || true
+        fi
+
+        return 0
+    else
+        log_error "  Failed to push cleanup: $(echo "$result" | jq -r '.message // .')"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -584,6 +698,9 @@ main() {
     echo "  - services/ directory reset from main"
     echo "  - env.cue reset to baseline (preserving CI/CD images)"
     echo "  - Manifests regenerated by Jenkins"
+    if [[ "$RESET_EXAMPLE_APP" == "true" ]]; then
+        echo "  - example-app demo artifacts cleaned (UC-E2, etc.)"
+    fi
     echo ""
 
     log_step "Credentials loaded via mr-workflow.sh"
@@ -603,6 +720,11 @@ main() {
     close_all_env_mrs "$DEPLOYMENTS_REPO_PATH"
     cleanup_gitlab_orphan_branches "$DEPLOYMENTS_REPO_PATH"
 
+    # Phase 2b: Clean up example-app (optional)
+    if [[ "$RESET_EXAMPLE_APP" == "true" ]]; then
+        cleanup_example_app
+    fi
+
     # Phase 3: Reset CUE configuration
     reset_cue_config
 
@@ -614,6 +736,9 @@ main() {
     log_info "  - Local demo branches cleaned up"
     log_info "  - All env-targeting MRs closed"
     log_info "  - Orphaned GitLab demo branches deleted"
+    if [[ "$RESET_EXAMPLE_APP" == "true" ]]; then
+        log_info "  - example-app demo artifacts cleaned"
+    fi
     log_info "  - services/ directory reset from main"
     log_info "  - env.cue reset to baseline (preserving CI/CD images)"
     log_info "  - Manifests regenerated by Jenkins"

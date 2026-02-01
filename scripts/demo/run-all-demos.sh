@@ -28,6 +28,8 @@ RESET_SCRIPT="$REPO_ROOT/scripts/03-pipelines/reset-demo-state.sh"
 DEMO_ORDER=(
     # Category E: App code lifecycle (SNAPSHOT → RC → Release)
     "UC-E1:demo-uc-e1-app-deployment.sh:App version deployment (full promotion):dev,stage,prod"
+    "UC-E2:demo-uc-e2-code-plus-config.sh:App code + config change together:dev,stage,prod"
+    "UC-E4:demo-uc-e4-app-rollback.sh:App-level rollback (surgical image tag):dev,stage,prod"
     # Category A: Environment-Specific (dev only)
     "UC-A1:demo-uc-a1-replicas.sh:Adjust replica count (isolated):dev"
     "UC-A2:demo-uc-a2-debug-mode.sh:Enable debug mode (isolated):dev"
@@ -100,6 +102,7 @@ list_demos() {
 run_reset() {
     local test_id="$1"
     local branches="${2:-dev,stage,prod}"
+    local reset_example_app="${3:-false}"
 
     if [[ "$SKIP_RESET" == "true" ]]; then
         return 0
@@ -109,6 +112,9 @@ run_reset() {
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}  RESET: Preparing clean state for $test_id${NC}"
     echo -e "${BLUE}  Branches: $branches${NC}"
+    if [[ "$reset_example_app" == "true" ]]; then
+        echo -e "${BLUE}  Example-app cleanup: enabled${NC}"
+    fi
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
     if [[ ! -x "$RESET_SCRIPT" ]]; then
@@ -116,7 +122,12 @@ run_reset() {
         return 1
     fi
 
-    if ! "$RESET_SCRIPT" --branches "$branches"; then
+    local reset_args=(--branches "$branches")
+    if [[ "$reset_example_app" == "true" ]]; then
+        reset_args+=(--reset-example-app)
+    fi
+
+    if ! "$RESET_SCRIPT" "${reset_args[@]}"; then
         echo -e "${RED}[ERROR]${NC} Reset failed"
         return 1
     fi
@@ -281,6 +292,10 @@ main() {
 
     TOTAL_START_TIME=$(date +%s)
 
+    # Track whether to reset example-app on next reset
+    # First reset always cleans example-app to ensure clean slate
+    local reset_example_app_next="true"
+
     for entry in "${DEMO_ORDER[@]}"; do
         IFS=':' read -r id script desc branches <<< "$entry"
         branches="${branches:-dev,stage,prod}"  # Default if missing
@@ -291,14 +306,23 @@ main() {
         fi
 
         # Run reset before each test with appropriate branches
-        if ! run_reset "$id" "$branches"; then
+        # Include example-app cleanup if flagged (first run or after UC-E2)
+        if ! run_reset "$id" "$branches" "$reset_example_app_next"; then
             RESULTS[$id]="SKIP"
             DURATIONS[$id]=0
             continue
         fi
 
+        # Reset the example-app flag (only first reset and after UC-E2 need it)
+        reset_example_app_next="false"
+
         # Run the test
         run_demo "$id" "$script" "$desc"
+
+        # UC-E2 modifies example-app, so the next reset needs to clean it
+        if [[ "$id" == "UC-E2" ]]; then
+            reset_example_app_next="true"
+        fi
     done
 
     # Print summary
