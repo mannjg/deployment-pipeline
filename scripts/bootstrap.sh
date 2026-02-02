@@ -413,8 +413,8 @@ sync_subtrees_to_gitlab() {
 
     # The sync script is cluster-aware via CLUSTER_CONFIG
     if [[ -x "$SCRIPT_DIR/04-operations/sync-to-gitlab.sh" ]]; then
-        # Run non-interactively (skip uncommitted changes prompt)
-        if ! yes | "$SCRIPT_DIR/04-operations/sync-to-gitlab.sh" main 2>&1; then
+        # Run sync - requires clean working tree
+        if ! "$SCRIPT_DIR/04-operations/sync-to-gitlab.sh" main 2>&1; then
             log_warn "Subtree sync had issues"
             return 1
         fi
