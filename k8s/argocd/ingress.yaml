@@ -2,13 +2,14 @@
 # ArgoCD Ingress with TLS
 #
 # Variables (use envsubst before applying):
+#   ${ARGOCD_NAMESPACE} - ArgoCD namespace (e.g., argocd)
 #   ${ARGOCD_HOST} - ArgoCD hostname (e.g., argocd.jmann.local)
 
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: argocd-tls
-  namespace: argocd
+  namespace: ${ARGOCD_NAMESPACE}
 spec:
   secretName: argocd-tls
   issuerRef:
@@ -22,7 +23,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: argocd-server
-  namespace: argocd
+  namespace: ${ARGOCD_NAMESPACE}
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
