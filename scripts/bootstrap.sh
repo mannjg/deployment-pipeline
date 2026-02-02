@@ -433,7 +433,10 @@ setup_jenkins_pipelines() {
     log_info "Setting up Jenkins pipelines and webhooks..."
     local errors=0
 
-    # Setup multibranch pipeline webhook for example-app
+    # First, create the MultiBranch Pipeline jobs (required before webhook setup)
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-multibranch-jobs.sh" "Jenkins MultiBranch jobs" "true" || ((errors++))
+
+    # Setup multibranch pipeline webhook trigger
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-multibranch-webhook.sh" "Jenkins multibranch webhook" || ((errors++))
 
     # Setup auto-promote job and webhook
