@@ -4,13 +4,19 @@
 
 set -e
 
-JENKINS_URL="${JENKINS_URL:-http://jenkins.local}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Source infrastructure config
+source "$PROJECT_ROOT/scripts/lib/infra.sh" "${CLUSTER_CONFIG:-}"
+
+JENKINS_URL="${JENKINS_URL:-$JENKINS_URL_EXTERNAL}"
 JOB_NAME="${1:-example-app-ci}"
 shift  # Remove job name from arguments
 
 # Get Jenkins admin password from Kubernetes secret
 echo "Getting Jenkins credentials..."
-JENKINS_PASSWORD=$(kubectl get secret jenkins -n jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
+JENKINS_PASSWORD=$(kubectl get secret "$JENKINS_ADMIN_SECRET" -n "$JENKINS_NAMESPACE" -o jsonpath="{.data.$JENKINS_ADMIN_TOKEN_KEY}" | base64 -d)
 
 # Create temporary files for cookies and crumb
 COOKIE_JAR="/tmp/jenkins-cookies-$$.txt"

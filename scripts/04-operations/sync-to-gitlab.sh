@@ -25,7 +25,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/../.."
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
+
+# Source infrastructure config
+source "$PROJECT_ROOT/scripts/lib/infra.sh" "${CLUSTER_CONFIG:-}"
 
 # Parse arguments
 PULL_ONLY=""
@@ -105,13 +109,13 @@ echo ""
 # Check remotes exist
 if ! git remote get-url gitlab-app &>/dev/null; then
     echo -e "${RED}ERROR: Remote 'gitlab-app' not configured${NC}"
-    echo "Run: git remote add gitlab-app https://gitlab.jmann.local/p2c/example-app.git"
+    echo "Run: git remote add gitlab-app ${GITLAB_URL_EXTERNAL}/${APP_REPO_PATH}.git"
     exit 1
 fi
 
 if ! git remote get-url gitlab-deployments &>/dev/null; then
     echo -e "${RED}ERROR: Remote 'gitlab-deployments' not configured${NC}"
-    echo "Run: git remote add gitlab-deployments https://gitlab.jmann.local/p2c/k8s-deployments.git"
+    echo "Run: git remote add gitlab-deployments ${GITLAB_URL_EXTERNAL}/${DEPLOYMENTS_REPO_PATH}.git"
     exit 1
 fi
 
@@ -158,5 +162,5 @@ fi
 
 echo ""
 echo -e "${GREEN}=== Sync complete ===${NC}"
-echo "  example-app      → gitlab.jmann.local/p2c/example-app"
-echo "  k8s-deployments  → gitlab.jmann.local/p2c/k8s-deployments"
+echo "  example-app      → ${GITLAB_HOST_EXTERNAL}/${APP_REPO_PATH}"
+echo "  k8s-deployments  → ${GITLAB_HOST_EXTERNAL}/${DEPLOYMENTS_REPO_PATH}"
