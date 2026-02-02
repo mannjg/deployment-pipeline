@@ -340,6 +340,57 @@ close_all_env_mrs() {
 }
 
 # =============================================================================
+# Wait for example-app builds to complete
+# =============================================================================
+# After cleaning up example-app, Jenkins builds the main branch and creates
+# an MR to k8s-deployments. We must wait for both the build AND the MR creation.
+wait_for_example_app_build() {
+    local timeout="${1:-300}"
+    local jenkins_cli="$SCRIPT_DIR/../04-operations/jenkins-cli.sh"
+    local start_time=$(date +%s)
+
+    log_info "Waiting for example-app/main build to complete..."
+
+    # Brief delay to allow webhook to trigger the build
+    sleep 5
+
+    while true; do
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+
+        if [[ $elapsed -ge $timeout ]]; then
+            log_warn "Timeout waiting for example-app build after ${timeout}s - proceeding"
+            return 0
+        fi
+
+        # Check if build is running or queued
+        local status_json=$("$jenkins_cli" status "example-app/main" 2>/dev/null || echo '{}')
+        local building=$(echo "$status_json" | jq -r '.building // false')
+
+        # Check queue for example-app
+        local queue_json=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+            "$JENKINS_URL_EXTERNAL/queue/api/json" 2>/dev/null || echo '{"items":[]}')
+        local queued=$(echo "$queue_json" | jq -r \
+            '[.items[] | select(.task.name == "main" and (.task.url | contains("example-app")))] | length')
+
+        if [[ "$building" == "false" ]] && [[ "$queued" == "0" ]]; then
+            log_info "  ✓ example-app build complete"
+            # Wait a bit more for MR creation - Jenkins creates MR at very end of build
+            log_info "  Waiting for MR creation (post-build)..."
+            sleep 10
+            return 0
+        fi
+
+        local status_msg=""
+        [[ "$building" == "true" ]] && status_msg="running"
+        [[ "$queued" != "0" ]] && status_msg="${status_msg:+$status_msg+}queued"
+        log_info "  example-app: $status_msg (${elapsed}s elapsed)"
+
+        sleep 10
+    done
+}
+
+# =============================================================================
 # Phase 2b: Reset example-app repository (optional)
 # =============================================================================
 # Cleans up demo artifacts that UC-E2 and similar demos leave behind.
@@ -708,31 +759,24 @@ main() {
         cleanup_example_app
 
         # The cleanup MR merge triggers Jenkins → builds new image → creates MR to k8s-deployments
-        # Wait for that cascade to finish and clean up any new MRs
+        # We must wait for:
+        # 1. example-app/main build to complete (this is what creates the MR!)
+        # 2. k8s-deployments to be quiescent (any triggered builds)
+        # 3. Close any MRs created by the cascade
         log_info ""
         log_info "Waiting for example-app cleanup cascade to complete..."
+
+        # Step 1: Wait for example-app build to complete
+        # This is critical - the MR is created at the END of this build
+        wait_for_example_app_build 300
+
+        # Step 2: Wait for any k8s-deployments builds that might have been triggered
         wait_for_pipeline_quiescence 180
 
-        # Close any MRs created by the cleanup cascade
-        # Retry a few times since Jenkins may create MR at the very end of build
+        # Step 3: Close any MRs created by the cleanup cascade
+        # The MR should exist now since we waited for the example-app build
         log_info "Closing any MRs created by cleanup cascade..."
-        local max_retries=3
-        local retry=0
-        while [[ $retry -lt $max_retries ]]; do
-            close_all_env_mrs "$DEPLOYMENTS_REPO_PATH"
-
-            # Check if any MRs still exist
-            local remaining_mrs=$("$SCRIPT_DIR/../04-operations/gitlab-cli.sh" mr list "$DEPLOYMENTS_REPO_PATH" --state opened --target dev 2>/dev/null | jq -r '.iid // empty')
-            if [[ -z "$remaining_mrs" ]]; then
-                break
-            fi
-
-            retry=$((retry + 1))
-            if [[ $retry -lt $max_retries ]]; then
-                log_info "MRs still exist, waiting 10s and retrying..."
-                sleep 10
-            fi
-        done
+        close_all_env_mrs "$DEPLOYMENTS_REPO_PATH"
     fi
 
     # Phase 3: Reset CUE configuration
