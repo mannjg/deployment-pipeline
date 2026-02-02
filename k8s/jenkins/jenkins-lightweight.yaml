@@ -6,6 +6,7 @@
 #   Apply pipeline-config.yaml first (with envsubst)
 #
 # Variables (use envsubst before applying):
+#   ${JENKINS_NAMESPACE} - Namespace for Jenkins resources (e.g., jenkins)
 #   ${JENKINS_HOST} - Jenkins hostname (e.g., jenkins.jmann.local)
 #   ${STORAGE_CLASS} - StorageClass for PVCs
 
@@ -13,7 +14,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: jenkins-tls
-  namespace: jenkins
+  namespace: ${JENKINS_NAMESPACE}
 spec:
   secretName: jenkins-tls
   issuerRef:
@@ -27,7 +28,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: jenkins-home
-  namespace: jenkins
+  namespace: ${JENKINS_NAMESPACE}
 spec:
   storageClassName: ${STORAGE_CLASS}
   accessModes:
@@ -40,7 +41,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: jenkins-config
-  namespace: jenkins
+  namespace: ${JENKINS_NAMESPACE}
 data:
   # Skip setup wizard
   jenkins.install.runSetupWizard: "false"
@@ -51,7 +52,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: jenkins
-  namespace: jenkins
+  namespace: ${JENKINS_NAMESPACE}
   labels:
     app: jenkins
 spec:
@@ -119,7 +120,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: jenkins
-  namespace: jenkins
+  namespace: ${JENKINS_NAMESPACE}
   labels:
     app: jenkins
 spec:
@@ -140,7 +141,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: jenkins
-  namespace: jenkins
+  namespace: ${JENKINS_NAMESPACE}
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
