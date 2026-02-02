@@ -46,7 +46,7 @@ log_step()  { echo -e "\n${BLUE}=== $* ===${NC}\n"; }
 
 usage() {
     cat << EOF
-Usage: $(basename "$0") <config-file>
+Usage: $(basename "$0") [options] <config-file>
 
 Bootstrap a complete cluster from nothing.
 
@@ -56,13 +56,18 @@ waits for pods to be ready, and runs configuration scripts.
 Arguments:
   config-file  Path to cluster configuration file (e.g., config/clusters/alpha.env)
 
+Options:
+  --continue   Skip infrastructure setup (steps 1-4) and run only service
+               configuration (step 5). Use this to resume after a partial
+               bootstrap or to reconfigure an existing cluster.
+
 Examples:
   $(basename "$0") config/clusters/alpha.env
-  $(basename "$0") config/clusters/reference.env
+  $(basename "$0") --continue config/clusters/alpha.env
 
 Notes:
-  - This script will FAIL if any namespaces already exist
-  - Use teardown.sh to clean up before re-running bootstrap
+  - Without --continue, this script will FAIL if any namespaces already exist
+  - Use teardown.sh to clean up before re-running full bootstrap
   - All manifests are processed with envsubst for parameterization
 EOF
     exit 1
@@ -558,14 +563,31 @@ print_summary() {
 # =============================================================================
 
 main() {
-    # Check for help flag
-    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || "${1:-}" == "help" ]]; then
-        usage
-    fi
+    local continue_only=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help|help)
+                usage
+                ;;
+            --continue)
+                continue_only=true
+                shift
+                ;;
+            -*)
+                log_error "Unknown option: $1"
+                usage
+                ;;
+            *)
+                CONFIG_FILE="$1"
+                shift
+                ;;
+        esac
+    done
 
     # Validate config file argument
-    CONFIG_FILE="${1:-}"
-    if [[ -z "$CONFIG_FILE" ]]; then
+    if [[ -z "${CONFIG_FILE:-}" ]]; then
         log_error "Config file required"
         echo ""
         usage
@@ -577,12 +599,26 @@ main() {
     log_info "Bootstrapping cluster: $CLUSTER_NAME"
     log_info "Config file: $CONFIG_FILE"
 
-    # Execute bootstrap steps
-    check_namespace_collisions
-    create_namespaces
-    apply_infrastructure_manifests
-    wait_for_infrastructure
-    configure_services
+    if $continue_only; then
+        log_info "Continue mode: skipping infrastructure setup (steps 1-4)"
+        log_info "Running service configuration only..."
+        echo ""
+
+        # Verify infrastructure is running
+        log_step "Verifying infrastructure pods"
+        wait_for_infrastructure
+
+        # Run only configuration
+        configure_services
+    else
+        # Execute full bootstrap steps
+        check_namespace_collisions
+        create_namespaces
+        apply_infrastructure_manifests
+        wait_for_infrastructure
+        configure_services
+    fi
+
     print_summary
 
     log_info "Bootstrap completed for cluster: $CLUSTER_NAME"
