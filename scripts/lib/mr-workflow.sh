@@ -18,7 +18,8 @@ set -euo pipefail
 MR_WORKFLOW_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load dependencies (these validate their own requirements)
-source "$MR_WORKFLOW_LIB_DIR/infra.sh"
+# infra.sh requires CLUSTER_CONFIG env var or explicit config file argument
+source "$MR_WORKFLOW_LIB_DIR/infra.sh" "${CLUSTER_CONFIG:-}"
 source "$MR_WORKFLOW_LIB_DIR/credentials.sh"
 
 # Preflight checks - fail fast if required variables not set

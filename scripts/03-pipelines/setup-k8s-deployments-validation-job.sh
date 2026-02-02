@@ -4,10 +4,14 @@
 
 set -e
 
-# Source infrastructure configuration
-source "$(dirname "${BASH_SOURCE[0]}")/../lib/infra.sh"
+# Script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-JENKINS_URL="${JENKINS_URL:-http://jenkins.local}"
+# Source infrastructure configuration (requires CLUSTER_CONFIG or explicit arg)
+source "$PROJECT_ROOT/scripts/lib/infra.sh" "${CLUSTER_CONFIG:-}"
+
+JENKINS_URL="${JENKINS_URL_EXTERNAL:-http://jenkins.local}"
 JOB_NAME="k8s-deployments-validation"
 REPO_URL="${DEPLOYMENTS_REPO_URL}"
 
@@ -21,7 +25,7 @@ echo ""
 
 # Get Jenkins credentials
 echo "Getting Jenkins credentials..."
-JENKINS_PASSWORD=$(kubectl get secret jenkins -n jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
+JENKINS_PASSWORD=$(kubectl get secret "$JENKINS_ADMIN_SECRET" -n "$JENKINS_NAMESPACE" -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
 
 # Create temporary files
 COOKIE_JAR="/tmp/jenkins-cookies-$$.txt"

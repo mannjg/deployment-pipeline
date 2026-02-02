@@ -39,7 +39,7 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 log_step() { echo -e "\n${BLUE}[->]${NC} $*"; }
 
-# Load infrastructure config
+# Script paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BASELINES_DIR="$SCRIPT_DIR/baselines"
@@ -65,8 +65,11 @@ while [[ $# -gt 0 ]]; do
             echo "  --branches          Comma-separated list of branches to reset (default: dev,stage,prod)"
             echo "  --reset-example-app Also reset example-app repo (cleans UC-E2 artifacts)"
             echo ""
+            echo "Environment:"
+            echo "  CLUSTER_CONFIG      Path to cluster config file (required)"
+            echo ""
             echo "Examples:"
-            echo "  $0                        # Reset all branches"
+            echo "  CLUSTER_CONFIG=config/clusters/reference.env $0"
             echo "  $0 --branches dev         # Reset dev only"
             echo "  $0 --branches dev,stage   # Reset dev and stage"
             echo "  $0 --reset-example-app    # Reset all + clean example-app demo artifacts"
@@ -87,12 +90,8 @@ if [[ "$RESET_EXAMPLE_APP" == "true" ]]; then
     log_info "Example-app cleanup: enabled"
 fi
 
-if [[ -f "$REPO_ROOT/config/infra.env" ]]; then
-    source "$REPO_ROOT/config/infra.env"
-else
-    log_error "Cannot find config/infra.env"
-    exit 1
-fi
+# Load infrastructure config (requires CLUSTER_CONFIG env var)
+source "$REPO_ROOT/scripts/lib/infra.sh" "${CLUSTER_CONFIG:-}"
 
 # Set MR workflow configuration (required before sourcing library)
 export MR_WORKFLOW_TIMEOUT=600
