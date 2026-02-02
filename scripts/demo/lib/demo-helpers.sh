@@ -346,8 +346,29 @@ demo_require_branch() {
 # INITIALIZATION
 # ============================================================================
 
+# Validate that cluster configuration has been loaded
+# Called automatically by demo_init
+demo_validate_config() {
+    # Check for key config variable that indicates config was sourced
+    if [[ -z "${GITLAB_NAMESPACE:-}" ]]; then
+        demo_fail "Cluster configuration not loaded"
+        if [[ -n "${CLUSTER_CONFIG:-}" ]]; then
+            demo_info "CLUSTER_CONFIG is set to: $CLUSTER_CONFIG"
+            demo_info "But configuration variables are not set. Check the config file."
+        else
+            demo_info "CLUSTER_CONFIG environment variable is not set"
+            demo_info "Run demos via run-all-demos.sh with a config file:"
+            demo_info "  ./scripts/demo/run-all-demos.sh config/clusters/alpha.env"
+        fi
+        exit 1
+    fi
+}
+
 demo_init() {
     local demo_name="$1"
+
+    # Validate cluster configuration is loaded
+    demo_validate_config
 
     # Verify we're in a git repo
     if ! git rev-parse --git-dir > /dev/null 2>&1; then

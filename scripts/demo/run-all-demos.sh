@@ -5,11 +5,13 @@
 # It runs each test in isolation with a clean reset before each.
 #
 # Usage:
-#   ./run-all-demos.sh              # Run all verifications
-#   ./run-all-demos.sh --list       # List available tests
-#   ./run-all-demos.sh --no-reset   # Skip reset between tests (faster, less isolated)
-#   ./run-all-demos.sh UC-C1        # Run specific test
-#   ./run-all-demos.sh validate     # Run validate-pipeline only
+#   ./run-all-demos.sh <config-file>              # Run all verifications
+#   ./run-all-demos.sh <config-file> --list       # List available tests
+#   ./run-all-demos.sh <config-file> --no-reset   # Skip reset between tests (faster, less isolated)
+#   ./run-all-demos.sh <config-file> UC-C1        # Run specific test
+#
+# Arguments:
+#   config-file    Path to cluster configuration file (e.g., config/clusters/alpha.env)
 #
 # Exit codes:
 #   0 - All tests passed
@@ -19,6 +21,37 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# =============================================================================
+# Configuration File (Required)
+# =============================================================================
+
+CONFIG_FILE="${1:-}"
+if [[ -z "$CONFIG_FILE" ]]; then
+    echo "Error: Config file required as first argument"
+    echo ""
+    echo "Usage: $0 <config-file> [options]"
+    echo "Example: $0 config/clusters/alpha.env"
+    echo "         $0 config/clusters/alpha.env --list"
+    echo "         $0 config/clusters/alpha.env UC-C1"
+    exit 1
+fi
+
+# Resolve relative paths
+if [[ ! "$CONFIG_FILE" = /* ]]; then
+    CONFIG_FILE="$REPO_ROOT/$CONFIG_FILE"
+fi
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "Error: Config file not found: $CONFIG_FILE"
+    exit 1
+fi
+
+shift  # Remove config file from args
+
+# Export for child processes (demo scripts)
+export CLUSTER_CONFIG="$CONFIG_FILE"
+source "$CONFIG_FILE"
 
 # Reset script
 RESET_SCRIPT="$REPO_ROOT/scripts/03-pipelines/reset-demo-state.sh"
@@ -255,9 +288,12 @@ main() {
                 shift
                 ;;
             --help|-h)
-                echo "Usage: $0 [OPTIONS] [TEST_ID...]"
+                echo "Usage: $0 <config-file> [OPTIONS] [TEST_ID...]"
                 echo ""
                 echo "Run verification tests for the CI/CD pipeline reference implementation."
+                echo ""
+                echo "Arguments:"
+                echo "  config-file    Path to cluster configuration file (required)"
                 echo ""
                 echo "Options:"
                 echo "  --list, -l     List available tests"
@@ -265,10 +301,10 @@ main() {
                 echo "  --help, -h     Show this help"
                 echo ""
                 echo "Examples:"
-                echo "  $0                    # Run all verifications with reset between each"
-                echo "  $0 --no-reset         # Run all without reset (faster)"
-                echo "  $0 UC-C1              # Run specific test"
-                echo "  $0 validate           # Run validate-pipeline only"
+                echo "  $0 config/clusters/alpha.env                    # Run all verifications"
+                echo "  $0 config/clusters/alpha.env --no-reset         # Run all without reset"
+                echo "  $0 config/clusters/alpha.env UC-C1              # Run specific test"
+                echo "  $0 config/clusters/alpha.env --list             # List available tests"
                 exit 0
                 ;;
             -*)

@@ -260,8 +260,8 @@ demo_verify "Created branch from $TARGET_ENV"
 WORK_DIR=$(mktemp -d)
 
 demo_action "Cloning branch for local promotion..."
-# Clone from GitLab k8s-deployments repo
-GITLAB_K8S_URL="https://gitlab.jmann.local/p2c/k8s-deployments.git"
+# Clone from GitLab k8s-deployments repo (use external URL from config)
+GITLAB_K8S_URL="${DEPLOYMENTS_REPO_URL_EXTERNAL:?DEPLOYMENTS_REPO_URL_EXTERNAL not set - source cluster config}"
 export GIT_SSL_NO_VERIFY=true
 git clone --quiet --branch "$FEATURE_BRANCH" "$GITLAB_K8S_URL" "$WORK_DIR" || {
     demo_fail "Failed to clone branch $FEATURE_BRANCH from GitLab"
