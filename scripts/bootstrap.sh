@@ -174,6 +174,11 @@ create_namespaces() {
 # Manifest Application
 # =============================================================================
 
+generate_password() {
+    # Generate a random password (16 alphanumeric characters)
+    head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 16
+}
+
 export_config_for_envsubst() {
     # Export all config variables for envsubst
     # envsubst only substitutes exported variables
@@ -186,6 +191,16 @@ export_config_for_envsubst() {
     export GITLAB_URL_EXTERNAL GITLAB_URL_INTERNAL
     export GITLAB_GROUP APP_REPO_NAME DEPLOYMENTS_REPO_NAME
     export APP_REPO_PATH DEPLOYMENTS_REPO_PATH
+
+    # Short aliases for manifests that use simplified variable names
+    # Manifests use ${GITLAB_HOST} but config defines GITLAB_HOST_EXTERNAL
+    export GITLAB_HOST="${GITLAB_HOST_EXTERNAL}"
+    export JENKINS_HOST="${JENKINS_HOST_EXTERNAL}"
+    export NEXUS_HOST="${NEXUS_HOST_EXTERNAL}"
+    export ARGOCD_HOST="${ARGOCD_HOST_EXTERNAL}"
+
+    # Generate passwords if not already set
+    export GITLAB_ROOT_PASSWORD="${GITLAB_ROOT_PASSWORD:-$(generate_password)}"
 }
 
 apply_manifest() {
