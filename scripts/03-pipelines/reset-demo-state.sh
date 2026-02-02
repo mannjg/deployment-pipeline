@@ -702,19 +702,37 @@ main() {
 
     # Phase 2b: Clean up example-app (optional)
     # NOTE: This creates an MR on GitLab, which may trigger Jenkins builds.
-    # If the cleanup includes pom.xml changes, it will cascade to k8s-deployments.
+    # Any code change to example-app/main triggers Jenkins to build a new image
+    # and create an MR to k8s-deployments.
     if [[ "$RESET_EXAMPLE_APP" == "true" ]]; then
         cleanup_example_app
 
-        # The cleanup MR merge may trigger Jenkins → creates new MR to k8s-deployments
+        # The cleanup MR merge triggers Jenkins → builds new image → creates MR to k8s-deployments
         # Wait for that cascade to finish and clean up any new MRs
         log_info ""
         log_info "Waiting for example-app cleanup cascade to complete..."
         wait_for_pipeline_quiescence 180
 
         # Close any MRs created by the cleanup cascade
+        # Retry a few times since Jenkins may create MR at the very end of build
         log_info "Closing any MRs created by cleanup cascade..."
-        close_all_env_mrs "$DEPLOYMENTS_REPO_PATH"
+        local max_retries=3
+        local retry=0
+        while [[ $retry -lt $max_retries ]]; do
+            close_all_env_mrs "$DEPLOYMENTS_REPO_PATH"
+
+            # Check if any MRs still exist
+            local remaining_mrs=$("$SCRIPT_DIR/../04-operations/gitlab-cli.sh" mr list "$DEPLOYMENTS_REPO_PATH" --state opened --target dev 2>/dev/null | jq -r '.iid // empty')
+            if [[ -z "$remaining_mrs" ]]; then
+                break
+            fi
+
+            retry=$((retry + 1))
+            if [[ $retry -lt $max_retries ]]; then
+                log_info "MRs still exist, waiting 10s and retrying..."
+                sleep 10
+            fi
+        done
     fi
 
     # Phase 3: Reset CUE configuration
