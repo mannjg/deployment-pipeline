@@ -153,13 +153,26 @@ wait_for_installs() {
 
     while [[ $attempt -lt $max_attempts ]]; do
         # Get installed plugins to a temp file (avoid pipe issues with large JSON)
-        curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
-            "$JENKINS_URL/pluginManager/api/json?depth=2" -o /tmp/jenkins_plugins.json 2>/dev/null
+        if ! curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+            "$JENKINS_URL/pluginManager/api/json?depth=2" -o /tmp/jenkins_plugins.json 2>/dev/null; then
+            log_info "  Jenkins API not ready yet, waiting..."
+            sleep 10
+            ((attempt++))
+            continue
+        fi
+
+        # Check if file has content
+        if [[ ! -s /tmp/jenkins_plugins.json ]]; then
+            log_info "  Empty response, Jenkins may be restarting..."
+            sleep 10
+            ((attempt++))
+            continue
+        fi
 
         local missing=0
         for plugin in "${key_plugins[@]}"; do
             if ! jq -e ".plugins[] | select(.shortName == \"$plugin\" and .active == true)" /tmp/jenkins_plugins.json &>/dev/null; then
-                ((missing++))
+                ((missing++)) || true
             fi
         done
 
