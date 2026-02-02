@@ -38,6 +38,27 @@ log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 log_debug() { echo -e "${BLUE}[DEBUG]${NC} $*"; }
 
 # =============================================================================
+# Dependencies
+# =============================================================================
+
+check_dependencies() {
+    local missing=()
+
+    if ! command -v jq &>/dev/null; then
+        missing+=("jq")
+    fi
+
+    if ! command -v kubectl &>/dev/null; then
+        missing+=("kubectl")
+    fi
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        log_error "Missing required dependencies: ${missing[*]}"
+        exit 1
+    fi
+}
+
+# =============================================================================
 # Usage
 # =============================================================================
 
@@ -189,7 +210,10 @@ $(echo -e "${deploy_data}${sts_data}")
 EOF
 )
 
-    echo "$cm_yaml" | kubectl apply -f - >/dev/null
+    if ! echo "$cm_yaml" | kubectl apply -f - >/dev/null; then
+        log_error "Failed to create ConfigMap in $namespace"
+        return 1
+    fi
     log_info "Stored replica counts in ConfigMap: $namespace/$CONFIGMAP_NAME"
 }
 
@@ -236,12 +260,21 @@ cmd_pause() {
         return 0
     fi
 
+    local pause_errors=0
+
     # Store replica counts and scale down each namespace
     for ns in "${namespaces[@]}"; do
-        store_replica_counts "$ns"
+        if ! store_replica_counts "$ns"; then
+            pause_errors=$((pause_errors + 1))
+        fi
         scale_down_namespace "$ns"
         echo ""
     done
+
+    if [[ $pause_errors -gt 0 ]]; then
+        log_error "Cluster pause completed with $pause_errors error(s)"
+        return 1
+    fi
 
     log_info "Cluster paused: $CLUSTER_NAME"
     log_info "Use 'cluster-ctl.sh resume' to restore"
@@ -253,6 +286,7 @@ cmd_pause() {
 
 restore_namespace() {
     local namespace="$1"
+    local restore_errors=0
 
     log_info "Restoring namespace: $namespace"
 
@@ -264,7 +298,10 @@ restore_namespace() {
 
     # Read ConfigMap data
     local cm_data
-    cm_data=$(kubectl get configmap "$CONFIGMAP_NAME" -n "$namespace" -o json 2>/dev/null)
+    if ! cm_data=$(kubectl get configmap "$CONFIGMAP_NAME" -n "$namespace" -o json 2>/dev/null); then
+        log_error "Failed to read ConfigMap in $namespace"
+        return 1
+    fi
 
     if [[ -z "$cm_data" ]]; then
         log_warn "Could not read ConfigMap in $namespace"
@@ -273,18 +310,29 @@ restore_namespace() {
 
     # Restore deployments
     local deploy_keys
-    deploy_keys=$(echo "$cm_data" | jq -r '.data | keys[] | select(startswith("deploy."))' 2>/dev/null)
+    if ! deploy_keys=$(echo "$cm_data" | jq -r '.data | keys[] | select(startswith("deploy."))' 2>/dev/null); then
+        log_error "Failed to parse ConfigMap data for deployments in $namespace"
+        restore_errors=$((restore_errors + 1))
+    fi
 
     if [[ -n "$deploy_keys" ]]; then
         while IFS= read -r key; do
             if [[ -n "$key" ]]; then
                 local name="${key#deploy.}"
                 local replicas
-                replicas=$(echo "$cm_data" | jq -r --arg k "$key" '.data[$k]')
+                if ! replicas=$(echo "$cm_data" | jq -r --arg k "$key" '.data[$k]' 2>/dev/null); then
+                    log_error "  Failed to parse replica count for deployment: $name"
+                    restore_errors=$((restore_errors + 1))
+                    continue
+                fi
 
                 if kubectl get deployment "$name" -n "$namespace" &>/dev/null; then
-                    kubectl scale deployment "$name" -n "$namespace" --replicas="$replicas"
-                    log_debug "  Deployment: $name (replicas=$replicas)"
+                    if ! kubectl scale deployment "$name" -n "$namespace" --replicas="$replicas"; then
+                        log_error "  Failed to scale deployment: $name"
+                        restore_errors=$((restore_errors + 1))
+                    else
+                        log_debug "  Deployment: $name (replicas=$replicas)"
+                    fi
                 else
                     log_warn "  Deployment not found: $name"
                 fi
@@ -294,23 +342,39 @@ restore_namespace() {
 
     # Restore statefulsets
     local sts_keys
-    sts_keys=$(echo "$cm_data" | jq -r '.data | keys[] | select(startswith("sts."))' 2>/dev/null)
+    if ! sts_keys=$(echo "$cm_data" | jq -r '.data | keys[] | select(startswith("sts."))' 2>/dev/null); then
+        log_error "Failed to parse ConfigMap data for statefulsets in $namespace"
+        restore_errors=$((restore_errors + 1))
+    fi
 
     if [[ -n "$sts_keys" ]]; then
         while IFS= read -r key; do
             if [[ -n "$key" ]]; then
                 local name="${key#sts.}"
                 local replicas
-                replicas=$(echo "$cm_data" | jq -r --arg k "$key" '.data[$k]')
+                if ! replicas=$(echo "$cm_data" | jq -r --arg k "$key" '.data[$k]' 2>/dev/null); then
+                    log_error "  Failed to parse replica count for statefulset: $name"
+                    restore_errors=$((restore_errors + 1))
+                    continue
+                fi
 
                 if kubectl get statefulset "$name" -n "$namespace" &>/dev/null; then
-                    kubectl scale statefulset "$name" -n "$namespace" --replicas="$replicas"
-                    log_debug "  StatefulSet: $name (replicas=$replicas)"
+                    if ! kubectl scale statefulset "$name" -n "$namespace" --replicas="$replicas"; then
+                        log_error "  Failed to scale statefulset: $name"
+                        restore_errors=$((restore_errors + 1))
+                    else
+                        log_debug "  StatefulSet: $name (replicas=$replicas)"
+                    fi
                 else
                     log_warn "  StatefulSet not found: $name"
                 fi
             fi
         done <<< "$sts_keys"
+    fi
+
+    if [[ $restore_errors -gt 0 ]]; then
+        log_error "Encountered $restore_errors error(s) restoring $namespace"
+        return 1
     fi
 }
 
@@ -360,9 +424,13 @@ cmd_resume() {
         return 0
     fi
 
+    local resume_errors=0
+
     # Restore each namespace
     for ns in "${namespaces[@]}"; do
-        restore_namespace "$ns"
+        if ! restore_namespace "$ns"; then
+            resume_errors=$((resume_errors + 1))
+        fi
         echo ""
     done
 
@@ -373,6 +441,11 @@ cmd_resume() {
     for ns in "${namespaces[@]}"; do
         wait_for_pods "$ns" 180 || true
     done
+
+    if [[ $resume_errors -gt 0 ]]; then
+        log_error "Cluster resume completed with $resume_errors error(s)"
+        return 1
+    fi
 
     log_info "Cluster resumed: $CLUSTER_NAME"
 }
@@ -482,6 +555,9 @@ main() {
         usage
     fi
 
+    # Check dependencies early
+    check_dependencies
+
     # Require config file for all commands
     if [[ $# -lt 2 ]]; then
         log_error "Config file required"
@@ -492,15 +568,17 @@ main() {
     local config_file="$2"
     validate_config "$config_file"
 
+    local exit_code=0
+
     case "$command" in
         pause)
-            cmd_pause
+            cmd_pause || exit_code=$?
             ;;
         resume)
-            cmd_resume
+            cmd_resume || exit_code=$?
             ;;
         status)
-            cmd_status
+            cmd_status || exit_code=$?
             ;;
         *)
             log_error "Unknown command: $command"
@@ -508,6 +586,8 @@ main() {
             usage
             ;;
     esac
+
+    exit $exit_code
 }
 
 main "$@"
