@@ -478,26 +478,76 @@ Automated cleanup by reset-demo-state.sh"
 # Phase 3: Reset CUE Configuration (Baseline Approach)
 # =============================================================================
 
+# Extract git hash from image tag
+# Input: docker.jmann.local/p2c/example-app:1.0.74-SNAPSHOT-7976886
+# Output: 7976886
+extract_git_hash_from_image() {
+    local image="$1"
+    # Git hash is the last segment after the final hyphen (6+ hex chars)
+    echo "$image" | grep -oE '[a-f0-9]{6,}$' || echo ""
+}
+
+# Extract base version from image tag (without SNAPSHOT/rc suffix)
+# Input: docker.jmann.local/p2c/example-app:1.0.74-SNAPSHOT-7976886
+# Output: 1.0.74
+extract_base_version_from_image() {
+    local image="$1"
+    # Extract tag after colon, then get version number
+    local tag="${image##*:}"
+    # Remove SNAPSHOT suffix, rc suffix, and git hash
+    echo "$tag" | sed -E 's/-(SNAPSHOT|rc[0-9]*)-[a-f0-9]+$//' | sed -E 's/-[a-f0-9]+$//'
+}
+
+# Convert prod image tag to match stage's git hash
+# This is used when prod has an older version than stage and needs to be aligned
+# Input: stage_image (e.g., docker.jmann.local/p2c/example-app:1.0.74-rc1-7976886)
+# Output: prod format with same hash (e.g., docker.jmann.local/p2c/example-app:1.0.74-7976886)
+convert_stage_image_to_prod_format() {
+    local stage_image="$1"
+    local base_version=$(extract_base_version_from_image "$stage_image")
+    local git_hash=$(extract_git_hash_from_image "$stage_image")
+    local registry="${stage_image%%:*}"
+    echo "${registry}:${base_version}-${git_hash}"
+}
+
 # Extract image tags from current env.cue on a branch
+# Note: If EXAMPLE_APP_IMAGE_OVERRIDE is set, it will be used instead of
+# extracting from the branch. This handles version alignment (e.g., when
+# prod was rolled back and needs to be re-aligned with stage).
 extract_images_from_env_cue() {
     local env="$1"
     local gitlab_cli="$SCRIPT_DIR/../04-operations/gitlab-cli.sh"
 
+    # Check for image override (set by version consistency check)
+    if [[ -n "${EXAMPLE_APP_IMAGE_OVERRIDE:-}" ]]; then
+        EXAMPLE_APP_IMAGE="$EXAMPLE_APP_IMAGE_OVERRIDE"
+        log_info "  exampleApp image: $EXAMPLE_APP_IMAGE (override for version alignment)"
+    else
+        local content=$("$gitlab_cli" file get "$DEPLOYMENTS_REPO_PATH" env.cue --ref "$env" 2>/dev/null)
+
+        # Extract exampleApp image - look for image in the exampleApp block
+        # Pattern: after "exampleApp:" find the first "image:" line
+        EXAMPLE_APP_IMAGE=$(echo "$content" | awk '
+            /exampleApp:.*\{/ { in_example=1 }
+            in_example && /image:/ {
+                gsub(/.*image:[[:space:]]*"/, "")
+                gsub(/".*/, "")
+                print
+                exit
+            }
+        ')
+
+        # Fallback to defaults if extraction failed
+        if [[ -z "$EXAMPLE_APP_IMAGE" ]]; then
+            log_warn "Could not extract exampleApp image from $env, using placeholder"
+            EXAMPLE_APP_IMAGE="docker.jmann.local/p2c/example-app:latest"
+        fi
+
+        log_info "  exampleApp image: $EXAMPLE_APP_IMAGE"
+    fi
+
+    # Postgres image is always extracted from the branch (no override needed)
     local content=$("$gitlab_cli" file get "$DEPLOYMENTS_REPO_PATH" env.cue --ref "$env" 2>/dev/null)
-
-    # Extract exampleApp image - look for image in the exampleApp block
-    # Pattern: after "exampleApp:" find the first "image:" line
-    EXAMPLE_APP_IMAGE=$(echo "$content" | awk '
-        /exampleApp:.*\{/ { in_example=1 }
-        in_example && /image:/ {
-            gsub(/.*image:[[:space:]]*"/, "")
-            gsub(/".*/, "")
-            print
-            exit
-        }
-    ')
-
-    # Extract postgres image - look for image in the postgres block
     POSTGRES_IMAGE=$(echo "$content" | awk '
         /postgres:.*\{/ { in_postgres=1 }
         in_postgres && /image:/ {
@@ -508,17 +558,10 @@ extract_images_from_env_cue() {
         }
     ')
 
-    # Fallback to defaults if extraction failed
-    if [[ -z "$EXAMPLE_APP_IMAGE" ]]; then
-        log_warn "Could not extract exampleApp image from $env, using placeholder"
-        EXAMPLE_APP_IMAGE="docker.jmann.local/p2c/example-app:latest"
-    fi
-
     if [[ -z "$POSTGRES_IMAGE" ]]; then
         POSTGRES_IMAGE="postgres:16-alpine"
     fi
 
-    log_info "  exampleApp image: $EXAMPLE_APP_IMAGE"
     log_info "  postgres image: $POSTGRES_IMAGE"
 }
 
@@ -687,8 +730,62 @@ reset_cue_config() {
 
     local failed_envs=()
 
+    # Version consistency check: If resetting both stage and prod, ensure prod
+    # has the same git hash as stage. This handles the case where prod was
+    # rolled back (e.g., UC-E4) and now has an older version than stage.
+    # Without this fix, promoting to prod fails because the release artifact
+    # already exists in Nexus with a different git hash.
+    local prod_image_override=""
+    if [[ " ${BRANCH_LIST[*]} " =~ " stage " ]] && [[ " ${BRANCH_LIST[*]} " =~ " prod " ]]; then
+        log_info "Checking version consistency between stage and prod..."
+        local gitlab_cli="$SCRIPT_DIR/../04-operations/gitlab-cli.sh"
+
+        # Extract stage image
+        local stage_content=$("$gitlab_cli" file get "$DEPLOYMENTS_REPO_PATH" env.cue --ref "stage" 2>/dev/null)
+        local stage_image=$(echo "$stage_content" | awk '
+            /exampleApp:.*\{/ { in_example=1 }
+            in_example && /image:/ {
+                gsub(/.*image:[[:space:]]*"/, "")
+                gsub(/".*/, "")
+                print
+                exit
+            }
+        ')
+
+        # Extract prod image
+        local prod_content=$("$gitlab_cli" file get "$DEPLOYMENTS_REPO_PATH" env.cue --ref "prod" 2>/dev/null)
+        local prod_image=$(echo "$prod_content" | awk '
+            /exampleApp:.*\{/ { in_example=1 }
+            in_example && /image:/ {
+                gsub(/.*image:[[:space:]]*"/, "")
+                gsub(/".*/, "")
+                print
+                exit
+            }
+        ')
+
+        local stage_hash=$(extract_git_hash_from_image "$stage_image")
+        local prod_hash=$(extract_git_hash_from_image "$prod_image")
+
+        if [[ -n "$stage_hash" ]] && [[ -n "$prod_hash" ]] && [[ "$stage_hash" != "$prod_hash" ]]; then
+            log_warn "Version mismatch detected: stage hash=$stage_hash, prod hash=$prod_hash"
+            log_info "  Prod was likely rolled back. Aligning prod to match stage's git hash."
+            prod_image_override=$(convert_stage_image_to_prod_format "$stage_image")
+            log_info "  Prod image override: $prod_image_override"
+        else
+            log_info "  ✓ Stage and prod have consistent git hashes"
+        fi
+    fi
+
     for env in "${BRANCH_LIST[@]}"; do
         # Step 1: Create MR and merge (waits for feature branch pipeline)
+        # Pass prod image override if set
+        if [[ "$env" == "prod" ]] && [[ -n "$prod_image_override" ]]; then
+            EXAMPLE_APP_IMAGE_OVERRIDE="$prod_image_override"
+        else
+            EXAMPLE_APP_IMAGE_OVERRIDE=""
+        fi
+
         if ! reset_env_via_mr "$env"; then
             failed_envs+=("$env")
             continue
