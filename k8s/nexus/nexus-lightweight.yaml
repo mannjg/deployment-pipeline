@@ -3,6 +3,7 @@
 # Simplified for resource-constrained environments
 #
 # Variables (use envsubst before applying):
+#   ${NEXUS_NAMESPACE} - Kubernetes namespace for Nexus
 #   ${NEXUS_HOST} - Nexus hostname (e.g., nexus.jmann.local)
 #   ${STORAGE_CLASS} - StorageClass for PVCs
 
@@ -10,7 +11,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: nexus-tls
-  namespace: nexus
+  namespace: ${NEXUS_NAMESPACE}
 spec:
   secretName: nexus-tls
   issuerRef:
@@ -24,7 +25,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: nexus-data
-  namespace: nexus
+  namespace: ${NEXUS_NAMESPACE}
 spec:
   storageClassName: ${STORAGE_CLASS}
   accessModes:
@@ -37,7 +38,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: nexus
-  namespace: nexus
+  namespace: ${NEXUS_NAMESPACE}
   labels:
     app: nexus
 spec:
@@ -100,7 +101,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: nexus
-  namespace: nexus
+  namespace: ${NEXUS_NAMESPACE}
   labels:
     app: nexus
 spec:
@@ -121,7 +122,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: nexus
-  namespace: nexus
+  namespace: ${NEXUS_NAMESPACE}
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
