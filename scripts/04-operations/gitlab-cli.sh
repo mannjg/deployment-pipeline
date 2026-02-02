@@ -27,8 +27,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Source dependencies
-source "$SCRIPT_DIR/../lib/infra.sh"
+# Source dependencies (pass CLUSTER_CONFIG explicitly to avoid inheriting parent's $1)
+source "$SCRIPT_DIR/../lib/infra.sh" "${CLUSTER_CONFIG:-}"
 source "$SCRIPT_DIR/../lib/credentials.sh"
 
 # Get GitLab auth once

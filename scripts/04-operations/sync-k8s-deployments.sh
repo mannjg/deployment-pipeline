@@ -6,7 +6,8 @@ set -euo pipefail
 # Source shared libraries
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/logging.sh"
-source "$SCRIPT_DIR/../lib/infra.sh"
+# Pass CLUSTER_CONFIG explicitly to avoid inheriting parent's $1
+source "$SCRIPT_DIR/../lib/infra.sh" "${CLUSTER_CONFIG:-}"
 source "$SCRIPT_DIR/../lib/credentials.sh"
 
 # Get credentials (fail-fast if not available)
