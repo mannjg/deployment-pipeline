@@ -740,14 +740,18 @@ main() {
 
     # Phase 4: Final cleanup - catch any MRs created during reset or left from previous tests
     # This is a safety net for MRs that slipped through earlier cleanup phases
+    # The cleanup cascade may have created MRs during Phase 3 that need to be closed
     log_info ""
     log_info "Phase 4: Final verification and cleanup..."
 
-    # Brief wait then close any remaining MRs
-    sleep 5
+    # Wait for full quiescence - this catches any builds started during Phase 3
+    # (e.g., example-app cleanup cascade that created MRs after the earlier close check)
+    wait_for_pipeline_quiescence 120
+
+    # Now close any MRs that were created during the reset process
     local final_mrs=$("$SCRIPT_DIR/../04-operations/gitlab-cli.sh" mr list "$DEPLOYMENTS_REPO_PATH" --state opened 2>/dev/null | jq -r '.[].iid // empty' 2>/dev/null)
     if [[ -n "$final_mrs" ]]; then
-        log_info "Closing remaining open MRs..."
+        log_info "Closing MRs created during reset process..."
         close_all_env_mrs "$DEPLOYMENTS_REPO_PATH"
     fi
 
