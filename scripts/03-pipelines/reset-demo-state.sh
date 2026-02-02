@@ -738,6 +738,19 @@ main() {
     # Phase 3: Reset CUE configuration
     reset_cue_config
 
+    # Phase 4: Final cleanup - catch any MRs created during reset or left from previous tests
+    # This is a safety net for MRs that slipped through earlier cleanup phases
+    log_info ""
+    log_info "Phase 4: Final verification and cleanup..."
+
+    # Brief wait then close any remaining MRs
+    sleep 5
+    local final_mrs=$("$SCRIPT_DIR/../04-operations/gitlab-cli.sh" mr list "$DEPLOYMENTS_REPO_PATH" --state opened 2>/dev/null | jq -r '.[].iid // empty' 2>/dev/null)
+    if [[ -n "$final_mrs" ]]; then
+        log_info "Closing remaining open MRs..."
+        close_all_env_mrs "$DEPLOYMENTS_REPO_PATH"
+    fi
+
     echo ""
     echo "=== Reset Complete ==="
     echo ""
