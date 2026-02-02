@@ -3,27 +3,28 @@ set -euo pipefail
 
 # GitLab Setup Script
 # Deploys GitLab Community Edition using Helm
+#
+# Usage: ./setup-gitlab.sh <config-file>
+#    Or: export CLUSTER_CONFIG=<config-file>
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+# Load cluster configuration (provides GITLAB_NAMESPACE and other vars)
+# Accept config file as argument or from CLUSTER_CONFIG env var
+CONFIG_FILE="${1:-${CLUSTER_CONFIG:-}}"
+if [[ -z "$CONFIG_FILE" || ! -f "$CONFIG_FILE" ]]; then
+    echo "Error: Cluster config file required"
+    echo "Usage: $0 <config-file>"
+    echo "   Or: export CLUSTER_CONFIG=<config-file>"
+    exit 1
+fi
+# shellcheck source=/dev/null
+source "$CONFIG_FILE"
+export CLUSTER_CONFIG="$CONFIG_FILE"
 
-log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+# Source shared logging library
+source "$SCRIPT_DIR/../lib/logging.sh"
 
 check_prerequisites() {
     log_info "Checking prerequisites..."
@@ -33,9 +34,9 @@ check_prerequisites() {
         exit 1
     fi
 
-    if ! kubectl get namespace gitlab &> /dev/null; then
-        log_warn "GitLab namespace doesn't exist. Creating..."
-        kubectl create namespace gitlab
+    if ! kubectl get namespace "$GITLAB_NAMESPACE" &> /dev/null; then
+        log_warn "GitLab namespace '$GITLAB_NAMESPACE' doesn't exist. Creating..."
+        kubectl create namespace "$GITLAB_NAMESPACE"
     fi
 
     log_info "Prerequisites check passed"
@@ -60,7 +61,7 @@ deploy_gitlab() {
         log_info "Using lightweight GitLab deployment"
 
         # Check if already deployed
-        if kubectl get deployment -n gitlab gitlab &> /dev/null; then
+        if kubectl get deployment -n "$GITLAB_NAMESPACE" gitlab &> /dev/null; then
             log_warn "GitLab is already deployed"
             read -p "Do you want to redeploy? (y/N): " -n 1 -r
             echo
@@ -80,14 +81,14 @@ deploy_gitlab() {
         # Use Helm deployment
         log_info "Using Helm-based GitLab deployment"
 
-        if helm list -n gitlab | grep -q "gitlab"; then
+        if helm list -n "$GITLAB_NAMESPACE" | grep -q "gitlab"; then
             log_warn "GitLab is already deployed"
             read -p "Do you want to upgrade? (y/N): " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
                 log_info "Upgrading GitLab..."
                 helm upgrade gitlab gitlab/gitlab \
-                    -n gitlab \
+                    -n "$GITLAB_NAMESPACE" \
                     -f "$PROJECT_ROOT/k8s/gitlab/values.yaml" \
                     --timeout=600s
             else
@@ -97,7 +98,7 @@ deploy_gitlab() {
         else
             log_info "Installing GitLab (this may take several minutes)..."
             helm install gitlab gitlab/gitlab \
-                -n gitlab \
+                -n "$GITLAB_NAMESPACE" \
                 -f "$PROJECT_ROOT/k8s/gitlab/values.yaml" \
                 --timeout=600s \
                 --wait
@@ -115,20 +116,20 @@ wait_for_gitlab() {
         log_info "Waiting for GitLab pod..."
         kubectl wait --for=condition=ready pod \
             -l app=gitlab \
-            -n gitlab \
+            -n "$GITLAB_NAMESPACE" \
             --timeout=600s || {
             log_warn "GitLab pod may still be starting. Checking status..."
-            kubectl get pods -n gitlab -l app=gitlab
+            kubectl get pods -n "$GITLAB_NAMESPACE" -l app=gitlab
         }
     else
         # Wait for Helm deployment
         log_info "Waiting for GitLab webservice..."
         kubectl wait --for=condition=ready pod \
             -l app=webservice \
-            -n gitlab \
+            -n "$GITLAB_NAMESPACE" \
             --timeout=600s || {
             log_warn "Webservice pods may still be starting. Checking status..."
-            kubectl get pods -n gitlab -l app=webservice
+            kubectl get pods -n "$GITLAB_NAMESPACE" -l app=webservice
         }
     fi
 
@@ -140,7 +141,7 @@ create_ingress() {
 
     if [[ "$USE_LIGHTWEIGHT" == "true" ]]; then
         # Ingress is created by the lightweight manifest
-        if kubectl get ingress -n gitlab gitlab &> /dev/null; then
+        if kubectl get ingress -n "$GITLAB_NAMESPACE" gitlab &> /dev/null; then
             log_info "GitLab Ingress exists"
         else
             log_error "GitLab Ingress not found. Check deployment."
@@ -148,7 +149,7 @@ create_ingress() {
         fi
     else
         # GitLab Helm chart should create ingress automatically
-        if kubectl get ingress -n gitlab gitlab-webservice-default &> /dev/null; then
+        if kubectl get ingress -n "$GITLAB_NAMESPACE" gitlab-webservice-default &> /dev/null; then
             log_info "GitLab Ingress already exists"
         else
             log_warn "GitLab Ingress not found, creating manually..."
@@ -158,7 +159,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: gitlab
-  namespace: gitlab
+  namespace: ${GITLAB_NAMESPACE}
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
@@ -166,7 +167,7 @@ metadata:
 spec:
   ingressClassName: public
   rules:
-  - host: gitlab.local
+  - host: ${GITLAB_HOST_EXTERNAL:-gitlab.local}
     http:
       paths:
       - path: /
@@ -196,8 +197,8 @@ get_root_password() {
         # Wait for secret to be created by Helm
         sleep 10
 
-        if kubectl get secret -n gitlab gitlab-gitlab-initial-root-password &> /dev/null; then
-            ROOT_PASSWORD=$(kubectl get secret -n gitlab gitlab-gitlab-initial-root-password -o jsonpath='{.data.password}' | base64 -d)
+        if kubectl get secret -n "$GITLAB_NAMESPACE" gitlab-gitlab-initial-root-password &> /dev/null; then
+            ROOT_PASSWORD=$(kubectl get secret -n "$GITLAB_NAMESPACE" gitlab-gitlab-initial-root-password -o jsonpath='{.data.password}' | base64 -d)
             echo "$ROOT_PASSWORD" > "$PROJECT_ROOT/k8s/gitlab/root-password.txt"
             chmod 600 "$PROJECT_ROOT/k8s/gitlab/root-password.txt"
             log_info "Root password saved to: $PROJECT_ROOT/k8s/gitlab/root-password.txt"
@@ -208,12 +209,13 @@ get_root_password() {
 }
 
 print_info() {
+    local gitlab_url="${GITLAB_URL_EXTERNAL:-http://${GITLAB_HOST_EXTERNAL:-gitlab.local}}"
     echo ""
     echo "========================================="
     log_info "GitLab Setup Complete!"
     echo "========================================="
     echo ""
-    echo "Access GitLab at: http://gitlab.local"
+    echo "Access GitLab at: $gitlab_url"
     echo ""
     echo "Default credentials:"
     echo "  Username: root"
@@ -221,17 +223,17 @@ print_info() {
         echo "  Password: $(cat $PROJECT_ROOT/k8s/gitlab/root-password.txt)"
     else
         echo "  Password: Check $PROJECT_ROOT/k8s/gitlab/root-password.txt (will be created)"
-        echo "  Or run: kubectl get secret -n gitlab gitlab-gitlab-initial-root-password -o jsonpath='{.data.password}' | base64 -d"
+        echo "  Or run: kubectl get secret -n $GITLAB_NAMESPACE gitlab-gitlab-initial-root-password -o jsonpath='{.data.password}' | base64 -d"
     fi
     echo ""
     echo "GitLab pods:"
-    kubectl get pods -n gitlab
+    kubectl get pods -n "$GITLAB_NAMESPACE"
     echo ""
     echo "Ingress:"
-    kubectl get ingress -n gitlab
+    kubectl get ingress -n "$GITLAB_NAMESPACE"
     echo ""
     echo "Next steps:"
-    echo "  1. Login to GitLab at http://gitlab.local"
+    echo "  1. Login to GitLab at $gitlab_url"
     echo "  2. Change the root password"
     echo "  3. Create projects for example-app and k8s-deployments"
     echo "  4. Configure GitLab to work with Jenkins (webhooks)"

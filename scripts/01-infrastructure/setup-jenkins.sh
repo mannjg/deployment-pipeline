@@ -3,27 +3,28 @@ set -euo pipefail
 
 # Jenkins Setup Script
 # Deploys Jenkins using Helm with custom agent
+#
+# Usage: ./setup-jenkins.sh <config-file>
+#    Or: export CLUSTER_CONFIG=<config-file>
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+# Load cluster configuration (provides JENKINS_NAMESPACE and other vars)
+# Accept config file as argument or from CLUSTER_CONFIG env var
+CONFIG_FILE="${1:-${CLUSTER_CONFIG:-}}"
+if [[ -z "$CONFIG_FILE" || ! -f "$CONFIG_FILE" ]]; then
+    echo "Error: Cluster config file required"
+    echo "Usage: $0 <config-file>"
+    echo "   Or: export CLUSTER_CONFIG=<config-file>"
+    exit 1
+fi
+# shellcheck source=/dev/null
+source "$CONFIG_FILE"
+export CLUSTER_CONFIG="$CONFIG_FILE"
 
-log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+# Source shared logging library
+source "$SCRIPT_DIR/../lib/logging.sh"
 
 check_prerequisites() {
     log_info "Checking prerequisites..."
@@ -38,9 +39,9 @@ check_prerequisites() {
         exit 1
     fi
 
-    if ! kubectl get namespace jenkins &> /dev/null; then
-        log_warn "Jenkins namespace doesn't exist. Creating..."
-        kubectl create namespace jenkins
+    if ! kubectl get namespace "$JENKINS_NAMESPACE" &> /dev/null; then
+        log_warn "Jenkins namespace '$JENKINS_NAMESPACE' doesn't exist. Creating..."
+        kubectl create namespace "$JENKINS_NAMESPACE"
     fi
 
     # Check if custom agent image exists
@@ -65,14 +66,14 @@ deploy_jenkins() {
     log_info "Deploying Jenkins..."
 
     # Check if already deployed
-    if helm list -n jenkins | grep -q "jenkins"; then
+    if helm list -n "$JENKINS_NAMESPACE" | grep -q "jenkins"; then
         log_warn "Jenkins is already deployed"
         read -p "Do you want to upgrade? (y/N): " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             log_info "Upgrading Jenkins..."
             helm upgrade jenkins jenkins/jenkins \
-                -n jenkins \
+                -n "$JENKINS_NAMESPACE" \
                 -f "$PROJECT_ROOT/k8s/jenkins/values.yaml" \
                 --timeout=600s
         else
@@ -82,7 +83,7 @@ deploy_jenkins() {
     else
         log_info "Installing Jenkins (this may take several minutes)..."
         helm install jenkins jenkins/jenkins \
-            -n jenkins \
+            -n "$JENKINS_NAMESPACE" \
             -f "$PROJECT_ROOT/k8s/jenkins/values.yaml" \
             --timeout=600s \
             --wait
@@ -98,10 +99,10 @@ wait_for_jenkins() {
     log_info "Waiting for Jenkins controller..."
     kubectl wait --for=condition=ready pod \
         -l app.kubernetes.io/component=jenkins-controller \
-        -n jenkins \
+        -n "$JENKINS_NAMESPACE" \
         --timeout=600s || {
         log_warn "Jenkins controller pods may still be starting. Checking status..."
-        kubectl get pods -n jenkins
+        kubectl get pods -n "$JENKINS_NAMESPACE"
     }
 
     log_info "Jenkins is ready!"
@@ -113,15 +114,15 @@ get_admin_password() {
     # Wait for secret to be created
     sleep 10
 
-    if kubectl get secret -n jenkins jenkins &> /dev/null; then
-        ADMIN_PASSWORD=$(kubectl get secret -n jenkins jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
+    if kubectl get secret -n "$JENKINS_NAMESPACE" jenkins &> /dev/null; then
+        ADMIN_PASSWORD=$(kubectl get secret -n "$JENKINS_NAMESPACE" jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
         echo "$ADMIN_PASSWORD" > "$PROJECT_ROOT/k8s/jenkins/admin-password.txt"
         chmod 600 "$PROJECT_ROOT/k8s/jenkins/admin-password.txt"
         log_info "Admin password saved to: $PROJECT_ROOT/k8s/jenkins/admin-password.txt"
     else
         log_warn "Admin password secret not found. It may be created later."
         log_info "You can retrieve it with:"
-        log_info "  kubectl get secret -n jenkins jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d"
+        log_info "  kubectl get secret -n $JENKINS_NAMESPACE jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d"
     fi
 }
 
@@ -130,21 +131,22 @@ create_docker_config() {
 
     # Create a secret for Docker config (if needed)
     # This allows agents to pull images from Docker Hub
-    if ! kubectl get secret -n jenkins docker-config &> /dev/null; then
+    if ! kubectl get secret -n "$JENKINS_NAMESPACE" docker-config &> /dev/null; then
         log_info "Creating docker-config secret..."
         kubectl create secret generic docker-config \
-            -n jenkins \
+            -n "$JENKINS_NAMESPACE" \
             --from-literal=config.json='{"auths":{}}' || true
     fi
 }
 
 print_info() {
+    local jenkins_url="${JENKINS_URL_EXTERNAL:-http://${JENKINS_HOST_EXTERNAL:-jenkins.local}}"
     echo ""
     echo "========================================="
     log_info "Jenkins Setup Complete!"
     echo "========================================="
     echo ""
-    echo "Access Jenkins at: http://jenkins.local"
+    echo "Access Jenkins at: $jenkins_url"
     echo ""
     echo "Default credentials:"
     echo "  Username: admin"
@@ -152,17 +154,17 @@ print_info() {
         echo "  Password: $(cat $PROJECT_ROOT/k8s/jenkins/admin-password.txt)"
     else
         echo "  Password: Run the following to retrieve:"
-        echo "    kubectl get secret -n jenkins jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d"
+        echo "    kubectl get secret -n $JENKINS_NAMESPACE jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d"
     fi
     echo ""
     echo "Jenkins pods:"
-    kubectl get pods -n jenkins
+    kubectl get pods -n "$JENKINS_NAMESPACE"
     echo ""
     echo "Ingress:"
-    kubectl get ingress -n jenkins
+    kubectl get ingress -n "$JENKINS_NAMESPACE"
     echo ""
     echo "Next steps:"
-    echo "  1. Login to Jenkins at http://jenkins.local"
+    echo "  1. Login to Jenkins at $jenkins_url"
     echo "  2. Configure GitLab connection"
     echo "  3. Create pipeline jobs for example-app"
     echo "  4. Configure credentials for GitLab and Nexus"

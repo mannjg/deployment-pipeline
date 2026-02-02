@@ -4,33 +4,43 @@ set -euo pipefail
 # Infrastructure Apply Script
 # Deploys all CI/CD infrastructure components to a remote microk8s cluster
 #
-# Usage: ./scripts/apply-infrastructure.sh [env-file]
-# Default env-file: env.local
+# Usage: ./scripts/apply-infrastructure.sh <config-file>
+#    Or: export CLUSTER_CONFIG=<config-file>
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Load environment configuration
-ENV_FILE="${1:-$PROJECT_DIR/env.local}"
-if [[ ! -f "$ENV_FILE" ]]; then
-    echo "Error: Environment file $ENV_FILE not found"
-    echo "Copy env.example to env.local and configure it first"
+# Load cluster configuration
+# Accept config file as argument or from CLUSTER_CONFIG env var
+CONFIG_FILE="${1:-${CLUSTER_CONFIG:-}}"
+if [[ -z "$CONFIG_FILE" || ! -f "$CONFIG_FILE" ]]; then
+    echo "Error: Cluster config file required"
+    echo "Usage: $0 <config-file>"
+    echo "   Or: export CLUSTER_CONFIG=<config-file>"
     exit 1
 fi
 
-echo "Loading configuration from $ENV_FILE"
+echo "Loading configuration from $CONFIG_FILE"
 set -a
-source "$ENV_FILE"
+# shellcheck source=/dev/null
+source "$CONFIG_FILE"
 set +a
+export CLUSTER_CONFIG="$CONFIG_FILE"
 
-# Validate required variables
-REQUIRED_VARS=(GITLAB_HOST JENKINS_HOST NEXUS_HOST ARGOCD_HOST STORAGE_CLASS REMOTE_HOST REMOTE_USER)
+# Validate required variables for remote deployment
+REQUIRED_VARS=(GITLAB_NAMESPACE JENKINS_NAMESPACE NEXUS_NAMESPACE ARGOCD_NAMESPACE STORAGE_CLASS REMOTE_HOST REMOTE_USER)
 for var in "${REQUIRED_VARS[@]}"; do
     if [[ -z "${!var:-}" ]]; then
-        echo "Error: Required variable $var is not set in $ENV_FILE"
+        echo "Error: Required variable $var is not set in $CONFIG_FILE"
         exit 1
     fi
 done
+
+# For backwards compatibility, support old variable names if new ones not set
+GITLAB_HOST="${GITLAB_HOST_EXTERNAL:-${GITLAB_HOST:-}}"
+JENKINS_HOST="${JENKINS_HOST_EXTERNAL:-${JENKINS_HOST:-}}"
+NEXUS_HOST="${NEXUS_HOST_EXTERNAL:-${NEXUS_HOST:-}}"
+ARGOCD_HOST="${ARGOCD_HOST_EXTERNAL:-${ARGOCD_HOST:-}}"
 
 echo "=== Infrastructure Deployment ==="
 echo "Target: $REMOTE_USER@$REMOTE_HOST"
@@ -105,15 +115,18 @@ apply_manifest "$PROJECT_DIR/k8s/jenkins/jenkins-lightweight.yaml" "Jenkins"
 # 5. ArgoCD
 echo ""
 echo "=== Step 5: ArgoCD ==="
+# Ensure ArgoCD namespace exists
+ssh "$REMOTE_USER@$REMOTE_HOST" \
+    "kubectl get namespace $ARGOCD_NAMESPACE &>/dev/null || kubectl create namespace $ARGOCD_NAMESPACE"
 # ArgoCD uses the upstream manifest directly
 echo "Applying ArgoCD from upstream..."
 ssh "$REMOTE_USER@$REMOTE_HOST" \
-    "kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml" || {
+    "kubectl apply -n $ARGOCD_NAMESPACE -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml" || {
     # If upstream fails, try local copy
     echo "Upstream failed, trying local copy..."
     if [[ -f "$PROJECT_DIR/k8s/argocd/install.yaml" ]]; then
         scp "$PROJECT_DIR/k8s/argocd/install.yaml" "$REMOTE_USER@$REMOTE_HOST:/tmp/"
-        ssh "$REMOTE_USER@$REMOTE_HOST" "kubectl apply -n argocd -f /tmp/install.yaml"
+        ssh "$REMOTE_USER@$REMOTE_HOST" "kubectl apply -n $ARGOCD_NAMESPACE -f /tmp/install.yaml"
     fi
 }
 apply_manifest "$PROJECT_DIR/k8s/argocd/ingress.yaml" "ArgoCD Ingress"
@@ -124,10 +137,10 @@ echo ""
 echo "Waiting for all pods to be ready..."
 
 # Wait for critical pods
-wait_for_pods "gitlab" "app=gitlab" 300
-wait_for_pods "nexus" "app=nexus" 180
-wait_for_pods "jenkins" "app=jenkins" 180
-wait_for_pods "argocd" "app.kubernetes.io/name=argocd-server" 180
+wait_for_pods "$GITLAB_NAMESPACE" "app=gitlab" 300
+wait_for_pods "$NEXUS_NAMESPACE" "app=nexus" 180
+wait_for_pods "$JENKINS_NAMESPACE" "app=jenkins" 180
+wait_for_pods "$ARGOCD_NAMESPACE" "app.kubernetes.io/name=argocd-server" 180
 
 echo ""
 echo "=== Infrastructure Status ==="
