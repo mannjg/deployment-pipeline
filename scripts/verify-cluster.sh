@@ -145,10 +145,13 @@ check_pod_status() {
     # Use subshell to handle grep exit code without affecting script
     ready_output=$(kubectl get pods -n "$namespace" -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
     if [[ -n "$ready_output" ]]; then
-        ready=$(echo "$ready_output" | tr ' ' '\n' | grep -c True 2>/dev/null || echo 0)
+        ready=$(echo "$ready_output" | tr ' ' '\n' | grep -c True 2>/dev/null | tr -d '\n' || echo 0)
     else
         ready=0
     fi
+    # Ensure ready is a valid number
+    ready=${ready:-0}
+    [[ "$ready" =~ ^[0-9]+$ ]] || ready=0
 
     # Get total pod count (trim whitespace)
     total=$(kubectl get pods -n "$namespace" --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo 0)
