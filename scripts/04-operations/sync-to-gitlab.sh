@@ -159,21 +159,42 @@ if ! git diff-index --quiet HEAD -- 2>/dev/null; then
     fi
 fi
 
+# Function to sync a subtree using split + force push
+# This handles both initial (empty remote) and subsequent syncs reliably
+sync_subtree() {
+    local prefix="$1"
+    local remote="$2"
+    local branch="$3"
+
+    echo -e "${YELLOW}Syncing ${prefix}...${NC}"
+
+    # Split the subtree to get the commit SHA for this prefix
+    local split_sha
+    split_sha=$(git subtree split --prefix="$prefix" HEAD 2>/dev/null)
+
+    if [[ -z "$split_sha" ]]; then
+        echo -e "${RED}  ✗ Failed to split subtree for ${prefix}${NC}"
+        return 1
+    fi
+
+    # Force push the split SHA to the remote branch
+    # This works for both empty repos and existing content
+    if GIT_SSL_NO_VERIFY=true git push "$remote" "${split_sha}:refs/heads/${branch}" --force 2>&1; then
+        echo -e "${GREEN}  ✓ ${prefix} synced${NC}"
+        return 0
+    else
+        echo -e "${RED}  ✗ ${prefix} sync failed${NC}"
+        return 1
+    fi
+}
+
 # Sync example-app
-echo -e "${YELLOW}Syncing example-app...${NC}"
-if GIT_SSL_NO_VERIFY=true git subtree push --prefix=example-app $GITLAB_APP_REMOTE "$BRANCH" 2>&1; then
-    echo -e "${GREEN}  ✓ example-app synced${NC}"
-else
-    echo -e "${RED}  ✗ example-app sync failed${NC}"
+if ! sync_subtree "example-app" "$GITLAB_APP_REMOTE" "$BRANCH"; then
     exit 1
 fi
 
 # Sync k8s-deployments
-echo -e "${YELLOW}Syncing k8s-deployments...${NC}"
-if GIT_SSL_NO_VERIFY=true git subtree push --prefix=k8s-deployments $GITLAB_DEPLOYMENTS_REMOTE "$BRANCH" 2>&1; then
-    echo -e "${GREEN}  ✓ k8s-deployments synced${NC}"
-else
-    echo -e "${RED}  ✗ k8s-deployments sync failed${NC}"
+if ! sync_subtree "k8s-deployments" "$GITLAB_DEPLOYMENTS_REMOTE" "$BRANCH"; then
     exit 1
 fi
 

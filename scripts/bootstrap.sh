@@ -368,17 +368,33 @@ setup_git_remotes() {
     # Ensure we're in the project root for git operations
     cd "$PROJECT_ROOT"
 
+    # Get GitLab API token for authentication
+    local gitlab_token
+    gitlab_token=$(kubectl get secret "$GITLAB_API_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
+        -o jsonpath="{.data.${GITLAB_API_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
+
+    if [[ -z "$gitlab_token" ]]; then
+        log_error "Could not get GitLab API token for git remote setup"
+        return 1
+    fi
+
     # Determine remote names
     local app_remote="gitlab-app-${CLUSTER_NAME}"
     local deployments_remote="gitlab-deployments-${CLUSTER_NAME}"
+
+    # Build authenticated URLs using oauth2 format (handles special chars in token)
+    # Format: https://oauth2:<token>@hostname/path.git
+    local gitlab_host="${GITLAB_HOST_EXTERNAL}"
+    local app_url="https://oauth2:${gitlab_token}@${gitlab_host}/${APP_REPO_PATH}.git"
+    local deployments_url="https://oauth2:${gitlab_token}@${gitlab_host}/${DEPLOYMENTS_REPO_PATH}.git"
 
     # Remove existing remotes if they exist (idempotent)
     git remote remove "$app_remote" 2>/dev/null || true
     git remote remove "$deployments_remote" 2>/dev/null || true
 
-    # Add cluster-specific remotes
-    git remote add "$app_remote" "${GITLAB_URL_EXTERNAL}/${APP_REPO_PATH}.git"
-    git remote add "$deployments_remote" "${GITLAB_URL_EXTERNAL}/${DEPLOYMENTS_REPO_PATH}.git"
+    # Add cluster-specific remotes with oauth2 authentication
+    git remote add "$app_remote" "$app_url"
+    git remote add "$deployments_remote" "$deployments_url"
 
     log_info "  Added remote: $app_remote -> ${GITLAB_URL_EXTERNAL}/${APP_REPO_PATH}.git"
     log_info "  Added remote: $deployments_remote -> ${GITLAB_URL_EXTERNAL}/${DEPLOYMENTS_REPO_PATH}.git"
@@ -425,6 +441,31 @@ setup_jenkins_pipelines() {
     return $errors
 }
 
+create_jenkins_credentials_secret() {
+    log_info "Creating Jenkins admin credentials secret..."
+
+    # Get Jenkins admin password from ConfigMap (set during bootstrap)
+    local jenkins_password
+    jenkins_password=$(kubectl get configmap jenkins-config -n "$JENKINS_NAMESPACE" \
+        -o jsonpath='{.data.jenkins\.model\.Jenkins\.adminPassword}' 2>/dev/null) || jenkins_password="admin"
+
+    # Create secret if it doesn't exist
+    if kubectl get secret jenkins-admin-credentials -n "$JENKINS_NAMESPACE" &>/dev/null; then
+        log_info "  Jenkins credentials secret already exists"
+    else
+        kubectl create secret generic jenkins-admin-credentials \
+            -n "$JENKINS_NAMESPACE" \
+            --from-literal=username=admin \
+            --from-literal=password="$jenkins_password"
+        log_info "  Created jenkins-admin-credentials secret"
+    fi
+}
+
+setup_argocd_applications() {
+    log_info "Setting up ArgoCD applications..."
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-argocd-applications.sh" "ArgoCD applications" "false"
+}
+
 configure_services() {
     log_step "Step 5: Configuring services"
 
@@ -445,10 +486,16 @@ configure_services() {
     # 5e. Setup environment branches (dev/stage/prod) in k8s-deployments
     setup_environment_branches || ((errors++))
 
-    # 5f. Setup Jenkins pipelines and webhooks
+    # 5f. Setup ArgoCD applications (after env branches exist)
+    setup_argocd_applications || ((errors++))
+
+    # 5g. Create Jenkins credentials secret (needed for webhook setup)
+    create_jenkins_credentials_secret || ((errors++))
+
+    # 5h. Setup Jenkins pipelines and webhooks
     setup_jenkins_pipelines || ((errors++))
 
-    # 5g. Configure merge requirements (optional)
+    # 5i. Configure merge requirements (optional)
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/configure-merge-requirements.sh" "Merge requirements" || true
 
     if [[ $errors -gt 0 ]]; then
