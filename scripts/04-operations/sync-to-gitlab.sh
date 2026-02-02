@@ -8,9 +8,13 @@
 # - Independent CI/CD execution per component
 #
 # Prerequisites:
-# - Remotes configured: gitlab-app, gitlab-deployments
+# - Remotes configured: gitlab-app[-<cluster>], gitlab-deployments[-<cluster>]
 # - GitLab projects exist: p2c/example-app, p2c/k8s-deployments
 # - Clean working tree (no uncommitted changes)
+#
+# Multi-cluster support:
+# - If CLUSTER_CONFIG points to a config file with CLUSTER_NAME, uses cluster-specific remotes
+# - Example: CLUSTER_CONFIG=config/clusters/alpha.env uses gitlab-app-alpha, gitlab-deployments-alpha
 #
 # Usage:
 #   ./scripts/sync-to-gitlab.sh [branch]
@@ -30,6 +34,17 @@ cd "$PROJECT_ROOT"
 
 # Source infrastructure config
 source "$PROJECT_ROOT/scripts/lib/infra.sh" "${CLUSTER_CONFIG:-}"
+
+# Determine remote names based on cluster config
+# If CLUSTER_NAME is set (from config), use cluster-specific remotes
+# Otherwise fall back to default remotes
+if [[ -n "${CLUSTER_NAME:-}" ]]; then
+    GITLAB_APP_REMOTE="gitlab-app-${CLUSTER_NAME}"
+    GITLAB_DEPLOYMENTS_REMOTE="gitlab-deployments-${CLUSTER_NAME}"
+else
+    GITLAB_APP_REMOTE="gitlab-app"
+    GITLAB_DEPLOYMENTS_REMOTE="gitlab-deployments"
+fi
 
 # Parse arguments
 PULL_ONLY=""
@@ -67,12 +82,12 @@ if [[ -n "$PULL_ONLY" ]]; then
 
     case "$PULL_ONLY" in
         example-app)
-            if ! git remote get-url gitlab-app &>/dev/null; then
-                echo -e "${RED}ERROR: Remote 'gitlab-app' not configured${NC}"
+            if ! git remote get-url $GITLAB_APP_REMOTE &>/dev/null; then
+                echo -e "${RED}ERROR: Remote '$GITLAB_APP_REMOTE' not configured${NC}"
                 exit 1
             fi
             echo -e "${YELLOW}Pulling example-app from GitLab...${NC}"
-            if GIT_SSL_NO_VERIFY=true git subtree pull --prefix=example-app gitlab-app "$BRANCH" -m "Merge example-app from GitLab" --squash 2>&1; then
+            if GIT_SSL_NO_VERIFY=true git subtree pull --prefix=example-app $GITLAB_APP_REMOTE "$BRANCH" -m "Merge example-app from GitLab" --squash 2>&1; then
                 echo -e "${GREEN}  ✓ example-app pulled${NC}"
                 exit 0
             else
@@ -81,12 +96,12 @@ if [[ -n "$PULL_ONLY" ]]; then
             fi
             ;;
         k8s-deployments)
-            if ! git remote get-url gitlab-deployments &>/dev/null; then
-                echo -e "${RED}ERROR: Remote 'gitlab-deployments' not configured${NC}"
+            if ! git remote get-url $GITLAB_DEPLOYMENTS_REMOTE &>/dev/null; then
+                echo -e "${RED}ERROR: Remote '$GITLAB_DEPLOYMENTS_REMOTE' not configured${NC}"
                 exit 1
             fi
             echo -e "${YELLOW}Pulling k8s-deployments from GitLab...${NC}"
-            if GIT_SSL_NO_VERIFY=true git subtree pull --prefix=k8s-deployments gitlab-deployments "$BRANCH" -m "Merge k8s-deployments from GitLab" 2>&1; then
+            if GIT_SSL_NO_VERIFY=true git subtree pull --prefix=k8s-deployments $GITLAB_DEPLOYMENTS_REMOTE "$BRANCH" -m "Merge k8s-deployments from GitLab" 2>&1; then
                 echo -e "${GREEN}  ✓ k8s-deployments pulled${NC}"
                 exit 0
             else
@@ -104,18 +119,20 @@ fi
 
 echo -e "${GREEN}=== Syncing subtrees to GitLab ===${NC}"
 echo "Branch: $BRANCH"
+echo "Remotes: $GITLAB_APP_REMOTE, $GITLAB_DEPLOYMENTS_REMOTE"
+[[ -n "${CLUSTER_NAME:-}" ]] && echo "Cluster: $CLUSTER_NAME"
 echo ""
 
 # Check remotes exist
-if ! git remote get-url gitlab-app &>/dev/null; then
-    echo -e "${RED}ERROR: Remote 'gitlab-app' not configured${NC}"
-    echo "Run: git remote add gitlab-app ${GITLAB_URL_EXTERNAL}/${APP_REPO_PATH}.git"
+if ! git remote get-url $GITLAB_APP_REMOTE &>/dev/null; then
+    echo -e "${RED}ERROR: Remote '$GITLAB_APP_REMOTE' not configured${NC}"
+    echo "Run: git remote add $GITLAB_APP_REMOTE ${GITLAB_URL_EXTERNAL}/${APP_REPO_PATH}.git"
     exit 1
 fi
 
-if ! git remote get-url gitlab-deployments &>/dev/null; then
-    echo -e "${RED}ERROR: Remote 'gitlab-deployments' not configured${NC}"
-    echo "Run: git remote add gitlab-deployments ${GITLAB_URL_EXTERNAL}/${DEPLOYMENTS_REPO_PATH}.git"
+if ! git remote get-url $GITLAB_DEPLOYMENTS_REMOTE &>/dev/null; then
+    echo -e "${RED}ERROR: Remote '$GITLAB_DEPLOYMENTS_REMOTE' not configured${NC}"
+    echo "Run: git remote add $GITLAB_DEPLOYMENTS_REMOTE ${GITLAB_URL_EXTERNAL}/${DEPLOYMENTS_REPO_PATH}.git"
     exit 1
 fi
 
@@ -144,7 +161,7 @@ fi
 
 # Sync example-app
 echo -e "${YELLOW}Syncing example-app...${NC}"
-if GIT_SSL_NO_VERIFY=true git subtree push --prefix=example-app gitlab-app "$BRANCH" 2>&1; then
+if GIT_SSL_NO_VERIFY=true git subtree push --prefix=example-app $GITLAB_APP_REMOTE "$BRANCH" 2>&1; then
     echo -e "${GREEN}  ✓ example-app synced${NC}"
 else
     echo -e "${RED}  ✗ example-app sync failed${NC}"
@@ -153,7 +170,7 @@ fi
 
 # Sync k8s-deployments
 echo -e "${YELLOW}Syncing k8s-deployments...${NC}"
-if GIT_SSL_NO_VERIFY=true git subtree push --prefix=k8s-deployments gitlab-deployments "$BRANCH" 2>&1; then
+if GIT_SSL_NO_VERIFY=true git subtree push --prefix=k8s-deployments $GITLAB_DEPLOYMENTS_REMOTE "$BRANCH" 2>&1; then
     echo -e "${GREEN}  ✓ k8s-deployments synced${NC}"
 else
     echo -e "${RED}  ✗ k8s-deployments sync failed${NC}"

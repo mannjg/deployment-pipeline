@@ -17,10 +17,10 @@
 # 3. GITLAB_TOKEN env var set, or gitlab-api-token K8s secret exists
 #
 # Usage:
-#   ./scripts/03-pipelines/setup-gitlab-env-branches.sh  # Initial bootstrap only
+#   ./scripts/03-pipelines/setup-gitlab-env-branches.sh <config-file>
 #
 # For demo reset (preserves valid images):
-#   ./scripts/03-pipelines/reset-demo-state.sh
+#   ./scripts/03-pipelines/reset-demo-state.sh <config-file>
 #
 
 set -euo pipefail
@@ -40,13 +40,8 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step()  { echo -e "${BLUE}[→]${NC} $1"; }
 
-# Source infrastructure config
-if [[ -f "$PROJECT_ROOT/config/infra.env" ]]; then
-    source "$PROJECT_ROOT/config/infra.env"
-else
-    log_error "Cannot find config/infra.env"
-    exit 1
-fi
+# Source infrastructure config via lib/infra.sh
+source "$SCRIPT_DIR/../lib/infra.sh" "${1:-${CLUSTER_CONFIG:-}}"
 
 # Note: --reset flag has been removed. Use reset-demo-state.sh instead.
 # This script ONLY does initial bootstrap (creates branches if they don't exist
@@ -61,37 +56,37 @@ preflight_checks() {
 
     # Check required infra.env variables
     if [[ -z "${GITLAB_HOST_EXTERNAL:-}" ]]; then
-        log_error "GITLAB_HOST_EXTERNAL not set in config/infra.env"
+        log_error "GITLAB_HOST_EXTERNAL not set in cluster config"
         failed=1
     fi
 
     if [[ -z "${GITLAB_NAMESPACE:-}" ]]; then
-        log_error "GITLAB_NAMESPACE not set in config/infra.env"
+        log_error "GITLAB_NAMESPACE not set in cluster config"
         failed=1
     fi
 
     if [[ -z "${DEPLOYMENTS_REPO_PATH:-}" ]]; then
-        log_error "DEPLOYMENTS_REPO_PATH not set in config/infra.env"
+        log_error "DEPLOYMENTS_REPO_PATH not set in cluster config"
         failed=1
     fi
 
     if [[ -z "${GITLAB_API_TOKEN_SECRET:-}" ]]; then
-        log_error "GITLAB_API_TOKEN_SECRET not set in config/infra.env"
+        log_error "GITLAB_API_TOKEN_SECRET not set in cluster config"
         failed=1
     fi
 
     if [[ -z "${GITLAB_API_TOKEN_KEY:-}" ]]; then
-        log_error "GITLAB_API_TOKEN_KEY not set in config/infra.env"
+        log_error "GITLAB_API_TOKEN_KEY not set in cluster config"
         failed=1
     fi
 
     if [[ -z "${GITLAB_USER_SECRET:-}" ]]; then
-        log_error "GITLAB_USER_SECRET not set in config/infra.env"
+        log_error "GITLAB_USER_SECRET not set in cluster config"
         failed=1
     fi
 
     if [[ -z "${GITLAB_USER_KEY:-}" ]]; then
-        log_error "GITLAB_USER_KEY not set in config/infra.env"
+        log_error "GITLAB_USER_KEY not set in cluster config"
         failed=1
     fi
 

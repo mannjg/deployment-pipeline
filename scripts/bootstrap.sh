@@ -329,37 +329,133 @@ wait_for_infrastructure() {
 # Service Configuration
 # =============================================================================
 
+run_script_if_exists() {
+    local script="$1"
+    local description="$2"
+    local is_fatal="${3:-false}"
+
+    if [[ ! -f "$script" ]]; then
+        log_warn "$description script not found: $script"
+        return 1
+    fi
+
+    log_info "Running $description..."
+    if ! "$script" "$CONFIG_FILE"; then
+        if [[ "$is_fatal" == "true" ]]; then
+            log_error "$description failed (fatal)"
+            exit 1
+        else
+            log_warn "$description had issues (non-fatal)"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+configure_gitlab_api_token() {
+    log_info "Creating GitLab API token..."
+    run_script_if_exists "$SCRIPT_DIR/02-configure/create-gitlab-api-token.sh" "GitLab API token" "true"
+}
+
+configure_gitlab_projects() {
+    log_info "Creating GitLab projects..."
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/create-gitlab-projects.sh" "GitLab projects" "true"
+}
+
+setup_git_remotes() {
+    log_info "Setting up git remotes for cluster: $CLUSTER_NAME..."
+
+    # Ensure we're in the project root for git operations
+    cd "$PROJECT_ROOT"
+
+    # Determine remote names
+    local app_remote="gitlab-app-${CLUSTER_NAME}"
+    local deployments_remote="gitlab-deployments-${CLUSTER_NAME}"
+
+    # Remove existing remotes if they exist (idempotent)
+    git remote remove "$app_remote" 2>/dev/null || true
+    git remote remove "$deployments_remote" 2>/dev/null || true
+
+    # Add cluster-specific remotes
+    git remote add "$app_remote" "${GITLAB_URL_EXTERNAL}/${APP_REPO_PATH}.git"
+    git remote add "$deployments_remote" "${GITLAB_URL_EXTERNAL}/${DEPLOYMENTS_REPO_PATH}.git"
+
+    log_info "  Added remote: $app_remote -> ${GITLAB_URL_EXTERNAL}/${APP_REPO_PATH}.git"
+    log_info "  Added remote: $deployments_remote -> ${GITLAB_URL_EXTERNAL}/${DEPLOYMENTS_REPO_PATH}.git"
+}
+
+sync_subtrees_to_gitlab() {
+    log_info "Syncing subtrees to GitLab..."
+
+    # Ensure we're in the project root for git operations
+    cd "$PROJECT_ROOT"
+
+    # The sync script is cluster-aware via CLUSTER_CONFIG
+    if [[ -x "$SCRIPT_DIR/04-operations/sync-to-gitlab.sh" ]]; then
+        # Run non-interactively (skip uncommitted changes prompt)
+        if ! yes | "$SCRIPT_DIR/04-operations/sync-to-gitlab.sh" main 2>&1; then
+            log_warn "Subtree sync had issues"
+            return 1
+        fi
+    else
+        log_warn "sync-to-gitlab.sh not found"
+        return 1
+    fi
+}
+
+setup_environment_branches() {
+    log_info "Setting up environment branches..."
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-gitlab-env-branches.sh" "Environment branches" "true"
+}
+
+setup_jenkins_pipelines() {
+    log_info "Setting up Jenkins pipelines and webhooks..."
+    local errors=0
+
+    # Setup multibranch pipeline webhook for example-app
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-multibranch-webhook.sh" "Jenkins multibranch webhook" || ((errors++))
+
+    # Setup auto-promote job and webhook
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-auto-promote-job.sh" "Jenkins auto-promote job" || ((errors++))
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-auto-promote-webhook.sh" "Auto-promote webhook" || ((errors++))
+
+    # Setup promote job
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-promote-job.sh" "Jenkins promote job" || ((errors++))
+
+    return $errors
+}
+
 configure_services() {
     log_step "Step 5: Configuring services"
 
     local errors=0
 
-    # Run GitLab setup if available
-    if [[ -x "$SCRIPT_DIR/01-infrastructure/setup-gitlab.sh" ]]; then
-        log_info "Running GitLab configuration..."
-        if ! "$SCRIPT_DIR/01-infrastructure/setup-gitlab.sh" "$CONFIG_FILE"; then
-            log_warn "GitLab setup had issues (non-fatal)"
-            ((errors++))
-        fi
-    else
-        log_warn "GitLab setup script not found or not executable"
-    fi
+    # 5a. Create GitLab API token (required for all subsequent GitLab operations)
+    configure_gitlab_api_token || ((errors++))
 
-    # Run Jenkins setup if available
-    if [[ -x "$SCRIPT_DIR/01-infrastructure/setup-jenkins.sh" ]]; then
-        log_info "Running Jenkins configuration..."
-        if ! "$SCRIPT_DIR/01-infrastructure/setup-jenkins.sh" "$CONFIG_FILE"; then
-            log_warn "Jenkins setup had issues (non-fatal)"
-            ((errors++))
-        fi
-    else
-        log_warn "Jenkins setup script not found or not executable"
-    fi
+    # 5b. Create GitLab projects
+    configure_gitlab_projects || ((errors++))
+
+    # 5c. Setup git remotes for this cluster
+    setup_git_remotes || ((errors++))
+
+    # 5d. Sync subtrees to GitLab (pushes example-app and k8s-deployments)
+    sync_subtrees_to_gitlab || ((errors++))
+
+    # 5e. Setup environment branches (dev/stage/prod) in k8s-deployments
+    setup_environment_branches || ((errors++))
+
+    # 5f. Setup Jenkins pipelines and webhooks
+    setup_jenkins_pipelines || ((errors++))
+
+    # 5g. Configure merge requirements (optional)
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/configure-merge-requirements.sh" "Merge requirements" || true
 
     if [[ $errors -gt 0 ]]; then
         log_warn "Service configuration completed with $errors warning(s)"
+        log_warn "Some features may not work correctly until issues are resolved"
     else
-        log_info "Service configuration completed"
+        log_info "Service configuration completed successfully"
     fi
 }
 

@@ -28,7 +28,16 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Configuration
 # -----------------------------------------------------------------------------
 
-source "$PROJECT_ROOT/config/infra.env"
+# Load infrastructure config via lib/infra.sh
+# Accept config file as argument after job name, or from CLUSTER_CONFIG env
+_CONFIG_ARG=""
+for arg in "$@"; do
+    if [[ "$arg" == *.env ]]; then
+        _CONFIG_ARG="$arg"
+        break
+    fi
+done
+source "$SCRIPT_DIR/../lib/infra.sh" "${_CONFIG_ARG:-${CLUSTER_CONFIG:-}}"
 
 JENKINS_URL="${JENKINS_URL_EXTERNAL:?JENKINS_URL_EXTERNAL not set}"
 

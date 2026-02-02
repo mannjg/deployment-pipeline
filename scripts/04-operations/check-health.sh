@@ -16,13 +16,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Configuration
 # -----------------------------------------------------------------------------
 
-# Load infrastructure config
-if [[ -f "$SCRIPT_DIR/config/infra.env" ]]; then
-    source "$SCRIPT_DIR/config/infra.env"
-else
-    echo "[✗] Infrastructure config not found: config/infra.env"
-    exit 1
-fi
+# Load infrastructure config via lib/infra.sh
+source "$SCRIPT_DIR/../lib/infra.sh" "${1:-${CLUSTER_CONFIG:-}}"
 
 # Load credentials from K8s secrets
 load_credentials() {

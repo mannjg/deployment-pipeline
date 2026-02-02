@@ -24,7 +24,7 @@ CRUMB_FILE="/tmp/jenkins-crumb-$$.json"
 
 # Get crumb with cookies
 echo "Getting CSRF crumb..."
-curl -c "$COOKIE_JAR" -b "$COOKIE_JAR" -s "${JENKINS_URL}/crumbIssuer/api/json" \
+curl -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -s "${JENKINS_URL}/crumbIssuer/api/json" \
   -u "admin:${JENKINS_PASSWORD}" \
   > "$CRUMB_FILE"
 
@@ -32,7 +32,7 @@ CRUMB=$(jq -r '.crumb' "$CRUMB_FILE")
 echo "Crumb: ${CRUMB:0:16}..."
 
 # Build curl command with parameters
-CURL_CMD="curl -X POST \"${JENKINS_URL}/job/${JOB_NAME}/buildWithParameters\" \
+CURL_CMD="curl -k -X POST \"${JENKINS_URL}/job/${JOB_NAME}/buildWithParameters\" \
   -c \"$COOKIE_JAR\" -b \"$COOKIE_JAR\" \
   -u \"admin:${JENKINS_PASSWORD}\" \
   -H \"Jenkins-Crumb: ${CRUMB}\""
@@ -63,7 +63,7 @@ if [ "$HTTP_STATUS" = "201" ]; then
 
   # Wait a moment and get the latest build number
   sleep 2
-  BUILD_NUMBER=$(curl -s "${JENKINS_URL}/job/${JOB_NAME}/api/json" \
+  BUILD_NUMBER=$(curl -sk "${JENKINS_URL}/job/${JOB_NAME}/api/json" \
     -u "admin:${JENKINS_PASSWORD}" \
     | jq -r '.lastBuild.number')
 

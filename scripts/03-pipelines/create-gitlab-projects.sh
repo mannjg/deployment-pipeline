@@ -18,7 +18,7 @@ echo ""
 
 # Create group
 log_step "Creating group '${GITLAB_GROUP}'..."
-curl -sf -X POST "${GITLAB_URL_EXTERNAL}/api/v4/groups" \
+curl -sfk -X POST "${GITLAB_URL_EXTERNAL}/api/v4/groups" \
   --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
   --header "Content-Type: application/json" \
   --data "{\"name\": \"${GITLAB_GROUP}\", \"path\": \"${GITLAB_GROUP}\", \"visibility\": \"private\"}" > /dev/null 2>&1 \
@@ -26,13 +26,13 @@ curl -sf -X POST "${GITLAB_URL_EXTERNAL}/api/v4/groups" \
   || log_warn "Group may already exist"
 
 # Get group ID
-GROUP_ID=$(curl -sf "${GITLAB_URL_EXTERNAL}/api/v4/groups/${GITLAB_GROUP}" \
+GROUP_ID=$(curl -sfk "${GITLAB_URL_EXTERNAL}/api/v4/groups/${GITLAB_GROUP}" \
   --header "PRIVATE-TOKEN: $GITLAB_TOKEN" | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
 log_info "Group ID: $GROUP_ID"
 
 # Create example-app project
 log_step "Creating project '${APP_REPO_NAME}'..."
-curl -sf -X POST "${GITLAB_URL_EXTERNAL}/api/v4/projects" \
+curl -sfk -X POST "${GITLAB_URL_EXTERNAL}/api/v4/projects" \
   --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
   --header "Content-Type: application/json" \
   --data "{\"name\": \"${APP_REPO_NAME}\", \"namespace_id\": $GROUP_ID, \"visibility\": \"private\"}" > /dev/null 2>&1 \
@@ -41,7 +41,7 @@ curl -sf -X POST "${GITLAB_URL_EXTERNAL}/api/v4/projects" \
 
 # Create k8s-deployments project
 log_step "Creating project '${DEPLOYMENTS_REPO_NAME}'..."
-curl -sf -X POST "${GITLAB_URL_EXTERNAL}/api/v4/projects" \
+curl -sfk -X POST "${GITLAB_URL_EXTERNAL}/api/v4/projects" \
   --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
   --header "Content-Type: application/json" \
   --data "{\"name\": \"${DEPLOYMENTS_REPO_NAME}\", \"namespace_id\": $GROUP_ID, \"visibility\": \"private\"}" > /dev/null 2>&1 \

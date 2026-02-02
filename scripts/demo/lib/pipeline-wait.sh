@@ -18,12 +18,7 @@ REPO_ROOT="$(cd "$PIPELINE_LIB_DIR/../../.." && pwd)"
 
 # Load infrastructure config if not already loaded
 if [[ -z "${GITLAB_URL_EXTERNAL:-}" ]]; then
-    if [[ -f "$REPO_ROOT/config/infra.env" ]]; then
-        source "$REPO_ROOT/config/infra.env"
-    else
-        echo "ERROR: config/infra.env not found and GITLAB_URL_EXTERNAL not set"
-        exit 1
-    fi
+    source "$REPO_ROOT/scripts/lib/infra.sh" "${CLUSTER_CONFIG:-}"
 fi
 
 # Default timeouts (can be overridden)

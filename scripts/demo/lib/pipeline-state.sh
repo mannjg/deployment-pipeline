@@ -24,9 +24,7 @@ PIPELINE_STATE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Load infrastructure config if not already loaded
 if [[ -z "${GITLAB_URL_EXTERNAL:-}" ]]; then
     REPO_ROOT="$(cd "$PIPELINE_STATE_LIB_DIR/../../.." && pwd)"
-    if [[ -f "$REPO_ROOT/config/infra.env" ]]; then
-        source "$REPO_ROOT/config/infra.env"
-    fi
+    source "$REPO_ROOT/scripts/lib/infra.sh" "${CLUSTER_CONFIG:-}"
 fi
 
 # State variables (populated by check_pipeline_quiescent)

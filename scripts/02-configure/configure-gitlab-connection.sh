@@ -29,7 +29,7 @@ trap 'rm -f "$COOKIE_JAR" "$CRUMB_FILE"' EXIT
 
 # Get CSRF crumb
 log_step "Getting CSRF crumb..."
-if curl -sf -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+if curl -sfk -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
     "${JENKINS_URL_EXTERNAL}/crumbIssuer/api/json" \
     -u "${JENKINS_USER}:${JENKINS_PASS}" \
     > "$CRUMB_FILE"; then

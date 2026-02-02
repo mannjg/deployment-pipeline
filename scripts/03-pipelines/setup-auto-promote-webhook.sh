@@ -27,7 +27,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Configuration
 # -----------------------------------------------------------------------------
 
-source "$PROJECT_ROOT/config/infra.env"
+# Load infrastructure config via lib/infra.sh
+source "$SCRIPT_DIR/../lib/infra.sh" "${1:-${CLUSTER_CONFIG:-}}"
 
 GITLAB_URL="${GITLAB_URL_EXTERNAL:?GITLAB_URL_EXTERNAL not set}"
 JENKINS_URL_INTERNAL="${JENKINS_URL_INTERNAL:?JENKINS_URL_INTERNAL not set}"

@@ -20,7 +20,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Configuration
 # -----------------------------------------------------------------------------
 
-source "$PROJECT_ROOT/config/infra.env"
+# Load infrastructure config via lib/infra.sh
+source "$SCRIPT_DIR/../lib/infra.sh" "${1:-${CLUSTER_CONFIG:-}}"
 
 JENKINS_URL="${JENKINS_URL_EXTERNAL:?JENKINS_URL_EXTERNAL not set}"
 JOB_NAME="${JENKINS_AUTO_PROMOTE_JOB_NAME:-k8s-deployments-auto-promote}"

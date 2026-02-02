@@ -32,13 +32,16 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Configuration
 # -----------------------------------------------------------------------------
 
-# Load infrastructure config
-if [[ -f "$REPO_ROOT/config/infra.env" ]]; then
-    source "$REPO_ROOT/config/infra.env"
-else
-    echo "[✗] Infrastructure config not found: config/infra.env"
-    exit 1
-fi
+# Load infrastructure config via lib/infra.sh
+# Accept config file as argument after project path, or from CLUSTER_CONFIG env
+_CONFIG_ARG=""
+for arg in "$@"; do
+    if [[ "$arg" == *.env ]]; then
+        _CONFIG_ARG="$arg"
+        break
+    fi
+done
+source "$REPO_ROOT/scripts/lib/infra.sh" "${_CONFIG_ARG:-${CLUSTER_CONFIG:-}}"
 
 # Validate required config from infra.env
 validate_config() {

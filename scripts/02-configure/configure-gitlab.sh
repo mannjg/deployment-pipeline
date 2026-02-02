@@ -26,7 +26,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 wait_for_gitlab() {
     log_info "Waiting for GitLab to be ready..."
     for i in {1..30}; do
-        if curl -sf "${GITLAB_URL}/users/sign_in" > /dev/null 2>&1; then
+        if curl -sfk "${GITLAB_URL}/users/sign_in" > /dev/null 2>&1; then
             log_info "GitLab is ready!"
             return 0
         fi
@@ -41,11 +41,11 @@ get_access_token() {
     log_info "Creating personal access token..."
 
     # Get CSRF token from login page
-    local response=$(curl -sc /tmp/gitlab-cookies "${GITLAB_URL}/users/sign_in" 2>/dev/null)
+    local response=$(curl -skc /tmp/gitlab-cookies "${GITLAB_URL}/users/sign_in" 2>/dev/null)
     local csrf_token=$(echo "$response" | grep -oP 'csrf-token" content="\K[^"]+')
 
     # Login to get session
-    curl -sb /tmp/gitlab-cookies -c /tmp/gitlab-cookies \
+    curl -skb /tmp/gitlab-cookies -c /tmp/gitlab-cookies \
         -X POST "${GITLAB_URL}/users/sign_in" \
         -d "authenticity_token=${csrf_token}&user[login]=${GITLAB_USER}&user[password]=${GITLAB_PASS}" \
         > /dev/null 2>&1 || {

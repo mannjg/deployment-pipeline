@@ -35,29 +35,26 @@ log_step()  { echo -e "${BLUE}[→]${NC} $1"; }
 # Parse arguments
 DRY_RUN=false
 FULL_RESET=false
+CONFIG_FILE=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --dry-run) DRY_RUN=true; shift ;;
         --full) FULL_RESET=true; shift ;;
         -h|--help)
-            echo "Usage: $0 [--dry-run] [--full]"
+            echo "Usage: $0 <config-file> [--dry-run] [--full]"
             echo ""
             echo "Options:"
             echo "  --dry-run  Show what would be cleaned without making changes"
             echo "  --full     Full reset including environment branches"
             exit 0
             ;;
+        *.env) CONFIG_FILE="$1"; shift ;;
         *) log_error "Unknown option: $1"; exit 1 ;;
     esac
 done
 
-# Source infrastructure config
-if [[ -f "$PROJECT_ROOT/config/infra.env" ]]; then
-    source "$PROJECT_ROOT/config/infra.env"
-else
-    log_error "Cannot find config/infra.env"
-    exit 1
-fi
+# Source infrastructure config via lib/infra.sh
+source "$SCRIPT_DIR/../lib/infra.sh" "${CONFIG_FILE:-${CLUSTER_CONFIG:-}}"
 
 echo ""
 echo "========================================"

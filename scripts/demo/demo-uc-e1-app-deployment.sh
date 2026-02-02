@@ -23,13 +23,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Configuration
 # -----------------------------------------------------------------------------
 
-# Load infrastructure config (single source of truth)
-if [[ -f "$REPO_ROOT/config/infra.env" ]]; then
-    source "$REPO_ROOT/config/infra.env"
-else
-    echo "[x] Infrastructure config not found: config/infra.env"
-    exit 1
-fi
+# Load infrastructure config via lib/infra.sh
+source "$SCRIPT_DIR/../lib/infra.sh" "${1:-${CLUSTER_CONFIG:-}}"
 
 # Load demo helpers for pipeline state checks
 source "$REPO_ROOT/scripts/demo/lib/demo-helpers.sh"

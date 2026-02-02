@@ -22,7 +22,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 wait_for_jenkins() {
     log_info "Waiting for Jenkins to be ready..."
     for i in {1..30}; do
-        if curl -sf "${JENKINS_URL}" > /dev/null 2>&1; then
+        if curl -sfk "${JENKINS_URL}" > /dev/null 2>&1; then
             log_info "Jenkins is ready!"
             return 0
         fi

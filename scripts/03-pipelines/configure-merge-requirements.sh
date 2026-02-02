@@ -22,13 +22,13 @@ echo ""
 
 # Get project ID
 log_step "Fetching project ID..."
-PROJECT_ID=$(curl -sf "${GITLAB_URL_EXTERNAL}/api/v4/projects/${PROJECT_PATH}" \
+PROJECT_ID=$(curl -sfk "${GITLAB_URL_EXTERNAL}/api/v4/projects/${PROJECT_PATH}" \
   --header "PRIVATE-TOKEN: $GITLAB_TOKEN" | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
 log_pass "Project ID: $PROJECT_ID"
 
 # Configure project settings
 log_step "Updating project settings..."
-HTTP_STATUS=$(curl -sf -X PUT "${GITLAB_URL_EXTERNAL}/api/v4/projects/${PROJECT_ID}" \
+HTTP_STATUS=$(curl -sfk -X PUT "${GITLAB_URL_EXTERNAL}/api/v4/projects/${PROJECT_ID}" \
   -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
   -H "Content-Type: application/json" \
   -w "%{http_code}" \

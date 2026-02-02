@@ -22,7 +22,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 wait_for_nexus() {
     log_info "Waiting for Nexus to be ready..."
     for i in {1..30}; do
-        if curl -sf "${NEXUS_URL}/service/rest/v1/status" > /dev/null 2>&1; then
+        if curl -sfk "${NEXUS_URL}/service/rest/v1/status" > /dev/null 2>&1; then
             log_info "Nexus is ready!"
             return 0
         fi
@@ -37,7 +37,7 @@ change_admin_password() {
     log_info "Changing admin password..."
 
     # Try with initial password
-    response=$(curl -sf -u "${ADMIN_USER}:${ADMIN_PASS}" \
+    response=$(curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
         -X PUT "${NEXUS_URL}/service/rest/v1/security/users/admin/change-password" \
         -H "Content-Type: text/plain" \
         -d "${NEW_PASSWORD}" 2>&1) || {
@@ -54,7 +54,7 @@ create_maven_repos() {
     log_info "Creating Maven repositories..."
 
     # Maven Releases
-    curl -sf -u "${ADMIN_USER}:${ADMIN_PASS}" \
+    curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
         -X POST "${NEXUS_URL}/service/rest/v1/repositories/maven/hosted" \
         -H "Content-Type: application/json" \
         -d '{
@@ -72,7 +72,7 @@ create_maven_repos() {
         }' > /dev/null 2>&1 && log_info "Created maven-releases" || log_warn "maven-releases may already exist"
 
     # Maven Snapshots
-    curl -sf -u "${ADMIN_USER}:${ADMIN_PASS}" \
+    curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
         -X POST "${NEXUS_URL}/service/rest/v1/repositories/maven/hosted" \
         -H "Content-Type: application/json" \
         -d '{
@@ -93,7 +93,7 @@ create_maven_repos() {
 create_docker_repo() {
     log_info "Creating Docker hosted repository..."
 
-    curl -sf -u "${ADMIN_USER}:${ADMIN_PASS}" \
+    curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
         -X POST "${NEXUS_URL}/service/rest/v1/repositories/docker/hosted" \
         -H "Content-Type: application/json" \
         -d '{
@@ -116,7 +116,7 @@ enable_docker_realm() {
     log_info "Enabling Docker Bearer Token Realm..."
 
     # Get current realms
-    current=$(curl -sf -u "${ADMIN_USER}:${ADMIN_PASS}" \
+    current=$(curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
         -X GET "${NEXUS_URL}/service/rest/v1/security/realms/active" \
         -H "accept: application/json")
 
@@ -124,7 +124,7 @@ enable_docker_realm() {
     if echo "$current" | grep -q "DockerToken"; then
         log_info "Docker Bearer Token Realm already enabled"
     else
-        curl -sf -u "${ADMIN_USER}:${ADMIN_PASS}" \
+        curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
             -X PUT "${NEXUS_URL}/service/rest/v1/security/realms/active" \
             -H "Content-Type: application/json" \
             -d '["NexusAuthenticatingRealm","NexusAuthorizingRealm","DockerToken"]' > /dev/null
@@ -135,7 +135,7 @@ enable_docker_realm() {
 create_jenkins_user() {
     log_info "Creating jenkins deployment user..."
 
-    curl -sf -u "${ADMIN_USER}:${ADMIN_PASS}" \
+    curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
         -X POST "${NEXUS_URL}/service/rest/v1/security/users" \
         -H "Content-Type: application/json" \
         -d '{
