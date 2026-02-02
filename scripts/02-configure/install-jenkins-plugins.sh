@@ -143,30 +143,39 @@ install_plugin() {
     fi
 }
 
-# Wait for pending installs to complete
+# Wait for plugins to be installed by checking if they're in the plugin list
 wait_for_installs() {
     log_step "Waiting for plugin installations to complete..."
 
     local max_attempts=60
     local attempt=0
+    local key_plugins=("credentials" "workflow-multibranch" "gitlab-plugin")
 
     while [[ $attempt -lt $max_attempts ]]; do
-        local pending
-        pending=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
-            "$JENKINS_URL/updateCenter/api/json" 2>/dev/null | \
-            jq -r '.jobs | length')
+        # Get installed plugins to a temp file (avoid pipe issues with large JSON)
+        curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+            "$JENKINS_URL/pluginManager/api/json?depth=2" -o /tmp/jenkins_plugins.json 2>/dev/null
 
-        if [[ "$pending" == "0" ]]; then
-            log_pass "All plugin installations complete"
+        local missing=0
+        for plugin in "${key_plugins[@]}"; do
+            if ! jq -e ".plugins[] | select(.shortName == \"$plugin\" and .active == true)" /tmp/jenkins_plugins.json &>/dev/null; then
+                ((missing++))
+            fi
+        done
+
+        if [[ $missing -eq 0 ]]; then
+            log_pass "All key plugins are installed and active"
+            rm -f /tmp/jenkins_plugins.json
             return 0
         fi
 
-        log_info "  $pending installations pending..."
-        sleep 5
+        log_info "  Waiting for $missing key plugins to become active..."
+        sleep 10
         ((attempt++))
     done
 
-    log_warn "Timed out waiting for installations"
+    rm -f /tmp/jenkins_plugins.json
+    log_warn "Timed out waiting for plugin installations"
     return 1
 }
 
