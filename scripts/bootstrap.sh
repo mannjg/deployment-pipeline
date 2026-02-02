@@ -469,6 +469,11 @@ create_jenkins_credentials_secret() {
     fi
 }
 
+install_jenkins_plugins() {
+    log_info "Installing required Jenkins plugins..."
+    run_script_if_exists "$SCRIPT_DIR/02-configure/install-jenkins-plugins.sh" "Jenkins plugins" "true"
+}
+
 setup_argocd_applications() {
     log_info "Setting up ArgoCD applications..."
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-argocd-applications.sh" "ArgoCD applications" "false"
@@ -500,10 +505,13 @@ configure_services() {
     # 5g. Create Jenkins credentials secret (needed for webhook setup)
     create_jenkins_credentials_secret || ((errors++))
 
-    # 5h. Setup Jenkins pipelines and webhooks
+    # 5h. Install required Jenkins plugins (must be done before job creation)
+    install_jenkins_plugins || ((errors++))
+
+    # 5i. Setup Jenkins pipelines and webhooks
     setup_jenkins_pipelines || ((errors++))
 
-    # 5i. Configure merge requirements (optional)
+    # 5j. Configure merge requirements (optional)
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/configure-merge-requirements.sh" "Merge requirements" || true
 
     if [[ $errors -gt 0 ]]; then
