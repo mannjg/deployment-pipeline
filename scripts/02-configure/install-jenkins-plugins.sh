@@ -44,6 +44,9 @@ REQUIRED_PLUGINS=(
     "scm-api"
     "gitlab-plugin"
     "multibranch-scan-webhook-trigger"
+    # Kubernetes plugin for pod-based agents
+    "kubernetes"
+    "kubernetes-credentials"
 )
 
 # Output helpers
