@@ -254,6 +254,21 @@ cleanup_certificates() {
     for ns in "$GITLAB_NAMESPACE" "$JENKINS_NAMESPACE" "$NEXUS_NAMESPACE" "$ARGOCD_NAMESPACE"; do
         kubectl delete certificate --all -n "$ns" 2>/dev/null || true
     done
+
+    # Delete cluster-specific CA resources from cert-manager
+    log_info "Cleaning up cluster-specific CA resources..."
+    local ca_issuer="${CLUSTER_NAME}-ca-issuer"
+    local ca_secret="${CLUSTER_NAME}-ca-key-pair"
+
+    if kubectl get clusterissuer "$ca_issuer" &>/dev/null; then
+        kubectl delete clusterissuer "$ca_issuer"
+        log_info "  Deleted ClusterIssuer: $ca_issuer"
+    fi
+
+    if kubectl get secret "$ca_secret" -n cert-manager &>/dev/null; then
+        kubectl delete secret "$ca_secret" -n cert-manager
+        log_info "  Deleted Secret: $ca_secret"
+    fi
 }
 
 # =============================================================================
