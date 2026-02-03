@@ -1,120 +1,130 @@
 #!/bin/bash
+# Build and push Jenkins Agent Image to cluster registry
+#
+# Builds custom agent with JDK 21, Maven, Docker, CUE and pushes to Nexus.
+#
+# Usage: ./build-agent-image.sh <config-file>
+#
+# Example: ./build-agent-image.sh config/clusters/alpha.env
+
 set -euo pipefail
 
-# Build Jenkins Agent Image
-# Builds custom agent with JDK 21, Maven, Docker, CUE
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+# Source infrastructure config
+source "$PROJECT_ROOT/scripts/lib/infra.sh" "${1:-${CLUSTER_CONFIG:-}}"
+
 IMAGE_NAME="jenkins-agent-custom"
 IMAGE_TAG="latest"
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+# Registry URL (internal for pushing from build machine)
+# Use the external registry since we're building outside the cluster
+REGISTRY_URL="${DOCKER_REGISTRY_HOST:?DOCKER_REGISTRY_HOST not set}"
+FULL_IMAGE="${REGISTRY_URL}/${IMAGE_NAME}:${IMAGE_TAG}"
 
-log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+# Output helpers
+log_step()  { echo "[→] $*"; }
+log_pass()  { echo "[✓] $*"; }
+log_fail()  { echo "[✗] $*"; }
+log_info()  { echo "    $*"; }
+log_warn()  { echo "[!] $*"; }
 
 check_docker() {
+    log_step "Checking Docker..."
+
     if ! command -v docker &> /dev/null; then
-        log_error "Docker is not installed"
+        log_fail "Docker is not installed"
         exit 1
     fi
 
     if ! docker ps &> /dev/null; then
-        log_error "Docker daemon is not running or you don't have permission"
+        log_fail "Docker daemon is not running or you don't have permission"
         log_info "Try: sudo usermod -aG docker $USER"
         exit 1
     fi
 
-    log_info "Docker check passed"
+    log_info "Docker is available"
 }
 
 build_image() {
-    log_info "Building Jenkins agent image..."
+    log_step "Building Jenkins agent image..."
 
     cd "$SCRIPT_DIR"
 
-    docker build \
+    # Build with progress output
+    if docker build \
         -t "${IMAGE_NAME}:${IMAGE_TAG}" \
         -f Dockerfile.agent \
-        . \
-        2>&1 | tee build.log
-
-    log_info "Image built successfully: ${IMAGE_NAME}:${IMAGE_TAG}"
-}
-
-import_to_microk8s() {
-    log_info "Importing image to MicroK8s..."
-
-    if ! command -v microk8s &> /dev/null; then
-        log_warn "MicroK8s not found, skipping import"
-        log_info "You can manually import with: docker save ${IMAGE_NAME}:${IMAGE_TAG} | microk8s ctr image import -"
-        return 0
+        . 2>&1; then
+        log_pass "Image built: ${IMAGE_NAME}:${IMAGE_TAG}"
+    else
+        log_fail "Failed to build image"
+        exit 1
     fi
-
-    # Save and import to MicroK8s
-    docker save "${IMAGE_NAME}:${IMAGE_TAG}" | microk8s ctr image import -
-
-    log_info "Image imported to MicroK8s"
-
-    # Verify
-    microk8s ctr images ls | grep "${IMAGE_NAME}" || log_warn "Image not found in MicroK8s"
 }
 
-tag_for_nexus() {
-    log_info "Tagging image for Nexus registry..."
+tag_image() {
+    log_step "Tagging image for registry..."
 
-    # Tag for Nexus (will be used later when Nexus is deployed)
-    docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "nexus.local:5000/${IMAGE_NAME}:${IMAGE_TAG}"
-
-    log_info "Tagged as: nexus.local:5000/${IMAGE_NAME}:${IMAGE_TAG}"
-    log_warn "Push to Nexus later with: docker push nexus.local:5000/${IMAGE_NAME}:${IMAGE_TAG}"
+    docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${FULL_IMAGE}"
+    log_info "Tagged as: ${FULL_IMAGE}"
 }
 
-print_summary() {
-    echo ""
-    echo "========================================="
-    log_info "Jenkins Agent Image Build Complete!"
-    echo "========================================="
-    echo ""
-    echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
-    echo ""
-    echo "Includes:"
-    echo "  - OpenJDK 21"
-    echo "  - Maven 3.9.6"
-    echo "  - Docker CLI"
-    echo "  - CUE CLI (v0.14.2)"
-    echo "  - kubectl"
-    echo ""
-    echo "Build log: $SCRIPT_DIR/build.log"
-    echo ""
-    echo "Next steps:"
-    echo "  1. Deploy Jenkins with custom agent image"
-    echo "  2. After Nexus is deployed, push image:"
-    echo "     docker push nexus.local:5000/${IMAGE_NAME}:${IMAGE_TAG}"
-    echo ""
+push_image() {
+    log_step "Pushing image to registry..."
+    log_info "Registry: ${REGISTRY_URL}"
+
+    # Push to registry
+    if docker push "${FULL_IMAGE}" 2>&1; then
+        log_pass "Image pushed: ${FULL_IMAGE}"
+    else
+        log_fail "Failed to push image"
+        log_info "Make sure the registry is accessible and configured as insecure if using HTTP"
+        log_info "For Docker: add to /etc/docker/daemon.json:"
+        log_info "  {\"insecure-registries\": [\"${REGISTRY_URL}\"]}"
+        exit 1
+    fi
 }
 
+verify_image() {
+    log_step "Verifying image in registry..."
+
+    # Try to pull the image back to verify
+    if docker pull "${FULL_IMAGE}" &>/dev/null; then
+        log_pass "Image verified in registry"
+    else
+        log_warn "Could not verify image (may still be available)"
+    fi
+}
+
+# Main
 main() {
-    log_info "Starting Jenkins agent image build..."
+    echo ""
+    echo "=========================================="
+    echo "Jenkins Agent Image Build"
+    echo "=========================================="
+    echo ""
+    log_info "Cluster: $CLUSTER_NAME"
+    log_info "Registry: $REGISTRY_URL"
+    log_info "Image: $FULL_IMAGE"
+    echo ""
 
     check_docker
     build_image
-    import_to_microk8s
-    tag_for_nexus
-    print_summary
+    tag_image
+    push_image
+    verify_image
+
+    echo ""
+    echo "=========================================="
+    log_pass "Jenkins agent image ready"
+    echo "=========================================="
+    echo ""
+    echo "Image: ${FULL_IMAGE}"
+    echo ""
+    echo "This image is now available for Jenkins pipelines."
+    echo ""
 }
 
 main "$@"
