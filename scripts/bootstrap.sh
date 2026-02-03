@@ -184,6 +184,40 @@ generate_password() {
     head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 16
 }
 
+# Base directory for cluster secrets (matches 00-prepare-cluster.sh)
+CLUSTERS_DATA_DIR="${HOME}/.local/share/deployment-pipeline/clusters"
+
+get_cluster_ca_paths() {
+    # Set paths to pre-generated CA files
+    CLUSTER_DATA_DIR="${CLUSTERS_DATA_DIR}/${CLUSTER_NAME}"
+    CA_CERT="${CLUSTER_DATA_DIR}/ca.crt"
+    CA_KEY="${CLUSTER_DATA_DIR}/ca.key"
+}
+
+verify_cluster_prepared() {
+    log_info "Verifying cluster preparation..."
+
+    get_cluster_ca_paths
+
+    if [[ ! -f "$CA_CERT" ]] || [[ ! -f "$CA_KEY" ]]; then
+        log_error "Cluster CA not found. Run prepare-cluster first:"
+        log_error "  ./scripts/00-prepare-cluster.sh $CONFIG_FILE"
+        exit 1
+    fi
+
+    # Verify Docker trust is configured
+    local docker_cert_dir="/etc/docker/certs.d/${DOCKER_REGISTRY_HOST}"
+    if [[ ! -f "${docker_cert_dir}/ca.crt" ]]; then
+        log_error "Docker not configured to trust cluster CA."
+        log_error "Run prepare-cluster first:"
+        log_error "  ./scripts/00-prepare-cluster.sh $CONFIG_FILE"
+        exit 1
+    fi
+
+    log_info "  CA cert: $CA_CERT"
+    log_info "  Docker trust: ${docker_cert_dir}/ca.crt"
+}
+
 export_config_for_envsubst() {
     # Export all config variables for envsubst
     # envsubst only substitutes exported variables
@@ -225,8 +259,51 @@ apply_manifest() {
     fi
 }
 
+provision_ca_to_certmanager() {
+    log_info "Provisioning CA to cert-manager..."
+
+    get_cluster_ca_paths
+
+    # Check if cert-manager namespace exists
+    if ! kubectl get namespace cert-manager &>/dev/null; then
+        log_error "cert-manager namespace not found"
+        log_error "Install cert-manager first: kubectl apply -f k8s/cert-manager/cert-manager.yaml"
+        return 1
+    fi
+
+    # Create or update the ca-key-pair secret with our pre-generated CA
+    if kubectl get secret ca-key-pair -n cert-manager &>/dev/null; then
+        log_info "  Updating existing ca-key-pair secret..."
+        kubectl delete secret ca-key-pair -n cert-manager
+    fi
+
+    kubectl create secret tls ca-key-pair \
+        -n cert-manager \
+        --cert="$CA_CERT" \
+        --key="$CA_KEY"
+
+    log_info "  CA provisioned to cert-manager"
+
+    # Apply only the ca-issuer ClusterIssuer (not the self-signed generator)
+    log_info "  Creating ClusterIssuer..."
+    kubectl apply -f - <<EOF
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: ca-issuer
+spec:
+  ca:
+    secretName: ca-key-pair
+EOF
+
+    log_info "  ClusterIssuer 'ca-issuer' configured"
+}
+
 apply_infrastructure_manifests() {
     log_step "Step 3: Applying infrastructure manifests"
+
+    # Provision our CA to cert-manager first
+    provision_ca_to_certmanager
 
     # Export all config variables for envsubst
     export_config_for_envsubst
@@ -504,44 +581,21 @@ configure_nexus() {
 }
 
 configure_docker_registry_certs() {
-    log_info "Configuring Docker registry certificates..."
+    # Docker trust is now configured by 00-prepare-cluster.sh
+    # This function just verifies it's in place
+    log_info "Verifying Docker registry certificates..."
 
     local cert_dir="/etc/docker/certs.d/${DOCKER_REGISTRY_HOST}"
-    local temp_cert="/tmp/cluster-ca-$CLUSTER_NAME.crt"
 
-    # Check if cert directory already exists with a cert
-    if [[ -d "$cert_dir" ]] && [[ -f "$cert_dir/ca.crt" ]]; then
-        log_info "  Docker cert directory already exists: $cert_dir"
-        return 0
-    fi
-
-    # Extract CA cert from cert-manager (the actual CA for this cluster)
-    log_info "  Extracting CA certificate from cert-manager..."
-    if ! kubectl get secret ca-key-pair -n cert-manager -o jsonpath='{.data.tls\.crt}' 2>/dev/null | base64 -d > "$temp_cert"; then
-        log_error "  Failed to extract CA cert from cert-manager"
-        log_error "  Make sure cert-manager is deployed and ca-key-pair secret exists"
+    if [[ ! -f "${cert_dir}/ca.crt" ]]; then
+        log_error "Docker CA cert not found: ${cert_dir}/ca.crt"
+        log_error "Run prepare-cluster first:"
+        log_error "  ./scripts/00-prepare-cluster.sh $CONFIG_FILE"
         return 1
     fi
 
-    if [[ ! -s "$temp_cert" ]]; then
-        log_error "  CA cert is empty - cert-manager may not be ready"
-        return 1
-    fi
-
-    # Try to create the cert directory (requires sudo)
-    log_info "  Creating Docker cert directory: $cert_dir"
-    if sudo mkdir -p "$cert_dir" 2>/dev/null && \
-       sudo cp "$temp_cert" "$cert_dir/ca.crt" 2>/dev/null; then
-        log_info "  Docker registry certificate configured from cluster CA"
-        rm -f "$temp_cert"
-        return 0
-    else
-        log_error "  Failed to configure Docker registry certificates (need sudo)"
-        log_error "  Run manually:"
-        log_error "    sudo mkdir -p $cert_dir"
-        log_error "    sudo cp $temp_cert $cert_dir/ca.crt"
-        return 1
-    fi
+    log_info "  Docker trust configured: ${cert_dir}/ca.crt"
+    return 0
 }
 
 setup_argocd_applications() {
@@ -694,6 +748,9 @@ main() {
 
     # Validate and source config
     validate_config "$CONFIG_FILE"
+
+    # Verify host is prepared (CA exists, Docker trust configured)
+    verify_cluster_prepared
 
     log_info "Bootstrapping cluster: $CLUSTER_NAME"
     log_info "Config file: $CONFIG_FILE"
