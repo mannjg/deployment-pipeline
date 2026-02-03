@@ -41,6 +41,12 @@ controller:
   # Java options
   javaOpts: "-Xmx1g -Xms512m"
 
+  # Mount pipeline-config ConfigMap as environment variables
+  # This makes JENKINS_AGENT_IMAGE, GITLAB_URL_INTERNAL, etc. available to pipelines
+  containerEnvFrom:
+    - configMapRef:
+        name: pipeline-config
+
   # Jenkins Configuration as Code (JCasC)
   JCasC:
     defaultConfig: true

@@ -141,6 +141,9 @@ MAVEN_SETTINGS
 // PIPELINE DEFINITION
 // ============================================================================
 
+// Get agent image from system environment (set via ConfigMap envFrom)
+def agentImage = System.getenv('JENKINS_AGENT_IMAGE') ?: 'jenkins/inbound-agent:latest'
+
 pipeline {
     agent {
         kubernetes {
@@ -150,7 +153,7 @@ kind: Pod
 spec:
   containers:
   - name: maven
-    image: ${env.JENKINS_AGENT_IMAGE}
+    image: ${agentImage}
     command:
     - cat
     tty: true

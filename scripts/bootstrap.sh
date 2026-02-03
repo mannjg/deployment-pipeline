@@ -203,6 +203,7 @@ export_config_for_envsubst() {
     export JENKINS_HOST="${JENKINS_HOST_EXTERNAL}"
     export NEXUS_HOST="${NEXUS_HOST_EXTERNAL}"
     export ARGOCD_HOST="${ARGOCD_HOST_EXTERNAL}"
+    export DOCKER_REGISTRY="${DOCKER_REGISTRY_HOST}"
 
     # Generate passwords if not already set
     export GITLAB_ROOT_PASSWORD="${GITLAB_ROOT_PASSWORD:-$(generate_password)}"
@@ -482,6 +483,16 @@ install_jenkins_plugins() {
     run_script_if_exists "$SCRIPT_DIR/02-configure/install-jenkins-plugins.sh" "Jenkins plugins" "true"
 }
 
+configure_jenkins_kubernetes_cloud() {
+    log_info "Configuring Jenkins Kubernetes cloud..."
+    run_script_if_exists "$SCRIPT_DIR/02-configure/configure-jenkins-kubernetes-cloud.sh" "Jenkins Kubernetes cloud" "true"
+}
+
+configure_jenkins_script_security() {
+    log_info "Configuring Jenkins script security..."
+    run_script_if_exists "$SCRIPT_DIR/02-configure/configure-jenkins-script-security.sh" "Jenkins script security" "true"
+}
+
 setup_argocd_applications() {
     log_info "Setting up ArgoCD applications..."
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-argocd-applications.sh" "ArgoCD applications" "false"
@@ -519,10 +530,16 @@ configure_services() {
     # 5i. Install required Jenkins plugins (must be done before job creation)
     install_jenkins_plugins || ((++errors))
 
-    # 5j. Setup Jenkins pipelines and webhooks
+    # 5j. Configure Jenkins Kubernetes cloud (for pod-based agents)
+    configure_jenkins_kubernetes_cloud || ((++errors))
+
+    # 5k. Configure Jenkins script security (approve required signatures)
+    configure_jenkins_script_security || ((++errors))
+
+    # 5l. Setup Jenkins pipelines and webhooks
     setup_jenkins_pipelines || ((++errors))
 
-    # 5k. Configure merge requirements (optional)
+    # 5m. Configure merge requirements (optional)
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/configure-merge-requirements.sh" "Merge requirements" || true
 
     if [[ $errors -gt 0 ]]; then

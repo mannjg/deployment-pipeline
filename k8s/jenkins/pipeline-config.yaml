@@ -9,12 +9,15 @@
 #   envsubst < pipeline-config.yaml | kubectl apply -f -
 #
 # REQUIRED VARIABLES:
-#   ${JENKINS_NAMESPACE} - Namespace for Jenkins resources (e.g., jenkins)
-#   ${GITLAB_HOST}      - GitLab hostname (e.g., gitlab.jmann.local)
-#   ${JENKINS_HOST}     - Jenkins hostname (e.g., jenkins.jmann.local)
-#   ${NEXUS_HOST}       - Nexus hostname (e.g., nexus.jmann.local)
-#   ${ARGOCD_HOST}      - ArgoCD hostname (e.g., argocd.jmann.local)
-#   ${DOCKER_REGISTRY}  - Docker registry external (e.g., docker.jmann.local)
+#   ${JENKINS_NAMESPACE} - Namespace for Jenkins resources (e.g., jenkins-alpha)
+#   ${GITLAB_NAMESPACE}  - Namespace for GitLab resources (e.g., gitlab-alpha)
+#   ${NEXUS_NAMESPACE}   - Namespace for Nexus resources (e.g., nexus-alpha)
+#   ${ARGOCD_NAMESPACE}  - Namespace for ArgoCD resources (e.g., argocd-alpha)
+#   ${GITLAB_HOST}       - GitLab hostname (e.g., gitlab-alpha.jmann.local)
+#   ${JENKINS_HOST}      - Jenkins hostname (e.g., jenkins-alpha.jmann.local)
+#   ${NEXUS_HOST}        - Nexus hostname (e.g., nexus-alpha.jmann.local)
+#   ${ARGOCD_HOST}       - ArgoCD hostname (e.g., argocd-alpha.jmann.local)
+#   ${DOCKER_REGISTRY}   - Docker registry external (e.g., docker-alpha.jmann.local)
 #
 # Naming convention (matches config/infra.env):
 #   *_URL_INTERNAL  - Kubernetes service DNS names (pod-to-pod)
@@ -33,34 +36,34 @@ data:
   # GitLab Configuration
   # ==========================================================================
   GITLAB_URL_EXTERNAL: "https://${GITLAB_HOST}"
-  GITLAB_URL_INTERNAL: "http://gitlab.gitlab.svc.cluster.local"
+  GITLAB_URL_INTERNAL: "http://gitlab.${GITLAB_NAMESPACE}.svc.cluster.local"
   GITLAB_GROUP: "p2c"
 
   # Repository URLs (internal - for pod-to-pod communication)
-  APP_REPO_URL: "http://gitlab.gitlab.svc.cluster.local/p2c/example-app.git"
-  DEPLOYMENTS_REPO_URL: "http://gitlab.gitlab.svc.cluster.local/p2c/k8s-deployments.git"
+  APP_REPO_URL: "http://gitlab.${GITLAB_NAMESPACE}.svc.cluster.local/p2c/example-app.git"
+  DEPLOYMENTS_REPO_URL: "http://gitlab.${GITLAB_NAMESPACE}.svc.cluster.local/p2c/k8s-deployments.git"
 
   # ==========================================================================
   # Jenkins Configuration
   # ==========================================================================
   JENKINS_URL_EXTERNAL: "https://${JENKINS_HOST}"
-  JENKINS_URL_INTERNAL: "http://jenkins.jenkins.svc.cluster.local:8080"
+  JENKINS_URL_INTERNAL: "http://jenkins.${JENKINS_NAMESPACE}.svc.cluster.local:8080"
   JENKINS_AGENT_IMAGE: "${DOCKER_REGISTRY}/jenkins-agent-custom:latest"
 
   # ==========================================================================
   # Nexus / Docker Registry Configuration
   # ==========================================================================
   NEXUS_URL_EXTERNAL: "https://${NEXUS_HOST}"
-  NEXUS_URL_INTERNAL: "http://nexus.nexus.svc.cluster.local:8081"
+  NEXUS_URL_INTERNAL: "http://nexus.${NEXUS_NAMESPACE}.svc.cluster.local:8081"
   DOCKER_REGISTRY_EXTERNAL: "${DOCKER_REGISTRY}"
-  DOCKER_REGISTRY_INTERNAL: "nexus.nexus.svc.cluster.local:5000"
+  DOCKER_REGISTRY_INTERNAL: "nexus.${NEXUS_NAMESPACE}.svc.cluster.local:5000"
 
   # ==========================================================================
   # ArgoCD Configuration
   # ==========================================================================
   ARGOCD_URL_EXTERNAL: "https://${ARGOCD_HOST}"
-  ARGOCD_URL_INTERNAL: "http://argocd-server.argocd.svc.cluster.local"
-  ARGOCD_SERVER: "argocd-server.argocd.svc.cluster.local:80"
+  ARGOCD_URL_INTERNAL: "http://argocd-server.${ARGOCD_NAMESPACE}.svc.cluster.local"
+  ARGOCD_SERVER: "argocd-server.${ARGOCD_NAMESPACE}.svc.cluster.local:80"
   ARGOCD_OPTS: "--plaintext --grpc-web"
 
   # ==========================================================================

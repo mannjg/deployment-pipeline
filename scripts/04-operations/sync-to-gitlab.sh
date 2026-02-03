@@ -17,8 +17,8 @@
 # - Example: CLUSTER_CONFIG=config/clusters/alpha.env uses gitlab-app-alpha, gitlab-deployments-alpha
 #
 # Usage:
-#   ./scripts/sync-to-gitlab.sh [branch]
-#   ./scripts/sync-to-gitlab.sh --pull-only example-app [branch]
+#   ./scripts/sync-to-gitlab.sh [config-file] [branch]
+#   ./scripts/sync-to-gitlab.sh [config-file] --pull-only example-app [branch]
 #
 # Options:
 #   --pull-only <repo>  Pull changes from GitLab into local subtree
@@ -32,8 +32,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# Check if first argument is a config file
+CONFIG_FILE="${CLUSTER_CONFIG:-}"
+if [[ "${1:-}" == *.env ]] || [[ "${1:-}" == */clusters/* ]]; then
+    CONFIG_FILE="$1"
+    shift
+fi
+
 # Source infrastructure config
-source "$PROJECT_ROOT/scripts/lib/infra.sh" "${CLUSTER_CONFIG:-}"
+source "$PROJECT_ROOT/scripts/lib/infra.sh" "$CONFIG_FILE"
 
 # Determine remote names based on cluster config
 # If CLUSTER_NAME is set (from config), use cluster-specific remotes
