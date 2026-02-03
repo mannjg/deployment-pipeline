@@ -312,16 +312,16 @@ wait_for_infrastructure() {
     local errors=0
 
     # GitLab takes longer due to initialization
-    wait_for_pods "$GITLAB_NAMESPACE" 600 "GitLab" || ((errors++))
+    wait_for_pods "$GITLAB_NAMESPACE" 600 "GitLab" || ((++errors))
 
     # Jenkins
-    wait_for_pods "$JENKINS_NAMESPACE" 300 "Jenkins" || ((errors++))
+    wait_for_pods "$JENKINS_NAMESPACE" 300 "Jenkins" || ((++errors))
 
     # Nexus
-    wait_for_pods "$NEXUS_NAMESPACE" 180 "Nexus" || ((errors++))
+    wait_for_pods "$NEXUS_NAMESPACE" 180 "Nexus" || ((++errors))
 
     # ArgoCD
-    wait_for_pods "$ARGOCD_NAMESPACE" 180 "ArgoCD" || ((errors++))
+    wait_for_pods "$ARGOCD_NAMESPACE" 180 "ArgoCD" || ((++errors))
 
     if [[ $errors -gt 0 ]]; then
         log_warn "$errors namespace(s) had pod readiness issues"
@@ -434,17 +434,17 @@ setup_jenkins_pipelines() {
     local errors=0
 
     # First, create the MultiBranch Pipeline jobs (required before webhook setup)
-    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-multibranch-jobs.sh" "Jenkins MultiBranch jobs" "true" || ((errors++))
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-multibranch-jobs.sh" "Jenkins MultiBranch jobs" "true" || ((++errors))
 
     # Setup multibranch pipeline webhook trigger
-    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-multibranch-webhook.sh" "Jenkins multibranch webhook" || ((errors++))
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-multibranch-webhook.sh" "Jenkins multibranch webhook" || ((++errors))
 
     # Setup auto-promote job and webhook
-    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-auto-promote-job.sh" "Jenkins auto-promote job" || ((errors++))
-    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-auto-promote-webhook.sh" "Auto-promote webhook" || ((errors++))
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-auto-promote-job.sh" "Jenkins auto-promote job" || ((++errors))
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-auto-promote-webhook.sh" "Auto-promote webhook" || ((++errors))
 
     # Setup promote job
-    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-promote-job.sh" "Jenkins promote job" || ((errors++))
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-promote-job.sh" "Jenkins promote job" || ((++errors))
 
     return $errors
 }
@@ -485,31 +485,31 @@ configure_services() {
     local errors=0
 
     # 5a. Create GitLab API token (required for all subsequent GitLab operations)
-    configure_gitlab_api_token || ((errors++))
+    configure_gitlab_api_token || ((++errors))
 
     # 5b. Create GitLab projects
-    configure_gitlab_projects || ((errors++))
+    configure_gitlab_projects || ((++errors))
 
     # 5c. Setup git remotes for this cluster
-    setup_git_remotes || ((errors++))
+    setup_git_remotes || ((++errors))
 
     # 5d. Sync subtrees to GitLab (pushes example-app and k8s-deployments)
-    sync_subtrees_to_gitlab || ((errors++))
+    sync_subtrees_to_gitlab || ((++errors))
 
     # 5e. Setup environment branches (dev/stage/prod) in k8s-deployments
-    setup_environment_branches || ((errors++))
+    setup_environment_branches || ((++errors))
 
     # 5f. Setup ArgoCD applications (after env branches exist)
-    setup_argocd_applications || ((errors++))
+    setup_argocd_applications || ((++errors))
 
     # 5g. Create Jenkins credentials secret (needed for webhook setup)
-    create_jenkins_credentials_secret || ((errors++))
+    create_jenkins_credentials_secret || ((++errors))
 
     # 5h. Install required Jenkins plugins (must be done before job creation)
-    install_jenkins_plugins || ((errors++))
+    install_jenkins_plugins || ((++errors))
 
     # 5i. Setup Jenkins pipelines and webhooks
-    setup_jenkins_pipelines || ((errors++))
+    setup_jenkins_pipelines || ((++errors))
 
     # 5j. Configure merge requirements (optional)
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/configure-merge-requirements.sh" "Merge requirements" || true

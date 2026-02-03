@@ -273,7 +273,7 @@ perform_teardown() {
     log_info "Deleting environment namespaces..."
     for ns in "$DEV_NAMESPACE" "$STAGE_NAMESPACE" "$PROD_NAMESPACE"; do
         if ! delete_namespace "$ns" 120; then
-            ((errors++))
+            ((errors++)) || true
         fi
     done
 
@@ -281,7 +281,7 @@ perform_teardown() {
     log_info "Deleting infrastructure namespaces..."
     for ns in "$ARGOCD_NAMESPACE" "$NEXUS_NAMESPACE" "$JENKINS_NAMESPACE" "$GITLAB_NAMESPACE"; do
         if ! delete_namespace "$ns" 180; then
-            ((errors++))
+            ((errors++)) || true
         fi
     done
 

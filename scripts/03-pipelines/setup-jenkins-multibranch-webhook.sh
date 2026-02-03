@@ -220,30 +220,26 @@ PYEOF
 # Main
 # -----------------------------------------------------------------------------
 main() {
-    if [[ $# -lt 1 ]]; then
-        echo "Usage: $0 <job-name> | --all"
-        echo ""
-        echo "Configure MultiBranch Pipeline jobs with webhook trigger."
-        echo ""
-        echo "Options:"
-        echo "  <job-name>  Configure a single job"
-        echo "  --all       Configure all known MultiBranch jobs:"
-        for job in "${KNOWN_JOBS[@]}"; do
-            echo "                - $job"
-        done
-        echo ""
-        echo "This script adds the MultiBranchScanWebhookTrigger so Jenkins"
-        echo "responds to GitLab webhooks immediately instead of polling."
-        exit 1
+    # Filter out .env config files from arguments - they're handled by infra.sh
+    local job_args=()
+    for arg in "$@"; do
+        if [[ "$arg" != *.env ]]; then
+            job_args+=("$arg")
+        fi
+    done
+
+    # If no job arguments (only config file was passed), default to --all
+    if [[ ${#job_args[@]} -eq 0 ]]; then
+        job_args=("--all")
     fi
 
     load_credentials
     echo ""
 
-    if [[ "$1" == "--all" ]]; then
+    if [[ "${job_args[0]}" == "--all" ]]; then
         local failed=0
         for job_name in "${KNOWN_JOBS[@]}"; do
-            configure_webhook_trigger "$job_name" || ((failed++))
+            configure_webhook_trigger "$job_name" || ((failed++)) || true
             echo ""
         done
 
@@ -253,8 +249,23 @@ main() {
             log_fail "$failed job(s) failed to configure"
             exit 1
         fi
+    elif [[ "${job_args[0]}" == "--help" || "${job_args[0]}" == "-h" ]]; then
+        echo "Usage: $0 [config.env] [<job-name> | --all]"
+        echo ""
+        echo "Configure MultiBranch Pipeline jobs with webhook trigger."
+        echo ""
+        echo "Options:"
+        echo "  <job-name>  Configure a single job"
+        echo "  --all       Configure all known MultiBranch jobs (default):"
+        for job in "${KNOWN_JOBS[@]}"; do
+            echo "                - $job"
+        done
+        echo ""
+        echo "This script adds the MultiBranchScanWebhookTrigger so Jenkins"
+        echo "responds to GitLab webhooks immediately instead of polling."
+        exit 0
     else
-        configure_webhook_trigger "$1"
+        configure_webhook_trigger "${job_args[0]}"
     fi
 }
 
