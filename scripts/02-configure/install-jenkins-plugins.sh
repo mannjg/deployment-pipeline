@@ -152,7 +152,7 @@ wait_for_installs() {
 
     local max_attempts=60
     local attempt=0
-    local key_plugins=("credentials" "workflow-multibranch" "gitlab-plugin")
+    local key_plugins=("credentials" "workflow-multibranch" "gitlab-plugin" "kubernetes")
 
     while [[ $attempt -lt $max_attempts ]]; do
         # Get installed plugins to a temp file (avoid pipe issues with large JSON)
