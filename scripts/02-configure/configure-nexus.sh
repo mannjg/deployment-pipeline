@@ -1,60 +1,104 @@
 #!/bin/bash
+# Configure Nexus repositories and settings via REST API
+#
+# Creates Maven and Docker repositories needed for the CI/CD pipeline.
+#
+# Usage: ./scripts/02-configure/configure-nexus.sh [config-file]
+#
+# Example: ./scripts/02-configure/configure-nexus.sh config/clusters/alpha.env
+
 set -euo pipefail
 
-# Nexus Configuration Script
-# Configures repositories and settings via REST API
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-NEXUS_URL="http://nexus.local"
+# Source infrastructure config
+source "$PROJECT_ROOT/scripts/lib/infra.sh" "${1:-${CLUSTER_CONFIG:-}}"
+
+NEXUS_URL="${NEXUS_URL_EXTERNAL:?NEXUS_URL_EXTERNAL not set}"
 ADMIN_USER="admin"
-ADMIN_PASS="3d9bd23d-997d-4fe4-ad3e-2244817bf093"  # Initial password
-NEW_PASSWORD="${NEW_PASSWORD:-admin123}"  # Change this!
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+# Output helpers
+log_step()  { echo "[→] $*"; }
+log_pass()  { echo "[✓] $*"; }
+log_fail()  { echo "[✗] $*"; }
+log_info()  { echo "    $*"; }
+log_warn()  { echo "[!] $*"; }
 
-log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+# Get Nexus admin password from Kubernetes secret or default
+get_admin_password() {
+    local password
+
+    # Try to get from K8s secret first
+    password=$(kubectl get secret nexus-admin-credentials -n "$NEXUS_NAMESPACE" \
+        -o jsonpath='{.data.password}' 2>/dev/null | base64 -d) || true
+
+    if [[ -n "$password" ]]; then
+        echo "$password"
+        return 0
+    fi
+
+    # Try to read initial admin password from Nexus pod
+    password=$(kubectl exec -n "$NEXUS_NAMESPACE" deploy/nexus -- \
+        cat /nexus-data/admin.password 2>/dev/null) || true
+
+    if [[ -n "$password" ]]; then
+        echo "$password"
+        return 0
+    fi
+
+    # Default password (after first setup)
+    echo "admin123"
+}
 
 wait_for_nexus() {
-    log_info "Waiting for Nexus to be ready..."
-    for i in {1..30}; do
+    log_step "Waiting for Nexus to be ready..."
+
+    for i in {1..60}; do
         if curl -sfk "${NEXUS_URL}/service/rest/v1/status" > /dev/null 2>&1; then
-            log_info "Nexus is ready!"
+            log_pass "Nexus is ready"
             return 0
         fi
-        echo -n "."
         sleep 5
     done
-    log_error "Nexus did not become ready in time"
+
+    log_fail "Nexus did not become ready in time"
     return 1
 }
 
 change_admin_password() {
-    log_info "Changing admin password..."
+    local current_pass="$1"
+    local new_pass="admin123"
 
-    # Try with initial password
-    response=$(curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
+    log_step "Checking admin password..."
+
+    # Test if current password works
+    if curl -sfk -u "${ADMIN_USER}:${new_pass}" \
+        "${NEXUS_URL}/service/rest/v1/status" > /dev/null 2>&1; then
+        log_info "Password already set to standard"
+        ADMIN_PASS="${new_pass}"
+        return 0
+    fi
+
+    # Try to change password
+    if curl -sfk -u "${ADMIN_USER}:${current_pass}" \
         -X PUT "${NEXUS_URL}/service/rest/v1/security/users/admin/change-password" \
         -H "Content-Type: text/plain" \
-        -d "${NEW_PASSWORD}" 2>&1) || {
-        log_warn "Password might already be changed. Trying with new password..."
-        ADMIN_PASS="${NEW_PASSWORD}"
-        return 0
-    }
-
-    ADMIN_PASS="${NEW_PASSWORD}"
-    log_info "Admin password changed successfully"
+        -d "${new_pass}" 2>/dev/null; then
+        log_pass "Admin password changed"
+        ADMIN_PASS="${new_pass}"
+    else
+        # Password might already be changed, try the new password
+        ADMIN_PASS="${new_pass}"
+        log_info "Using standard password"
+    fi
 }
 
 create_maven_repos() {
-    log_info "Creating Maven repositories..."
+    log_step "Creating Maven repositories..."
 
     # Maven Releases
-    curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
+    if curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
         -X POST "${NEXUS_URL}/service/rest/v1/repositories/maven/hosted" \
         -H "Content-Type: application/json" \
         -d '{
@@ -69,10 +113,14 @@ create_maven_repos() {
                 "versionPolicy": "RELEASE",
                 "layoutPolicy": "STRICT"
             }
-        }' > /dev/null 2>&1 && log_info "Created maven-releases" || log_warn "maven-releases may already exist"
+        }' 2>/dev/null; then
+        log_info "Created maven-releases"
+    else
+        log_info "maven-releases may already exist"
+    fi
 
     # Maven Snapshots
-    curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
+    if curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
         -X POST "${NEXUS_URL}/service/rest/v1/repositories/maven/hosted" \
         -H "Content-Type: application/json" \
         -d '{
@@ -87,13 +135,17 @@ create_maven_repos() {
                 "versionPolicy": "SNAPSHOT",
                 "layoutPolicy": "STRICT"
             }
-        }' > /dev/null 2>&1 && log_info "Created maven-snapshots" || log_warn "maven-snapshots may already exist"
+        }' 2>/dev/null; then
+        log_info "Created maven-snapshots"
+    else
+        log_info "maven-snapshots may already exist"
+    fi
 }
 
 create_docker_repo() {
-    log_info "Creating Docker hosted repository..."
+    log_step "Creating Docker hosted repository..."
 
-    curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
+    if curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
         -X POST "${NEXUS_URL}/service/rest/v1/repositories/docker/hosted" \
         -H "Content-Type: application/json" \
         -d '{
@@ -106,36 +158,64 @@ create_docker_repo() {
             },
             "docker": {
                 "v1Enabled": false,
-                "forceBasicAuth": true,
+                "forceBasicAuth": false,
                 "httpPort": 5000
             }
-        }' > /dev/null 2>&1 && log_info "Created docker-hosted on port 5000" || log_warn "docker-hosted may already exist"
+        }' 2>/dev/null; then
+        log_pass "Created docker-hosted on port 5000"
+    else
+        log_info "docker-hosted may already exist"
+    fi
 }
 
 enable_docker_realm() {
-    log_info "Enabling Docker Bearer Token Realm..."
+    log_step "Enabling Docker Bearer Token Realm..."
 
     # Get current realms
+    local current
     current=$(curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
         -X GET "${NEXUS_URL}/service/rest/v1/security/realms/active" \
-        -H "accept: application/json")
+        -H "accept: application/json" 2>/dev/null)
 
-    # Add DockerToken if not present
+    # Check if DockerToken is already enabled
     if echo "$current" | grep -q "DockerToken"; then
         log_info "Docker Bearer Token Realm already enabled"
+        return 0
+    fi
+
+    # Enable DockerToken realm
+    if curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
+        -X PUT "${NEXUS_URL}/service/rest/v1/security/realms/active" \
+        -H "Content-Type: application/json" \
+        -d '["NexusAuthenticatingRealm","NexusAuthorizingRealm","DockerToken"]' 2>/dev/null; then
+        log_pass "Docker Bearer Token Realm enabled"
     else
-        curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
-            -X PUT "${NEXUS_URL}/service/rest/v1/security/realms/active" \
-            -H "Content-Type: application/json" \
-            -d '["NexusAuthenticatingRealm","NexusAuthorizingRealm","DockerToken"]' > /dev/null
-        log_info "Docker Bearer Token Realm enabled"
+        log_warn "Could not enable Docker realm"
+    fi
+}
+
+enable_anonymous_access() {
+    log_step "Enabling anonymous access for Docker pulls..."
+
+    # Enable anonymous access (needed for unauthenticated docker pull)
+    if curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
+        -X PUT "${NEXUS_URL}/service/rest/v1/security/anonymous" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "enabled": true,
+            "userId": "anonymous",
+            "realmName": "NexusAuthorizingRealm"
+        }' 2>/dev/null; then
+        log_pass "Anonymous access enabled"
+    else
+        log_info "Anonymous access may already be enabled"
     fi
 }
 
 create_jenkins_user() {
-    log_info "Creating jenkins deployment user..."
+    log_step "Creating jenkins deployment user..."
 
-    curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
+    if curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
         -X POST "${NEXUS_URL}/service/rest/v1/security/users" \
         -H "Content-Type: application/json" \
         -d '{
@@ -146,60 +226,65 @@ create_jenkins_user() {
             "password": "jenkins123",
             "status": "active",
             "roles": ["nx-admin"]
-        }' > /dev/null 2>&1 && log_info "Created jenkins user" || log_warn "jenkins user may already exist"
+        }' 2>/dev/null; then
+        log_pass "Created jenkins user"
+    else
+        log_info "jenkins user may already exist"
+    fi
 }
 
-print_summary() {
-    echo ""
-    echo "========================================="
-    log_info "Nexus Configuration Complete!"
-    echo "========================================="
-    echo ""
-    echo "Nexus URL: ${NEXUS_URL}"
-    echo ""
-    echo "Admin Credentials:"
-    echo "  Username: ${ADMIN_USER}"
-    echo "  Password: ${ADMIN_PASS}"
-    echo ""
-    echo "Jenkins User:"
-    echo "  Username: jenkins"
-    echo "  Password: jenkins123"
-    echo ""
-    echo "Repositories Created:"
-    echo "  - maven-releases (Maven releases)"
-    echo "  - maven-snapshots (Maven snapshots)"
-    echo "  - docker-hosted (Docker on port 5000)"
-    echo ""
-    echo "Docker Registry:"
-    echo "  URL: nexus.local:5000"
-    echo "  Login: docker login nexus.local:5000"
-    echo "         Username: jenkins (or admin)"
-    echo "         Password: jenkins123 (or ${ADMIN_PASS})"
-    echo ""
-    echo "Maven Settings:"
-    echo "  Repository URL: ${NEXUS_URL}/repository/maven-releases/"
-    echo "  Snapshots URL:  ${NEXUS_URL}/repository/maven-snapshots/"
-    echo ""
+store_credentials_secret() {
+    log_step "Storing Nexus credentials in Kubernetes secret..."
+
+    # Create or update the secret
+    if kubectl get secret nexus-admin-credentials -n "$NEXUS_NAMESPACE" &>/dev/null; then
+        kubectl delete secret nexus-admin-credentials -n "$NEXUS_NAMESPACE"
+    fi
+
+    kubectl create secret generic nexus-admin-credentials \
+        -n "$NEXUS_NAMESPACE" \
+        --from-literal=username="$ADMIN_USER" \
+        --from-literal=password="$ADMIN_PASS" \
+        --from-literal=jenkins-username="jenkins" \
+        --from-literal=jenkins-password="jenkins123"
+
+    log_pass "Credentials stored in nexus-admin-credentials secret"
 }
 
+# Main
 main() {
-    log_info "Starting Nexus configuration..."
+    echo ""
+    echo "=========================================="
+    echo "Nexus Repository Configuration"
+    echo "=========================================="
+    echo ""
+    log_info "Cluster: $CLUSTER_NAME"
+    log_info "Nexus: $NEXUS_URL"
+    echo ""
 
     wait_for_nexus
-    change_admin_password
+
+    # Get initial password
+    local initial_pass
+    initial_pass=$(get_admin_password)
+
+    change_admin_password "$initial_pass"
     create_maven_repos
     create_docker_repo
     enable_docker_realm
+    enable_anonymous_access
     create_jenkins_user
-    print_summary
+    store_credentials_secret
 
-    # Save credentials
-    cat > /home/jmann/git/mannjg/deployment-pipeline/k8s/nexus/nexus-credentials.txt <<EOF
-Nexus Admin: ${ADMIN_USER} / ${ADMIN_PASS}
-Jenkins User: jenkins / jenkins123
-Docker Registry: nexus.local:5000
-EOF
-    chmod 600 /home/jmann/git/mannjg/deployment-pipeline/k8s/nexus/nexus-credentials.txt
+    echo ""
+    echo "=========================================="
+    log_pass "Nexus configuration complete"
+    echo "=========================================="
+    echo ""
+    echo "Docker Registry: ${DOCKER_REGISTRY_HOST}:5000"
+    echo "Maven Releases:  ${NEXUS_URL}/repository/maven-releases/"
+    echo "Maven Snapshots: ${NEXUS_URL}/repository/maven-snapshots/"
+    echo ""
 }
 
 main "$@"

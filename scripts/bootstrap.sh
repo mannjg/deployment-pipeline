@@ -498,6 +498,45 @@ build_jenkins_agent_image() {
     run_script_if_exists "$PROJECT_ROOT/k8s/jenkins/agent/build-agent-image.sh" "Jenkins agent image" "true"
 }
 
+configure_nexus() {
+    log_info "Configuring Nexus repositories..."
+    run_script_if_exists "$SCRIPT_DIR/02-configure/configure-nexus.sh" "Nexus repositories" "true"
+}
+
+configure_docker_registry_certs() {
+    log_info "Configuring Docker registry certificates..."
+
+    local cert_dir="/etc/docker/certs.d/${DOCKER_REGISTRY_HOST}"
+    local default_cert_dir="/etc/docker/certs.d/docker.jmann.local"
+
+    # Check if cert directory already exists
+    if [[ -d "$cert_dir" ]]; then
+        log_info "  Docker cert directory already exists: $cert_dir"
+        return 0
+    fi
+
+    # Check if we have a source cert to copy from
+    if [[ ! -f "$default_cert_dir/ca.crt" ]]; then
+        log_warn "  No default CA cert found at $default_cert_dir/ca.crt"
+        log_warn "  You may need to manually configure Docker to trust the registry"
+        return 1
+    fi
+
+    # Try to create the cert directory (requires sudo)
+    log_info "  Creating Docker cert directory: $cert_dir"
+    if sudo mkdir -p "$cert_dir" 2>/dev/null && \
+       sudo cp "$default_cert_dir/ca.crt" "$cert_dir/ca.crt" 2>/dev/null; then
+        log_info "  Docker registry certificate configured"
+        return 0
+    else
+        log_error "  Failed to configure Docker registry certificates (need sudo)"
+        log_error "  Run manually:"
+        log_error "    sudo mkdir -p $cert_dir"
+        log_error "    sudo cp $default_cert_dir/ca.crt $cert_dir/"
+        return 1
+    fi
+}
+
 setup_argocd_applications() {
     log_info "Setting up ArgoCD applications..."
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-argocd-applications.sh" "ArgoCD applications" "false"
@@ -529,25 +568,31 @@ configure_services() {
     # 5g. Setup ArgoCD applications (after env branches exist)
     setup_argocd_applications || ((++errors))
 
-    # 5h. Create Jenkins credentials secret (needed for webhook setup)
+    # 5h. Configure Docker registry certificates (needed for image push)
+    configure_docker_registry_certs || ((++errors))
+
+    # 5i. Configure Nexus repositories (Docker registry needed for agent image)
+    configure_nexus || ((++errors))
+
+    # 5j. Create Jenkins credentials secret (needed for webhook setup)
     create_jenkins_credentials_secret || ((++errors))
 
-    # 5i. Build Jenkins agent image (push to Nexus registry)
+    # 5k. Build Jenkins agent image (push to Nexus registry)
     build_jenkins_agent_image || ((++errors))
 
-    # 5j. Install required Jenkins plugins (must be done before job creation)
+    # 5l. Install required Jenkins plugins (must be done before job creation)
     install_jenkins_plugins || ((++errors))
 
-    # 5k. Configure Jenkins Kubernetes cloud (for pod-based agents)
+    # 5m. Configure Jenkins Kubernetes cloud (for pod-based agents)
     configure_jenkins_kubernetes_cloud || ((++errors))
 
-    # 5l. Configure Jenkins script security (approve required signatures)
+    # 5n. Configure Jenkins script security (approve required signatures)
     configure_jenkins_script_security || ((++errors))
 
-    # 5m. Setup Jenkins pipelines and webhooks
+    # 5o. Setup Jenkins pipelines and webhooks
     setup_jenkins_pipelines || ((++errors))
 
-    # 5n. Configure merge requirements (optional)
+    # 5p. Configure merge requirements (optional)
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/configure-merge-requirements.sh" "Merge requirements" || true
 
     if [[ $errors -gt 0 ]]; then
