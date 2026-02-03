@@ -580,6 +580,11 @@ configure_jenkins_kubernetes_cloud() {
     run_script_if_exists "$SCRIPT_DIR/02-configure/configure-jenkins-kubernetes-cloud.sh" "Jenkins Kubernetes cloud" "true"
 }
 
+configure_jenkins_global_env() {
+    log_info "Configuring Jenkins global environment variables..."
+    run_script_if_exists "$SCRIPT_DIR/02-configure/configure-jenkins-global-env.sh" "Jenkins global environment" "true"
+}
+
 configure_jenkins_script_security() {
     log_info "Configuring Jenkins script security..."
     run_script_if_exists "$SCRIPT_DIR/02-configure/configure-jenkins-script-security.sh" "Jenkins script security" "true"
@@ -661,6 +666,9 @@ configure_services() {
 
     # 5m. Configure Jenkins Kubernetes cloud (for pod-based agents)
     configure_jenkins_kubernetes_cloud || ((++errors))
+
+    # 5m2. Configure Jenkins global environment variables (needed for pipeline env.VAR access)
+    configure_jenkins_global_env || ((++errors))
 
     # 5n. Configure Jenkins script security (approve required signatures)
     configure_jenkins_script_security || ((++errors))
