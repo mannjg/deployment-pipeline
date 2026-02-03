@@ -141,12 +141,6 @@ MAVEN_SETTINGS
 // PIPELINE DEFINITION
 // ============================================================================
 
-// Agent image from environment (ConfigMap) - REQUIRED, no default
-def agentImage = System.getenv('JENKINS_AGENT_IMAGE')
-if (!agentImage) {
-    error "JENKINS_AGENT_IMAGE environment variable is required but not set. Configure it in the pipeline-config ConfigMap."
-}
-
 pipeline {
     agent {
         kubernetes {
@@ -156,7 +150,7 @@ kind: Pod
 spec:
   containers:
   - name: maven
-    image: ${agentImage}
+    image: ${env.JENKINS_AGENT_IMAGE}
     command:
     - cat
     tty: true
@@ -202,12 +196,13 @@ spec:
         NEXUS_URL = 'http://nexus.nexus.svc.cluster.local:8081'
 
         // Git repositories (from pipeline-config ConfigMap)
-        GITLAB_URL = System.getenv('GITLAB_URL_INTERNAL')
-        GITLAB_GROUP = System.getenv('GITLAB_GROUP')
-        DEPLOYMENT_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
+        // These reference environment variables set by the ConfigMap
+        GITLAB_URL = "${env.GITLAB_URL_INTERNAL ?: ''}"
+        GITLAB_GROUP = "${env.GITLAB_GROUP ?: ''}"
+        DEPLOYMENT_REPO = "${env.DEPLOYMENTS_REPO_URL ?: ''}"
 
         // External registry for deployment manifests (what kubelet uses to pull)
-        DEPLOY_REGISTRY = System.getenv('DOCKER_REGISTRY_EXTERNAL')
+        DEPLOY_REGISTRY = "${env.DOCKER_REGISTRY_EXTERNAL ?: ''}"
 
         // Credentials
         NEXUS_CREDENTIALS = credentials('nexus-credentials')
@@ -227,15 +222,15 @@ spec:
                     script {
                         echo "=== Checkout & Setup ==="
 
-                        // Validate required environment variables
-                        if (!env.GITLAB_URL) {
-                            error "GITLAB_URL_INTERNAL not set. Configure pipeline-config ConfigMap."
-                        }
-                        if (!env.DEPLOYMENT_REPO) {
-                            error "DEPLOYMENTS_REPO_URL not set. Configure pipeline-config ConfigMap."
-                        }
-                        if (!env.DEPLOY_REGISTRY) {
-                            error "DOCKER_REGISTRY_EXTERNAL not set. Configure pipeline-config ConfigMap."
+                        // Validate required environment variables from ConfigMap
+                        def missingVars = []
+                        if (!env.JENKINS_AGENT_IMAGE) missingVars.add('JENKINS_AGENT_IMAGE')
+                        if (!env.GITLAB_URL_INTERNAL) missingVars.add('GITLAB_URL_INTERNAL')
+                        if (!env.DEPLOYMENTS_REPO_URL) missingVars.add('DEPLOYMENTS_REPO_URL')
+                        if (!env.DOCKER_REGISTRY_EXTERNAL) missingVars.add('DOCKER_REGISTRY_EXTERNAL')
+
+                        if (missingVars.size() > 0) {
+                            error "Missing required ConfigMap variables: ${missingVars.join(', ')}. Configure pipeline-config ConfigMap."
                         }
 
                         // Extract version from pom.xml

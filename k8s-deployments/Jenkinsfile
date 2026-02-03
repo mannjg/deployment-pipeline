@@ -474,14 +474,6 @@ Build: ${env.BUILD_URL}"
 // MAIN PIPELINE
 // ============================================================================
 
-def agentImage = System.getenv('JENKINS_AGENT_IMAGE')
-if (!agentImage) {
-    error "JENKINS_AGENT_IMAGE environment variable is required but not set."
-}
-
-// Docker registry host for dind insecure-registry config (strip https:// prefix)
-def dockerRegistryHost = System.getenv('DOCKER_REGISTRY_EXTERNAL')?.replaceAll('^https?://', '')
-
 pipeline {
     agent {
         kubernetes {
@@ -491,7 +483,7 @@ kind: Pod
 spec:
   containers:
   - name: pipeline
-    image: ${agentImage}
+    image: ${env.JENKINS_AGENT_IMAGE}
     command:
     - cat
     tty: true
@@ -513,7 +505,7 @@ spec:
     - name: DOCKER_TLS_CERTDIR
       value: ""
     args:
-    - --insecure-registry=${dockerRegistryHost}
+    - --insecure-registry=${env.DOCKER_REGISTRY_EXTERNAL?.replaceAll('^https?://', '')}
     resources:
       requests:
         memory: "512Mi"
@@ -532,11 +524,12 @@ spec:
     }
 
     environment {
-        GITLAB_URL = System.getenv('GITLAB_URL_INTERNAL')
-        GITLAB_GROUP = System.getenv('GITLAB_GROUP')
-        DEPLOYMENTS_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
+        // These reference environment variables set by the pipeline-config ConfigMap
+        GITLAB_URL = "${env.GITLAB_URL_INTERNAL ?: ''}"
+        GITLAB_GROUP = "${env.GITLAB_GROUP ?: ''}"
+        DEPLOYMENTS_REPO = "${env.DEPLOYMENTS_REPO_URL ?: ''}"
         // External Docker registry (HTTPS) for Docker daemon operations
-        DOCKER_REGISTRY_EXTERNAL = System.getenv('DOCKER_REGISTRY_EXTERNAL')
+        DOCKER_REGISTRY_EXTERNAL = "${env.DOCKER_REGISTRY_EXTERNAL ?: ''}"
         ARGOCD_SERVER = 'argocd-server.argocd.svc.cluster.local:80'
         ARGOCD_OPTS = '--plaintext --grpc-web'
         ENV_BRANCHES = 'dev,stage,prod'
@@ -556,6 +549,16 @@ Branch: ${env.BRANCH_NAME}
 Build: ${env.BUILD_URL}
 =======================================================
 """
+                        // Validate required environment variables from ConfigMap
+                        def missingVars = []
+                        if (!env.JENKINS_AGENT_IMAGE) missingVars.add('JENKINS_AGENT_IMAGE')
+                        if (!env.GITLAB_URL_INTERNAL) missingVars.add('GITLAB_URL_INTERNAL')
+                        if (!env.DOCKER_REGISTRY_EXTERNAL) missingVars.add('DOCKER_REGISTRY_EXTERNAL')
+
+                        if (missingVars.size() > 0) {
+                            error "Missing required ConfigMap variables: ${missingVars.join(', ')}. Configure pipeline-config ConfigMap."
+                        }
+
                         env.ORIGINAL_COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                         echo "Commit SHA: ${env.ORIGINAL_COMMIT_SHA}"
 
