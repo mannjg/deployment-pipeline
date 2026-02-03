@@ -140,6 +140,12 @@ preflight_checks() {
 # Run preflight checks
 preflight_checks
 
+# Validate required cluster configuration
+: "${DEV_NAMESPACE:?DEV_NAMESPACE must be set in cluster config}"
+: "${STAGE_NAMESPACE:?STAGE_NAMESPACE must be set in cluster config}"
+: "${PROD_NAMESPACE:?PROD_NAMESPACE must be set in cluster config}"
+: "${DOCKER_REGISTRY_HOST:?DOCKER_REGISTRY_HOST must be set in cluster config}"
+
 # Environment-specific configurations
 declare -A ENV_REPLICAS=( ["dev"]="1" ["stage"]="2" ["prod"]="3" )
 declare -A ENV_DEBUG=( ["dev"]="true" ["stage"]="false" ["prod"]="false" )
@@ -149,6 +155,19 @@ declare -A ENV_CPU_LIMIT=( ["dev"]="500m" ["stage"]="1000m" ["prod"]="2000m" )
 declare -A ENV_MEM_REQUEST=( ["dev"]="256Mi" ["stage"]="512Mi" ["prod"]="1Gi" )
 declare -A ENV_MEM_LIMIT=( ["dev"]="512Mi" ["stage"]="1Gi" ["prod"]="2Gi" )
 declare -A ENV_STORAGE=( ["dev"]="5Gi" ["stage"]="10Gi" ["prod"]="50Gi" )
+
+# Cluster-specific namespace mapping
+declare -A ENV_NAMESPACE=(
+    ["dev"]="${DEV_NAMESPACE}"
+    ["stage"]="${STAGE_NAMESPACE}"
+    ["prod"]="${PROD_NAMESPACE}"
+)
+
+# Docker registry URL for images (with port for internal registry)
+DOCKER_REGISTRY="${DOCKER_REGISTRY_HOST}:5000"
+
+# Initial seed image tag (CI/CD will update this after first build)
+SEED_IMAGE_TAG="seed"
 
 # Temp directory for operations
 WORK_DIR=$(mktemp -d)
@@ -198,8 +217,11 @@ transform_env_config() {
     # 6. Update log level
     # 7. Update resource limits
 
+    # Get cluster-specific namespace for this environment
+    local target_namespace="${ENV_NAMESPACE[$env]}"
+
     sed -e "s/^dev:/${env}:/g" \
-        -e "s/namespace: \"dev\"/namespace: \"${env}\"/g" \
+        -e "s/namespace: \"dev\"/namespace: \"${target_namespace}\"/g" \
         -e "s/environment: \"dev\"/environment: \"${env}\"/g" \
         -e "s/value: \"dev\"/value: \"${env}\"/g" \
         -e "s/replicas: 1/replicas: ${ENV_REPLICAS[$env]}/g" \
@@ -213,6 +235,8 @@ transform_env_config() {
         -e "s|// Example environment configuration|// ${env^} environment configuration|g" \
         -e "s|// Example:|// ${env^}:|g" \
         -e "s|log-level\":     \"debug\"|log-level\":     \"${ENV_LOG_LEVEL[$env],,}\"|g" \
+        -e "s|REGISTRY_URL_NOT_SET|${DOCKER_REGISTRY}|g" \
+        -e "s|IMAGE_TAG_NOT_SET|${SEED_IMAGE_TAG}|g" \
         "$source_file" > "$target_file"
 
     # Update comment header for non-dev environments
