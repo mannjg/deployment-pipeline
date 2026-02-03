@@ -7,6 +7,7 @@
 #   ${NEXUS_HOST} - Nexus hostname (e.g., nexus.jmann.local)
 #   ${DOCKER_REGISTRY} - Docker registry hostname (e.g., docker.jmann.local)
 #   ${STORAGE_CLASS} - StorageClass for PVCs
+#   ${CA_ISSUER} - ClusterIssuer name (e.g., alpha-ca-issuer)
 
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -16,7 +17,7 @@ metadata:
 spec:
   secretName: nexus-tls
   issuerRef:
-    name: ca-issuer
+    name: ${CA_ISSUER}
     kind: ClusterIssuer
   commonName: ${NEXUS_HOST}
   dnsNames:
@@ -30,7 +31,7 @@ metadata:
 spec:
   secretName: docker-tls
   issuerRef:
-    name: ca-issuer
+    name: ${CA_ISSUER}
     kind: ClusterIssuer
   commonName: ${DOCKER_REGISTRY}
   dnsNames:

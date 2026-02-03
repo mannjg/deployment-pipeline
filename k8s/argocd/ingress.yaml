@@ -4,6 +4,7 @@
 # Variables (use envsubst before applying):
 #   ${ARGOCD_NAMESPACE} - ArgoCD namespace (e.g., argocd)
 #   ${ARGOCD_HOST} - ArgoCD hostname (e.g., argocd.jmann.local)
+#   ${CA_ISSUER} - ClusterIssuer name (e.g., alpha-ca-issuer)
 
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -13,7 +14,7 @@ metadata:
 spec:
   secretName: argocd-tls
   issuerRef:
-    name: ca-issuer
+    name: ${CA_ISSUER}
     kind: ClusterIssuer
   commonName: ${ARGOCD_HOST}
   dnsNames:

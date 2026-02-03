@@ -8,6 +8,7 @@
 #   ${GITLAB_HOST} - GitLab hostname (e.g., gitlab.jmann.local)
 #   ${STORAGE_CLASS} - StorageClass for PVCs
 #   ${GITLAB_ROOT_PASSWORD} - Initial root password
+#   ${CA_ISSUER} - ClusterIssuer name (e.g., alpha-ca-issuer)
 
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -17,7 +18,7 @@ metadata:
 spec:
   secretName: gitlab-tls
   issuerRef:
-    name: ca-issuer
+    name: ${CA_ISSUER}
     kind: ClusterIssuer
   commonName: ${GITLAB_HOST}
   dnsNames:

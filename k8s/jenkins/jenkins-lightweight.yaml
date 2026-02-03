@@ -9,6 +9,7 @@
 #   ${JENKINS_NAMESPACE} - Namespace for Jenkins resources (e.g., jenkins)
 #   ${JENKINS_HOST} - Jenkins hostname (e.g., jenkins.jmann.local)
 #   ${STORAGE_CLASS} - StorageClass for PVCs
+#   ${CA_ISSUER} - ClusterIssuer name (e.g., alpha-ca-issuer)
 
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -18,7 +19,7 @@ metadata:
 spec:
   secretName: jenkins-tls
   issuerRef:
-    name: ca-issuer
+    name: ${CA_ISSUER}
     kind: ClusterIssuer
   commonName: ${JENKINS_HOST}
   dnsNames:

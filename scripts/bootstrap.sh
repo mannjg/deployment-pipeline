@@ -238,6 +238,7 @@ export_config_for_envsubst() {
     export NEXUS_HOST="${NEXUS_HOST_EXTERNAL}"
     export ARGOCD_HOST="${ARGOCD_HOST_EXTERNAL}"
     export DOCKER_REGISTRY="${DOCKER_REGISTRY_HOST}"
+    export CA_ISSUER="${CA_ISSUER_NAME}"
 
     # Generate passwords if not already set
     export GITLAB_ROOT_PASSWORD="${GITLAB_ROOT_PASSWORD:-$(generate_password)}"
@@ -260,9 +261,13 @@ apply_manifest() {
 }
 
 provision_ca_to_certmanager() {
-    log_info "Provisioning CA to cert-manager..."
+    log_info "Provisioning cluster-specific CA to cert-manager..."
 
     get_cluster_ca_paths
+
+    # Cluster-specific resource names (don't touch shared resources)
+    local secret_name="${CLUSTER_NAME}-ca-key-pair"
+    local issuer_name="${CLUSTER_NAME}-ca-issuer"
 
     # Check if cert-manager namespace exists
     if ! kubectl get namespace cert-manager &>/dev/null; then
@@ -271,32 +276,35 @@ provision_ca_to_certmanager() {
         return 1
     fi
 
-    # Create or update the ca-key-pair secret with our pre-generated CA
-    if kubectl get secret ca-key-pair -n cert-manager &>/dev/null; then
-        log_info "  Updating existing ca-key-pair secret..."
-        kubectl delete secret ca-key-pair -n cert-manager
+    # Create or update the cluster-specific CA secret
+    if kubectl get secret "$secret_name" -n cert-manager &>/dev/null; then
+        log_info "  Updating existing $secret_name secret..."
+        kubectl delete secret "$secret_name" -n cert-manager
     fi
 
-    kubectl create secret tls ca-key-pair \
+    kubectl create secret tls "$secret_name" \
         -n cert-manager \
         --cert="$CA_CERT" \
         --key="$CA_KEY"
 
-    log_info "  CA provisioned to cert-manager"
+    log_info "  CA secret '$secret_name' created in cert-manager namespace"
 
-    # Apply only the ca-issuer ClusterIssuer (not the self-signed generator)
-    log_info "  Creating ClusterIssuer..."
+    # Create cluster-specific ClusterIssuer
+    log_info "  Creating ClusterIssuer '$issuer_name'..."
     kubectl apply -f - <<EOF
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
-  name: ca-issuer
+  name: ${issuer_name}
 spec:
   ca:
-    secretName: ca-key-pair
+    secretName: ${secret_name}
 EOF
 
-    log_info "  ClusterIssuer 'ca-issuer' configured"
+    log_info "  ClusterIssuer '$issuer_name' configured"
+
+    # Export for use in manifests
+    export CA_ISSUER_NAME="$issuer_name"
 }
 
 apply_infrastructure_manifests() {
