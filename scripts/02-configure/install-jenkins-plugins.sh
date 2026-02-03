@@ -157,7 +157,7 @@ wait_for_installs() {
             "$JENKINS_URL/pluginManager/api/json?depth=2" -o /tmp/jenkins_plugins.json 2>/dev/null; then
             log_info "  Jenkins API not ready yet, waiting..."
             sleep 10
-            ((attempt++))
+            ((attempt++)) || true
             continue
         fi
 
@@ -165,7 +165,7 @@ wait_for_installs() {
         if [[ ! -s /tmp/jenkins_plugins.json ]]; then
             log_info "  Empty response, Jenkins may be restarting..."
             sleep 10
-            ((attempt++))
+            ((attempt++)) || true
             continue
         fi
 
@@ -184,7 +184,7 @@ wait_for_installs() {
 
         log_info "  Waiting for $missing key plugins to become active..."
         sleep 10
-        ((attempt++))
+        ((attempt++)) || true
     done
 
     rm -f /tmp/jenkins_plugins.json
@@ -247,7 +247,7 @@ wait_for_jenkins() {
 
         log_info "  Waiting... (HTTP $status_code)"
         sleep 5
-        ((attempt++))
+        ((attempt++)) || true
     done
 
     log_fail "Timed out waiting for Jenkins"

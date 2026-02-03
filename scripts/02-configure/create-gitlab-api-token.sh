@@ -79,7 +79,7 @@ wait_for_gitlab_ready() {
             return 0
         fi
 
-        ((attempt++))
+        ((attempt++)) || true
         echo -n "."
         sleep 5
     done

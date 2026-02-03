@@ -190,14 +190,14 @@ run_tests() {
             L2|L5|L6)
                 if [[ "${layer}" != "${test_filter}" ]]; then
                     log_info "Skipping ${test_id} (layer ${layer})"
-                    ((skipped++))
+                    ((skipped++)) || true
                     continue
                 fi
                 ;;
             T*)
                 if [[ "${test_id}" != "${test_filter}" ]]; then
                     log_info "Skipping ${test_id}"
-                    ((skipped++))
+                    ((skipped++)) || true
                     continue
                 fi
                 ;;
@@ -208,9 +208,9 @@ run_tests() {
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
         if ${func}; then
-            ((passed++))
+            ((passed++)) || true
         else
-            ((failed++))
+            ((failed++)) || true
         fi
 
         echo ""
