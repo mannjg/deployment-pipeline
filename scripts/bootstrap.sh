@@ -507,32 +507,32 @@ configure_docker_registry_certs() {
     log_info "Configuring Docker registry certificates..."
 
     local cert_dir="/etc/docker/certs.d/${DOCKER_REGISTRY_HOST}"
-    local default_cert_dir="/etc/docker/certs.d/docker.jmann.local"
+    local source_cert="$PROJECT_ROOT/k8s/jenkins/agent/certs/internal-ca.crt"
 
     # Check if cert directory already exists
-    if [[ -d "$cert_dir" ]]; then
+    if [[ -d "$cert_dir" ]] && [[ -f "$cert_dir/ca.crt" ]]; then
         log_info "  Docker cert directory already exists: $cert_dir"
         return 0
     fi
 
-    # Check if we have a source cert to copy from
-    if [[ ! -f "$default_cert_dir/ca.crt" ]]; then
-        log_warn "  No default CA cert found at $default_cert_dir/ca.crt"
-        log_warn "  You may need to manually configure Docker to trust the registry"
+    # Check if we have the CA cert in the repo
+    if [[ ! -f "$source_cert" ]]; then
+        log_error "  CA cert not found in repo: $source_cert"
+        log_error "  Cannot configure Docker to trust the registry"
         return 1
     fi
 
     # Try to create the cert directory (requires sudo)
     log_info "  Creating Docker cert directory: $cert_dir"
     if sudo mkdir -p "$cert_dir" 2>/dev/null && \
-       sudo cp "$default_cert_dir/ca.crt" "$cert_dir/ca.crt" 2>/dev/null; then
+       sudo cp "$source_cert" "$cert_dir/ca.crt" 2>/dev/null; then
         log_info "  Docker registry certificate configured"
         return 0
     else
         log_error "  Failed to configure Docker registry certificates (need sudo)"
         log_error "  Run manually:"
         log_error "    sudo mkdir -p $cert_dir"
-        log_error "    sudo cp $default_cert_dir/ca.crt $cert_dir/"
+        log_error "    sudo cp $source_cert $cert_dir/ca.crt"
         return 1
     fi
 }
