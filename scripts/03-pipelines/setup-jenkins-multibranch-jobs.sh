@@ -246,7 +246,8 @@ trigger_scan() {
 setup_gitlab_credentials() {
     local credentials_id="gitlab-credentials"
 
-    log_step "Setting up GitLab credentials in Jenkins..."
+    # NOTE: This function's output is captured, so log to stderr
+    log_step "Setting up GitLab credentials in Jenkins..." >&2
 
     # Get GitLab token
     local gitlab_token
@@ -254,7 +255,7 @@ setup_gitlab_credentials() {
         -o jsonpath="{.data.${GITLAB_API_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
 
     if [[ -z "$gitlab_token" ]]; then
-        log_fail "Could not get GitLab token"
+        log_fail "Could not get GitLab token" >&2
         return 1
     fi
 
@@ -278,7 +279,7 @@ CREDXML
         "$JENKINS_URL/credentials/store/system/domain/_/credential/$credentials_id/api/json")
 
     if [[ "$status_code" == "200" ]]; then
-        log_info "Credentials already exist, updating..."
+        log_info "Credentials already exist, updating..." >&2
         status_code=$(curl -sk -o /dev/null -w "%{http_code}" \
             -u "$JENKINS_USER:$JENKINS_TOKEN" \
             -b "$COOKIE_JAR" \
@@ -288,7 +289,7 @@ CREDXML
             --data-binary "$cred_xml" \
             "$JENKINS_URL/credentials/store/system/domain/_/credential/$credentials_id/config.xml")
     else
-        log_info "Creating new credentials..."
+        log_info "Creating new credentials..." >&2
         status_code=$(curl -sk -o /dev/null -w "%{http_code}" \
             -u "$JENKINS_USER:$JENKINS_TOKEN" \
             -b "$COOKIE_JAR" \
@@ -300,12 +301,13 @@ CREDXML
     fi
 
     if [[ "$status_code" == "200" ]]; then
-        log_pass "GitLab credentials configured"
+        log_pass "GitLab credentials configured" >&2
     else
-        log_fail "Failed to configure credentials (HTTP $status_code)"
+        log_fail "Failed to configure credentials (HTTP $status_code)" >&2
         return 1
     fi
 
+    # Output ONLY the credentials ID (captured by caller)
     echo "$credentials_id"
 }
 
