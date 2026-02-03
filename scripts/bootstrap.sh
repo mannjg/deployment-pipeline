@@ -367,6 +367,11 @@ configure_gitlab_projects() {
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/create-gitlab-projects.sh" "GitLab projects" "true"
 }
 
+configure_gitlab_network_settings() {
+    log_info "Configuring GitLab network settings for webhooks..."
+    run_script_if_exists "$SCRIPT_DIR/02-configure/configure-gitlab-network-settings.sh" "GitLab network settings" "true"
+}
+
 setup_git_remotes() {
     log_info "Setting up git remotes for cluster: $CLUSTER_NAME..."
 
@@ -490,28 +495,31 @@ configure_services() {
     # 5b. Create GitLab projects
     configure_gitlab_projects || ((++errors))
 
-    # 5c. Setup git remotes for this cluster
+    # 5c. Configure GitLab network settings (allow local webhook URLs)
+    configure_gitlab_network_settings || ((++errors))
+
+    # 5d. Setup git remotes for this cluster
     setup_git_remotes || ((++errors))
 
-    # 5d. Sync subtrees to GitLab (pushes example-app and k8s-deployments)
+    # 5e. Sync subtrees to GitLab (pushes example-app and k8s-deployments)
     sync_subtrees_to_gitlab || ((++errors))
 
-    # 5e. Setup environment branches (dev/stage/prod) in k8s-deployments
+    # 5f. Setup environment branches (dev/stage/prod) in k8s-deployments
     setup_environment_branches || ((++errors))
 
-    # 5f. Setup ArgoCD applications (after env branches exist)
+    # 5g. Setup ArgoCD applications (after env branches exist)
     setup_argocd_applications || ((++errors))
 
-    # 5g. Create Jenkins credentials secret (needed for webhook setup)
+    # 5h. Create Jenkins credentials secret (needed for webhook setup)
     create_jenkins_credentials_secret || ((++errors))
 
-    # 5h. Install required Jenkins plugins (must be done before job creation)
+    # 5i. Install required Jenkins plugins (must be done before job creation)
     install_jenkins_plugins || ((++errors))
 
-    # 5i. Setup Jenkins pipelines and webhooks
+    # 5j. Setup Jenkins pipelines and webhooks
     setup_jenkins_pipelines || ((++errors))
 
-    # 5j. Configure merge requirements (optional)
+    # 5k. Configure merge requirements (optional)
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/configure-merge-requirements.sh" "Merge requirements" || true
 
     if [[ $errors -gt 0 ]]; then
