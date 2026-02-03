@@ -183,11 +183,11 @@ enable_docker_realm() {
         return 0
     fi
 
-    # Enable DockerToken realm
+    # Enable DockerToken realm (NexusAuthenticatingRealm is required, DockerToken for Docker auth)
     if curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
         -X PUT "${NEXUS_URL}/service/rest/v1/security/realms/active" \
         -H "Content-Type: application/json" \
-        -d '["NexusAuthenticatingRealm","NexusAuthorizingRealm","DockerToken"]' 2>/dev/null; then
+        -d '["NexusAuthenticatingRealm","DockerToken"]' 2>/dev/null; then
         log_pass "Docker Bearer Token Realm enabled"
     else
         log_warn "Could not enable Docker realm"
@@ -251,6 +251,45 @@ store_credentials_secret() {
     log_pass "Credentials stored in nexus-admin-credentials secret"
 }
 
+accept_eula() {
+    log_step "Accepting Nexus EULA..."
+
+    # Get current EULA status
+    local eula_response
+    eula_response=$(curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
+        "${NEXUS_URL}/service/rest/v1/system/eula" 2>/dev/null)
+
+    if [[ -z "$eula_response" ]]; then
+        log_warn "Could not get EULA status"
+        return 1
+    fi
+
+    # Check if already accepted
+    if echo "$eula_response" | grep -q '"accepted" *: *true'; then
+        log_info "EULA already accepted"
+        return 0
+    fi
+
+    # Modify the response to set accepted=true and POST it back
+    local accept_body
+    accept_body=$(echo "$eula_response" | jq '.accepted = true')
+
+    local http_code
+    http_code=$(curl -sfk -u "${ADMIN_USER}:${ADMIN_PASS}" \
+        -X POST "${NEXUS_URL}/service/rest/v1/system/eula" \
+        -H "Content-Type: application/json" \
+        -d "$accept_body" \
+        -o /dev/null -w "%{http_code}" 2>/dev/null)
+
+    if [[ "$http_code" == "204" ]]; then
+        log_pass "EULA accepted"
+        return 0
+    else
+        log_warn "EULA acceptance returned HTTP $http_code (may need manual acceptance)"
+        return 1
+    fi
+}
+
 # Main
 main() {
     echo ""
@@ -269,6 +308,7 @@ main() {
     initial_pass=$(get_admin_password)
 
     change_admin_password "$initial_pass"
+    accept_eula
     create_maven_repos
     create_docker_repo
     enable_docker_realm

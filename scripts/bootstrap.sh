@@ -507,32 +507,39 @@ configure_docker_registry_certs() {
     log_info "Configuring Docker registry certificates..."
 
     local cert_dir="/etc/docker/certs.d/${DOCKER_REGISTRY_HOST}"
-    local source_cert="$PROJECT_ROOT/k8s/jenkins/agent/certs/internal-ca.crt"
+    local temp_cert="/tmp/cluster-ca-$CLUSTER_NAME.crt"
 
-    # Check if cert directory already exists
+    # Check if cert directory already exists with a cert
     if [[ -d "$cert_dir" ]] && [[ -f "$cert_dir/ca.crt" ]]; then
         log_info "  Docker cert directory already exists: $cert_dir"
         return 0
     fi
 
-    # Check if we have the CA cert in the repo
-    if [[ ! -f "$source_cert" ]]; then
-        log_error "  CA cert not found in repo: $source_cert"
-        log_error "  Cannot configure Docker to trust the registry"
+    # Extract CA cert from cert-manager (the actual CA for this cluster)
+    log_info "  Extracting CA certificate from cert-manager..."
+    if ! kubectl get secret ca-key-pair -n cert-manager -o jsonpath='{.data.tls\.crt}' 2>/dev/null | base64 -d > "$temp_cert"; then
+        log_error "  Failed to extract CA cert from cert-manager"
+        log_error "  Make sure cert-manager is deployed and ca-key-pair secret exists"
+        return 1
+    fi
+
+    if [[ ! -s "$temp_cert" ]]; then
+        log_error "  CA cert is empty - cert-manager may not be ready"
         return 1
     fi
 
     # Try to create the cert directory (requires sudo)
     log_info "  Creating Docker cert directory: $cert_dir"
     if sudo mkdir -p "$cert_dir" 2>/dev/null && \
-       sudo cp "$source_cert" "$cert_dir/ca.crt" 2>/dev/null; then
-        log_info "  Docker registry certificate configured"
+       sudo cp "$temp_cert" "$cert_dir/ca.crt" 2>/dev/null; then
+        log_info "  Docker registry certificate configured from cluster CA"
+        rm -f "$temp_cert"
         return 0
     else
         log_error "  Failed to configure Docker registry certificates (need sudo)"
         log_error "  Run manually:"
         log_error "    sudo mkdir -p $cert_dir"
-        log_error "    sudo cp $source_cert $cert_dir/ca.crt"
+        log_error "    sudo cp $temp_cert $cert_dir/ca.crt"
         return 1
     fi
 }
