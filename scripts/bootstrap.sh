@@ -772,6 +772,10 @@ main() {
         log_step "Verifying infrastructure pods"
         wait_for_infrastructure
 
+        # Ensure CA is provisioned (idempotent, needed for Docker registry push)
+        provision_ca_to_certmanager
+        export_config_for_envsubst
+
         # Run only configuration
         configure_services
     else
