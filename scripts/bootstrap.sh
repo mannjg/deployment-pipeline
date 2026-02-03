@@ -242,6 +242,13 @@ export_config_for_envsubst() {
 
     # Generate passwords if not already set
     export GITLAB_ROOT_PASSWORD="${GITLAB_ROOT_PASSWORD:-$(generate_password)}"
+
+    # Validate GitLab password meets minimum requirements (8 characters)
+    if [[ ${#GITLAB_ROOT_PASSWORD} -lt 8 ]]; then
+        log_warn "GITLAB_ROOT_PASSWORD is too short (${#GITLAB_ROOT_PASSWORD} chars, min 8)"
+        log_info "Generating a valid password..."
+        export GITLAB_ROOT_PASSWORD="$(generate_password)"
+    fi
 }
 
 apply_manifest() {
