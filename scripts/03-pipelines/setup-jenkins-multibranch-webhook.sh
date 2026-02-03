@@ -130,12 +130,13 @@ configure_webhook_trigger() {
 
     # Check if webhook trigger already exists
     if echo "$config" | grep -q "ComputedFolderWebHookTrigger"; then
-        # Check if it has the correct token
+        # Check if it has the correct token (use -A5 to capture token element)
         local existing_token
-        existing_token=$(echo "$config" | grep -A1 "ComputedFolderWebHookTrigger" | grep -o '<token>[^<]*</token>' | sed 's/<[^>]*>//g')
+        existing_token=$(echo "$config" | grep -A5 "ComputedFolderWebHookTrigger" | grep -o '<token>[^<]*</token>' | sed 's/<[^>]*>//g')
 
         if [[ "$existing_token" == "$token" ]]; then
             log_pass "Webhook trigger already configured with correct token"
+            log_info "GitLab webhook URL: ${JENKINS_URL_INTERNAL}/multibranch-webhook-trigger/invoke?token=${token}"
             return 0
         else
             log_warn "Webhook trigger exists but has different token: $existing_token"

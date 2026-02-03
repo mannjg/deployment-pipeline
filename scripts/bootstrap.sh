@@ -441,8 +441,11 @@ setup_jenkins_pipelines() {
     # First, create the MultiBranch Pipeline jobs (required before webhook setup)
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-multibranch-jobs.sh" "Jenkins MultiBranch jobs" "true" || ((++errors))
 
-    # Setup multibranch pipeline webhook trigger
+    # Setup multibranch pipeline webhook trigger in Jenkins
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-multibranch-webhook.sh" "Jenkins multibranch webhook" || ((++errors))
+
+    # Setup GitLab webhooks to trigger Jenkins MultiBranch scans
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-gitlab-jenkins-webhooks.sh" "GitLab Jenkins webhooks" || ((++errors))
 
     # Setup auto-promote job and webhook
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-auto-promote-job.sh" "Jenkins auto-promote job" || ((++errors))
