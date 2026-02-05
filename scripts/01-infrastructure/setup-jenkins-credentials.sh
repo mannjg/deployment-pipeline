@@ -31,10 +31,14 @@ JENKINS_URL="${JENKINS_URL_EXTERNAL}"
 # Helper Functions
 # =============================================================================
 
-# Get Jenkins CSRF crumb
+# Get Jenkins CSRF crumb (with cookie jar for session)
 get_crumb() {
+    COOKIE_JAR=$(mktemp)
+    trap "rm -f '$COOKIE_JAR'" EXIT
+
     local crumb_json
     crumb_json=$(curl -sfk -u "$JENKINS_AUTH" \
+        -c "$COOKIE_JAR" \
         "$JENKINS_URL/crumbIssuer/api/json" 2>/dev/null) || {
         log_error "Failed to get Jenkins CSRF crumb"
         return 1
@@ -83,6 +87,7 @@ EOF
 )
 
     if curl -sfk -u "$JENKINS_AUTH" \
+        -b "$COOKIE_JAR" \
         -H "$CRUMB_FIELD: $CRUMB_VALUE" \
         -X POST "$JENKINS_URL/credentials/store/system/domain/_/createCredentials" \
         --data-urlencode "json=${json_payload}" 2>/dev/null; then
@@ -120,6 +125,7 @@ EOF
 )
 
     if curl -sfk -u "$JENKINS_AUTH" \
+        -b "$COOKIE_JAR" \
         -H "$CRUMB_FIELD: $CRUMB_VALUE" \
         -X POST "$JENKINS_URL/credentials/store/system/domain/_/createCredentials" \
         --data-urlencode "json=${json_payload}" 2>/dev/null; then
