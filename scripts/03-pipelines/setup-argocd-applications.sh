@@ -16,7 +16,7 @@ source "$SCRIPT_DIR/../lib/logging.sh"
 
 log_header "ArgoCD Application Setup"
 log_info "Namespace: $ARGOCD_NAMESPACE"
-log_info "GitLab (internal): $GITLAB_URL_INTERNAL"
+log_info "GitLab: $GITLAB_URL_EXTERNAL"
 log_info "Repo: $DEPLOYMENTS_REPO_PATH"
 echo ""
 
@@ -50,7 +50,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${GITLAB_URL_INTERNAL}/${DEPLOYMENTS_REPO_PATH}.git
+    repoURL: ${GITLAB_URL_EXTERNAL}/${DEPLOYMENTS_REPO_PATH}.git
     targetRevision: ${env}
     path: manifests/exampleApp
   destination:

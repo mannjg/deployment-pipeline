@@ -1,7 +1,7 @@
 ---
 # Variables (use envsubst before applying):
 #   ${ARGOCD_NAMESPACE} - ArgoCD namespace (e.g., argocd)
-#   ${GITLAB_URL_INTERNAL} - GitLab internal URL (e.g., http://gitlab.gitlab-alpha.svc.cluster.local)
+#   ${GITLAB_URL_EXTERNAL} - GitLab external URL (e.g., https://gitlab-alpha.jmann.local)
 #   ${DEV_NAMESPACE} - Dev environment namespace (e.g., dev)
 #   ${STAGE_NAMESPACE} - Stage environment namespace (e.g., stage)
 #   ${PROD_NAMESPACE} - Prod environment namespace (e.g., prod)
@@ -17,7 +17,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${GITLAB_URL_INTERNAL}/p2c/k8s-deployments.git
+    repoURL: ${GITLAB_URL_EXTERNAL}/p2c/k8s-deployments.git
     targetRevision: dev
     path: manifests/postgres
   destination:
@@ -42,7 +42,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${GITLAB_URL_INTERNAL}/p2c/k8s-deployments.git
+    repoURL: ${GITLAB_URL_EXTERNAL}/p2c/k8s-deployments.git
     targetRevision: stage
     path: manifests/postgres
   destination:
@@ -67,7 +67,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${GITLAB_URL_INTERNAL}/p2c/k8s-deployments.git
+    repoURL: ${GITLAB_URL_EXTERNAL}/p2c/k8s-deployments.git
     targetRevision: prod
     path: manifests/postgres
   destination:

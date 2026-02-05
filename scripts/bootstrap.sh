@@ -626,6 +626,57 @@ configure_nexus() {
 }
 
 
+configure_argocd_dns() {
+    log_info "Configuring ArgoCD DNS resolution for external hostnames..."
+
+    # ArgoCD repo-server needs to resolve external hostnames (e.g., gitlab-alpha.jmann.local)
+    # to clone git repos. Cluster DNS doesn't know about these hostnames, so we add
+    # hostAliases to map them to the ingress controller's node IP.
+
+    # Get the node IP (ingress controller uses hostPort, so node IP = ingress IP)
+    local node_ip
+    node_ip=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+    if [[ -z "$node_ip" ]]; then
+        log_error "Could not determine node IP for hostAliases"
+        return 1
+    fi
+    log_info "  Node IP: $node_ip"
+
+    # Collect all external hostnames that ArgoCD needs to resolve
+    local hostnames=("${GITLAB_HOST_EXTERNAL}")
+    log_info "  Hostnames: ${hostnames[*]}"
+
+    # Build hostAliases JSON
+    local aliases_json
+    aliases_json=$(printf '%s\n' "${hostnames[@]}" | jq -Rn --arg ip "$node_ip" \
+        '[{"ip": $ip, "hostnames": [inputs]}]')
+
+    # Patch argocd-repo-server (does git clone operations)
+    log_info "  Patching argocd-repo-server with hostAliases..."
+    kubectl patch deployment argocd-repo-server -n "$ARGOCD_NAMESPACE" \
+        --type=strategic \
+        -p "{\"spec\":{\"template\":{\"spec\":{\"hostAliases\":$aliases_json}}}}"
+
+    # Add cluster CA cert to ArgoCD TLS certs ConfigMap so it trusts GitLab's TLS cert
+    get_cluster_ca_paths
+    if [[ -f "$CA_CERT" ]]; then
+        log_info "  Adding cluster CA to ArgoCD TLS trust for ${GITLAB_HOST_EXTERNAL}..."
+        local ca_cert_content
+        ca_cert_content=$(cat "$CA_CERT")
+        kubectl patch configmap argocd-tls-certs-cm -n "$ARGOCD_NAMESPACE" \
+            --type=merge \
+            -p "{\"data\":{\"${GITLAB_HOST_EXTERNAL}\":$(echo "$ca_cert_content" | jq -Rs .)}}"
+    else
+        log_warn "  Cluster CA cert not found, ArgoCD may not trust GitLab TLS"
+    fi
+
+    # Wait for rollout to complete
+    log_info "  Waiting for argocd-repo-server rollout..."
+    kubectl rollout status deployment/argocd-repo-server -n "$ARGOCD_NAMESPACE" --timeout=120s
+
+    log_info "ArgoCD DNS configuration complete"
+}
+
 setup_argocd_applications() {
     log_info "Setting up ArgoCD applications..."
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-argocd-applications.sh" "ArgoCD applications" "false"
@@ -652,40 +703,43 @@ configure_services() {
     # 5f. Setup environment branches (dev/stage/prod) in k8s-deployments
     setup_environment_branches
 
-    # 5g. Setup ArgoCD applications (after env branches exist)
+    # 5g. Configure ArgoCD DNS (hostAliases + TLS trust for external GitLab)
+    configure_argocd_dns
+
+    # 5h. Setup ArgoCD applications (after env branches exist and DNS configured)
     setup_argocd_applications
 
-    # 5h. Configure Nexus repositories (Docker registry needed for agent image)
+    # 5i. Configure Nexus repositories (Docker registry needed for agent image)
     configure_nexus
 
-    # 5i. Create Jenkins credentials secret (needed for webhook setup)
+    # 5j. Create Jenkins credentials secret (needed for webhook setup)
     create_jenkins_credentials_secret
 
-    # 5j. Prompt for container registry credentials (needed for image push)
+    # 5k. Prompt for container registry credentials (needed for image push)
     prompt_registry_credentials
 
-    # 5k. Build Jenkins agent image (push to external registry)
+    # 5l. Build Jenkins agent image (push to external registry)
     build_jenkins_agent_image
 
-    # 5l. Install required Jenkins plugins (must be done before job creation)
+    # 5m. Install required Jenkins plugins (must be done before job creation)
     install_jenkins_plugins
 
-    # 5m. Configure Jenkins Kubernetes cloud (for pod-based agents)
+    # 5n. Configure Jenkins Kubernetes cloud (for pod-based agents)
     configure_jenkins_kubernetes_cloud
 
-    # 5n. Configure Jenkins global environment variables (needed for pipeline env.VAR access)
+    # 5o. Configure Jenkins global environment variables (needed for pipeline env.VAR access)
     configure_jenkins_global_env
 
-    # 5o. Configure Jenkins script security (approve required signatures)
+    # 5p. Configure Jenkins script security (approve required signatures)
     configure_jenkins_script_security
 
-    # 5p. Setup Jenkins pipeline credentials (gitlab-api-token-secret, nexus, argocd)
+    # 5q. Setup Jenkins pipeline credentials (gitlab-api-token-secret, nexus, argocd)
     setup_jenkins_pipeline_credentials
 
-    # 5q. Setup Jenkins pipelines and webhooks
+    # 5r. Setup Jenkins pipelines and webhooks
     setup_jenkins_pipelines
 
-    # 5r. Configure merge requirements (optional)
+    # 5s. Configure merge requirements (optional)
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/configure-merge-requirements.sh" "Merge requirements" || true
 
     log_info "Service configuration completed successfully"
