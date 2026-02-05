@@ -127,30 +127,35 @@ wait_for_pipeline_quiescence() {
             return 0  # Don't fail, just warn and proceed
         fi
 
-        local any_active=false
         local status_parts=()
 
+        # 1. Check Jenkins API for running builds on env branches
+        #    Catches builds that Jenkins knows about even if pods aren't scheduled yet
         for env in "${BRANCH_LIST[@]}"; do
-            # Check if build is running
             local status_json=$("$jenkins_cli" status "k8s-deployments/$env" 2>/dev/null || echo '{}')
             local building=$(echo "$status_json" | jq -r '.building // false')
-
-            # Check queue for this branch
-            local queue_json=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
-                "$JENKINS_URL_EXTERNAL/queue/api/json" 2>/dev/null || echo '{"items":[]}')
-            local queued=$(echo "$queue_json" | jq -r --arg env "$env" \
-                '[.items[] | select(.task.name == $env)] | length')
-
-            if [[ "$building" == "true" ]] || [[ "$queued" != "0" ]]; then
-                any_active=true
-                local env_status=""
-                [[ "$building" == "true" ]] && env_status="running"
-                [[ "$queued" != "0" ]] && env_status="${env_status:+$env_status+}queued"
-                status_parts+=("$env:$env_status")
+            if [[ "$building" == "true" ]]; then
+                status_parts+=("$env:running")
             fi
         done
 
-        if [[ "$any_active" == "false" ]]; then
+        # 2. Check Jenkins build queue (catches builds between webhook and pod creation)
+        local queue_json=$(curl -sk -u "$JENKINS_USER:$JENKINS_TOKEN" \
+            "$JENKINS_URL_EXTERNAL/queue/api/json" 2>/dev/null || echo '{"items":[]}')
+        local queue_count=$(echo "$queue_json" | jq -r '.items | length' 2>/dev/null || echo 0)
+        if [[ "$queue_count" -gt 0 ]]; then
+            status_parts+=("queue:${queue_count}")
+        fi
+
+        # 3. Check for ANY Jenkins agent pods (catches feature branch, example-app,
+        #    and any other builds that the env branch check above would miss)
+        local agent_count=$(kubectl get pods -n "${JENKINS_NAMESPACE}" --no-headers \
+            -o custom-columns=NAME:.metadata.name 2>/dev/null | grep -cv "^jenkins-" 2>/dev/null || echo 0)
+        if [[ "$agent_count" -gt 0 ]]; then
+            status_parts+=("pods:${agent_count}")
+        fi
+
+        if [[ ${#status_parts[@]} -eq 0 ]]; then
             log_info "  ✓ Pipeline is quiescent - safe to proceed with cleanup"
             return 0
         fi
@@ -536,10 +541,10 @@ extract_images_from_env_cue() {
             }
         ')
 
-        # Fallback to defaults if extraction failed
+        # Fallback to seed placeholder if extraction failed (first run before any CI/CD build)
         if [[ -z "$EXAMPLE_APP_IMAGE" ]]; then
-            log_warn "Could not extract exampleApp image from $env, using placeholder"
-            EXAMPLE_APP_IMAGE="docker.jmann.local/p2c/example-app:latest"
+            log_warn "Could not extract exampleApp image from $env, using does-not-exist placeholder"
+            EXAMPLE_APP_IMAGE="${DOCKER_REGISTRY_HOST:?DOCKER_REGISTRY_HOST not set}/${CONTAINER_REGISTRY_PATH_PREFIX:?CONTAINER_REGISTRY_PATH_PREFIX not set}/example-app:does-not-exist"
         fi
 
         log_info "  exampleApp image: $EXAMPLE_APP_IMAGE"
@@ -629,12 +634,18 @@ reset_env_via_mr() {
     # 2d. Generate env.cue from baseline
     local baseline_file="$BASELINES_DIR/env-${env}.cue"
     if [[ -f "$baseline_file" ]]; then
+        # Get cluster-specific namespace for this environment
+        local ns_var="${env^^}_NAMESPACE"  # DEV_NAMESPACE, STAGE_NAMESPACE, PROD_NAMESPACE
+        local target_namespace="${!ns_var:?${ns_var} not set in cluster config}"
+
         local env_cue_content=$(cat "$baseline_file" \
             | sed "s|{{EXAMPLE_APP_IMAGE}}|$EXAMPLE_APP_IMAGE|g" \
-            | sed "s|{{POSTGRES_IMAGE}}|$POSTGRES_IMAGE|g")
+            | sed "s|{{POSTGRES_IMAGE}}|$POSTGRES_IMAGE|g" \
+            | sed "s|namespace: \"${env}\"|namespace: \"${target_namespace}\"|g" \
+            | sed "s|redis.${env}.svc|redis.${target_namespace}.svc|g")
         local env_cue_b64=$(echo "$env_cue_content" | base64 -w0)
         files_to_commit+=("env.cue:base64:$env_cue_b64")
-        log_info "  Prepared env.cue from baseline"
+        log_info "  Prepared env.cue from baseline (namespace: $target_namespace)"
     fi
 
     # 3. Execute MR workflow
@@ -703,6 +714,12 @@ wait_for_env_quiescence() {
             # Verify the last build succeeded
             local last_result=$(echo "$status_json" | jq -r '.result // empty')
             if [[ "$last_result" != "SUCCESS" ]]; then
+                # Check for first-run condition: does-not-exist image tag means no deployable
+                # image exists yet. The pipeline will fail at ArgoCD sync, which is expected.
+                if [[ "${EXAMPLE_APP_IMAGE:-}" == *":does-not-exist" ]]; then
+                    log_info "  ⊘ $env build result: $last_result (expected - image tag 'does-not-exist' means no image available yet)"
+                    return 0
+                fi
                 log_error "  ✗ $env build failed (result: $last_result)"
                 return 1
             fi

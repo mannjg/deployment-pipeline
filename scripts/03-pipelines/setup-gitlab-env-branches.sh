@@ -166,8 +166,10 @@ declare -A ENV_NAMESPACE=(
 # Docker registry URL for images (external registry via HTTPS, no port needed)
 DOCKER_REGISTRY="${DOCKER_REGISTRY_HOST}"
 
-# Initial seed image tag (CI/CD will update this after first build)
-SEED_IMAGE_TAG="seed"
+# Initial placeholder image tag - deliberately non-existent to signal that CI/CD
+# hasn't built a real image yet. The Jenkinsfile detects this tag and skips ArgoCD
+# health checks, since there's nothing deployable until the first app build completes.
+SEED_IMAGE_TAG="does-not-exist"
 
 # Temp directory for operations
 WORK_DIR=$(mktemp -d)
