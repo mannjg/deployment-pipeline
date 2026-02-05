@@ -63,15 +63,16 @@ Version Progression:
   dev -> stage:   SNAPSHOT -> RC (increments RC number automatically)
   stage -> prod:  RC -> Release (fails if release exists)
 
-Environment Variables:
-  NEXUS_URL         Nexus base URL (default: http://nexus.nexus.svc.cluster.local:8081)
-  NEXUS_USER        Nexus username (optional, for authenticated repos)
-  NEXUS_PASSWORD    Nexus password (optional, for authenticated repos)
-  DOCKER_REGISTRY   Docker registry URL (default: nexus.nexus.svc.cluster.local:5000)
-  MAVEN_GROUP_ID    Maven group ID (default: com.example)
-  GITLAB_URL        GitLab URL for fetching env.cue (default: from GITLAB_URL_INTERNAL)
-  GITLAB_TOKEN      GitLab API token
-  GITLAB_PROJECT    GitLab project path (default: p2c/k8s-deployments)
+Environment Variables (from pipeline-config ConfigMap):
+  NEXUS_URL_INTERNAL          Nexus base URL (required)
+  DOCKER_REGISTRY_EXTERNAL    Docker registry URL (required)
+  GITLAB_URL_INTERNAL         GitLab URL for fetching env.cue (required)
+  GITLAB_GROUP                GitLab group name (required)
+  CONTAINER_REGISTRY_PATH_PREFIX  Registry path prefix (required)
+  NEXUS_USER                  Nexus username (required for authenticated repos)
+  NEXUS_PASSWORD              Nexus password (required for authenticated repos)
+  GITLAB_TOKEN                GitLab API token (required)
+  MAVEN_GROUP_ID              Maven group ID (default: com.example)
 
 Example:
   $0 --source-env dev --target-env stage --app-name example-app --git-hash abc123f
@@ -127,13 +128,13 @@ case "$SOURCE_ENV-$TARGET_ENV" in
         ;;
 esac
 
-# Configuration (from environment or defaults)
-NEXUS_URL="${NEXUS_URL:-http://nexus.nexus.svc.cluster.local:8081}"
-# Prefer external registry (HTTPS) for Docker operations - Docker daemon may not trust internal HTTP registry
-DOCKER_REGISTRY="${DOCKER_REGISTRY_EXTERNAL:-${DOCKER_REGISTRY:-nexus.nexus.svc.cluster.local:5000}}"
+# Configuration (from pipeline-config ConfigMap environment variables)
+NEXUS_URL="${NEXUS_URL:-${NEXUS_URL_INTERNAL:?NEXUS_URL_INTERNAL not set - check pipeline-config ConfigMap}}"
+DOCKER_REGISTRY="${DOCKER_REGISTRY_EXTERNAL:?DOCKER_REGISTRY_EXTERNAL not set - check pipeline-config ConfigMap}"
 MAVEN_GROUP_ID="${MAVEN_GROUP_ID:-com.example}"
-GITLAB_URL="${GITLAB_URL:-${GITLAB_URL_INTERNAL:-http://gitlab.gitlab.svc.cluster.local}}"
-GITLAB_PROJECT="${GITLAB_PROJECT:-p2c/k8s-deployments}"
+GITLAB_URL="${GITLAB_URL:-${GITLAB_URL_INTERNAL:?GITLAB_URL_INTERNAL not set - check pipeline-config ConfigMap}}"
+GITLAB_PROJECT="${GITLAB_PROJECT:-${GITLAB_GROUP:?GITLAB_GROUP not set - check pipeline-config ConfigMap}/k8s-deployments}"
+CONTAINER_REGISTRY_PATH_PREFIX="${CONTAINER_REGISTRY_PATH_PREFIX:?CONTAINER_REGISTRY_PATH_PREFIX not set - check pipeline-config ConfigMap}"
 
 # Normalize git hash to short form (7 chars) for consistency
 GIT_HASH="${GIT_HASH:0:7}"
@@ -427,8 +428,8 @@ retag_docker_image() {
     local source_tag="$1"
     local target_tag="$2"
 
-    local source_image="${DOCKER_REGISTRY}/p2c/${APP_NAME}:${source_tag}"
-    local target_image="${DOCKER_REGISTRY}/p2c/${APP_NAME}:${target_tag}"
+    local source_image="${DOCKER_REGISTRY}/${CONTAINER_REGISTRY_PATH_PREFIX}/${APP_NAME}:${source_tag}"
+    local target_image="${DOCKER_REGISTRY}/${CONTAINER_REGISTRY_PATH_PREFIX}/${APP_NAME}:${target_tag}"
 
     log_info "Re-tagging Docker image: $source_tag -> $target_tag"
     log_debug "Source: $source_image"

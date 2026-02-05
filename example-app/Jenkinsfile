@@ -142,7 +142,8 @@ MAVEN_SETTINGS
 // ============================================================================
 
 // Get agent image from system environment (set via ConfigMap envFrom)
-def agentImage = System.getenv('JENKINS_AGENT_IMAGE') ?: 'jenkins/inbound-agent:latest'
+def agentImage = System.getenv('JENKINS_AGENT_IMAGE')
+if (!agentImage) { error "JENKINS_AGENT_IMAGE not set - check pipeline-config ConfigMap" }
 
 pipeline {
     agent {
