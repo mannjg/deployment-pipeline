@@ -399,8 +399,9 @@ def createPromotionMR(String sourceEnv) {
                     NEW_IMAGE_TAG="${newImageTag}"
                     if [ -n "\${NEW_IMAGE_TAG}" ]; then
                         # Use external registry URL (HTTPS) - internal URL isn't resolvable from kubelet
-                        REGISTRY="\${DOCKER_REGISTRY_EXTERNAL:-docker.jmann.local}"
-                        NEW_IMAGE="\${REGISTRY}/p2c/example-app:\${NEW_IMAGE_TAG}"
+                        REGISTRY="\${DOCKER_REGISTRY_EXTERNAL}"
+                        PATH_PREFIX="\${CONTAINER_REGISTRY_PATH_PREFIX}"
+                        NEW_IMAGE="\${REGISTRY}/\${PATH_PREFIX}/example-app:\${NEW_IMAGE_TAG}"
 
                         echo "Updating env.cue with new image: \${NEW_IMAGE}"
 
@@ -530,8 +531,8 @@ spec:
         DEPLOYMENTS_REPO = "${env.DEPLOYMENTS_REPO_URL ?: ''}"
         // External Docker registry (HTTPS) for Docker daemon operations
         DOCKER_REGISTRY_EXTERNAL = "${env.DOCKER_REGISTRY_EXTERNAL ?: ''}"
-        ARGOCD_SERVER = 'argocd-server.argocd.svc.cluster.local:80'
-        ARGOCD_OPTS = '--plaintext --grpc-web'
+        ARGOCD_SERVER = "${env.ARGOCD_SERVER ?: ''}"
+        ARGOCD_OPTS = "${env.ARGOCD_OPTS ?: ''}"
         ENV_BRANCHES = 'dev,stage,prod'
         PROMOTE_BRANCHES = 'dev,stage'
     }

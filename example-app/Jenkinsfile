@@ -194,9 +194,9 @@ spec:
         APP_NAME = 'example-app'
         APP_GROUP = 'p2c'
 
-        // Registry configuration (internal cluster DNS)
-        DOCKER_REGISTRY = 'nexus.nexus.svc.cluster.local:5000'
-        NEXUS_URL = 'http://nexus.nexus.svc.cluster.local:8081'
+        // Registry configuration (from pipeline-config ConfigMap)
+        DOCKER_REGISTRY = "${env.DOCKER_REGISTRY_INTERNAL ?: ''}"
+        NEXUS_URL = "${env.NEXUS_URL_INTERNAL ?: ''}"
 
         // Git repositories (from pipeline-config ConfigMap)
         // These reference environment variables set by the ConfigMap
