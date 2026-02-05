@@ -158,37 +158,20 @@ generate_ca() {
 # =============================================================================
 
 configure_docker_trust() {
-    log_step "Configuring Docker to trust cluster CA..."
+    log_step "Checking Docker trust for container registry..."
 
-    # Check if already configured
+    # The container registry (DOCKER_REGISTRY_HOST) is an external prerequisite
+    # with its own CA. We verify trust exists but don't install the cluster CA there.
     if [[ -f "${DOCKER_CERT_DIR}/ca.crt" ]]; then
-        # Compare with our CA
-        if diff -q "$CA_CERT" "${DOCKER_CERT_DIR}/ca.crt" >/dev/null 2>&1; then
-            log_info "  Docker already trusts this CA"
-            return 0
-        else
-            log_warn "  Docker has different CA - will update"
-        fi
+        log_pass "Docker trust exists for registry: ${DOCKER_REGISTRY_HOST}"
+        return 0
     fi
 
-    # Create directory and copy cert (requires sudo)
-    log_info "  Installing CA to: $DOCKER_CERT_DIR"
-
-    if ! sudo mkdir -p "$DOCKER_CERT_DIR" 2>/dev/null; then
-        log_error "  Failed to create directory (need sudo)"
-        log_error "  Run: sudo mkdir -p $DOCKER_CERT_DIR"
-        return 1
-    fi
-
-    if ! sudo cp "$CA_CERT" "${DOCKER_CERT_DIR}/ca.crt" 2>/dev/null; then
-        log_error "  Failed to copy CA cert (need sudo)"
-        log_error "  Run: sudo cp $CA_CERT ${DOCKER_CERT_DIR}/ca.crt"
-        return 1
-    fi
-
-    sudo chmod 644 "${DOCKER_CERT_DIR}/ca.crt"
-
-    log_pass "Docker configured to trust cluster CA"
+    log_warn "Docker trust not found: ${DOCKER_CERT_DIR}/ca.crt"
+    log_warn "Image push from this machine may fail."
+    log_warn "Ensure the container registry CA is installed:"
+    log_warn "  sudo mkdir -p $DOCKER_CERT_DIR"
+    log_warn "  sudo cp <registry-ca.crt> ${DOCKER_CERT_DIR}/ca.crt"
 }
 
 # =============================================================================
@@ -211,10 +194,10 @@ verify_setup() {
         ((++errors))
     fi
 
-    # Check Docker trust
+    # Check Docker trust (warning only - external registry trust is a prerequisite)
     if [[ ! -f "${DOCKER_CERT_DIR}/ca.crt" ]]; then
-        log_error "  Docker CA missing: ${DOCKER_CERT_DIR}/ca.crt"
-        ((++errors))
+        log_warn "  Docker trust not found: ${DOCKER_CERT_DIR}/ca.crt"
+        log_warn "  Image push from this machine may fail"
     fi
 
     # Verify CA cert is valid

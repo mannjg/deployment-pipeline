@@ -17,7 +17,7 @@
 #   ${JENKINS_HOST}      - Jenkins hostname (e.g., jenkins-alpha.jmann.local)
 #   ${NEXUS_HOST}        - Nexus hostname (e.g., nexus-alpha.jmann.local)
 #   ${ARGOCD_HOST}       - ArgoCD hostname (e.g., argocd-alpha.jmann.local)
-#   ${DOCKER_REGISTRY}   - Docker registry external (e.g., docker-alpha.jmann.local)
+#   ${DOCKER_REGISTRY}   - Container registry hostname (e.g., registry-dso.jmann.local)
 #
 # Naming convention (matches config/infra.env):
 #   *_URL_INTERNAL  - Kubernetes service DNS names (pod-to-pod)
@@ -49,8 +49,9 @@ data:
   JENKINS_URL_EXTERNAL: "https://${JENKINS_HOST}"
   JENKINS_URL_INTERNAL: "http://jenkins.${JENKINS_NAMESPACE}.svc.cluster.local:8080"
   # Agent image must use external registry URL - kubelet uses node DNS, not cluster DNS
-  # Note: No port - uses HTTPS (443) via ingress, not direct port 5000
-  JENKINS_AGENT_IMAGE: "${DOCKER_REGISTRY}/jenkins-agent-custom:latest"
+  # Path prefix separates image namespaces within the registry (e.g., p2c/)
+  JENKINS_AGENT_IMAGE: "${DOCKER_REGISTRY}/${CONTAINER_REGISTRY_PATH_PREFIX}/jenkins-agent-custom:latest"
+  CONTAINER_REGISTRY_PATH_PREFIX: "${CONTAINER_REGISTRY_PATH_PREFIX}"
 
   # ==========================================================================
   # Nexus / Docker Registry Configuration

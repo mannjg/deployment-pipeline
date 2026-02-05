@@ -205,17 +205,16 @@ verify_cluster_prepared() {
         exit 1
     fi
 
-    # Verify Docker trust is configured
+    # Verify Docker trust is configured for the container registry
+    # The external registry has its own CA (not the cluster CA)
     local docker_cert_dir="/etc/docker/certs.d/${DOCKER_REGISTRY_HOST}"
     if [[ ! -f "${docker_cert_dir}/ca.crt" ]]; then
-        log_error "Docker not configured to trust cluster CA."
-        log_error "Run prepare-cluster first:"
-        log_error "  ./scripts/00-prepare-cluster.sh $CONFIG_FILE"
-        exit 1
+        log_warn "Docker trust not found for registry: ${docker_cert_dir}/ca.crt"
+        log_warn "Image push from this machine may fail. Ensure registry trust is configured."
     fi
 
     log_info "  CA cert: $CA_CERT"
-    log_info "  Docker trust: ${docker_cert_dir}/ca.crt"
+    log_info "  Registry: ${DOCKER_REGISTRY_HOST}"
 }
 
 export_config_for_envsubst() {
@@ -238,6 +237,7 @@ export_config_for_envsubst() {
     export NEXUS_HOST="${NEXUS_HOST_EXTERNAL}"
     export ARGOCD_HOST="${ARGOCD_HOST_EXTERNAL}"
     export DOCKER_REGISTRY="${DOCKER_REGISTRY_HOST}"
+    export CONTAINER_REGISTRY_PATH_PREFIX="${CONTAINER_REGISTRY_PATH_PREFIX:-}"
     export CA_ISSUER="${CA_ISSUER_NAME}"
 
     # Generate passwords if not already set

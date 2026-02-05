@@ -18,10 +18,10 @@ source "$PROJECT_ROOT/scripts/lib/infra.sh" "${1:-${CLUSTER_CONFIG:-}}"
 IMAGE_NAME="jenkins-agent-custom"
 IMAGE_TAG="latest"
 
-# Registry URL (internal for pushing from build machine)
-# Use the external registry since we're building outside the cluster
+# Registry URL (external registry, accessed via ingress)
 REGISTRY_URL="${DOCKER_REGISTRY_HOST:?DOCKER_REGISTRY_HOST not set}"
-FULL_IMAGE="${REGISTRY_URL}/${IMAGE_NAME}:${IMAGE_TAG}"
+PATH_PREFIX="${CONTAINER_REGISTRY_PATH_PREFIX:-p2c}"
+FULL_IMAGE="${REGISTRY_URL}/${PATH_PREFIX}/${IMAGE_NAME}:${IMAGE_TAG}"
 
 # Output helpers
 log_step()  { echo "[→] $*"; }

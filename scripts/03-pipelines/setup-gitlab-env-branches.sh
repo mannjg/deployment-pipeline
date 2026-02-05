@@ -163,8 +163,8 @@ declare -A ENV_NAMESPACE=(
     ["prod"]="${PROD_NAMESPACE}"
 )
 
-# Docker registry URL for images (with port for internal registry)
-DOCKER_REGISTRY="${DOCKER_REGISTRY_HOST}:5000"
+# Docker registry URL for images (external registry via HTTPS, no port needed)
+DOCKER_REGISTRY="${DOCKER_REGISTRY_HOST}"
 
 # Initial seed image tag (CI/CD will update this after first build)
 SEED_IMAGE_TAG="seed"
