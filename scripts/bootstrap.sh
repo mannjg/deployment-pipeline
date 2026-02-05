@@ -402,25 +402,19 @@ wait_for_pods() {
 wait_for_infrastructure() {
     log_step "Step 4: Waiting for infrastructure pods"
 
-    local errors=0
-
     # GitLab takes longer due to initialization
-    wait_for_pods "$GITLAB_NAMESPACE" 600 "GitLab" || ((++errors))
+    wait_for_pods "$GITLAB_NAMESPACE" 600 "GitLab"
 
     # Jenkins
-    wait_for_pods "$JENKINS_NAMESPACE" 300 "Jenkins" || ((++errors))
+    wait_for_pods "$JENKINS_NAMESPACE" 300 "Jenkins"
 
     # Nexus
-    wait_for_pods "$NEXUS_NAMESPACE" 180 "Nexus" || ((++errors))
+    wait_for_pods "$NEXUS_NAMESPACE" 180 "Nexus"
 
     # ArgoCD
-    wait_for_pods "$ARGOCD_NAMESPACE" 180 "ArgoCD" || ((++errors))
+    wait_for_pods "$ARGOCD_NAMESPACE" 180 "ArgoCD"
 
-    if [[ $errors -gt 0 ]]; then
-        log_warn "$errors namespace(s) had pod readiness issues"
-    else
-        log_info "All infrastructure pods ready"
-    fi
+    log_info "All infrastructure pods ready"
 }
 
 # =============================================================================
@@ -529,25 +523,22 @@ setup_environment_branches() {
 
 setup_jenkins_pipelines() {
     log_info "Setting up Jenkins pipelines and webhooks..."
-    local errors=0
 
     # First, create the MultiBranch Pipeline jobs (required before webhook setup)
-    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-multibranch-jobs.sh" "Jenkins MultiBranch jobs" "true" || ((++errors))
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-multibranch-jobs.sh" "Jenkins MultiBranch jobs" "true"
 
     # Setup multibranch pipeline webhook trigger in Jenkins
-    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-multibranch-webhook.sh" "Jenkins multibranch webhook" || ((++errors))
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-multibranch-webhook.sh" "Jenkins multibranch webhook" "true"
 
     # Setup GitLab webhooks to trigger Jenkins MultiBranch scans
-    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-gitlab-jenkins-webhooks.sh" "GitLab Jenkins webhooks" || ((++errors))
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-gitlab-jenkins-webhooks.sh" "GitLab Jenkins webhooks" "true"
 
     # Setup auto-promote job and webhook
-    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-auto-promote-job.sh" "Jenkins auto-promote job" || ((++errors))
-    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-auto-promote-webhook.sh" "Auto-promote webhook" || ((++errors))
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-auto-promote-job.sh" "Jenkins auto-promote job" "true"
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-auto-promote-webhook.sh" "Auto-promote webhook" "true"
 
     # Setup promote job
-    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-promote-job.sh" "Jenkins promote job" || ((++errors))
-
-    return $errors
+    run_script_if_exists "$SCRIPT_DIR/03-pipelines/setup-jenkins-promote-job.sh" "Jenkins promote job" "true"
 }
 
 create_jenkins_credentials_secret() {
@@ -590,6 +581,25 @@ configure_jenkins_script_security() {
     run_script_if_exists "$SCRIPT_DIR/02-configure/configure-jenkins-script-security.sh" "Jenkins script security" "true"
 }
 
+prompt_registry_credentials() {
+    # Prompt for container registry credentials (used for Docker push)
+    # Credentials are passed via env vars to child scripts
+    if [[ -n "${CONTAINER_REGISTRY_USER:-}" && -n "${CONTAINER_REGISTRY_PASS:-}" ]]; then
+        log_info "Using registry credentials from environment"
+        export CONTAINER_REGISTRY_USER CONTAINER_REGISTRY_PASS
+        return 0
+    fi
+
+    log_info "Container registry credentials needed for image push"
+    log_info "Registry: ${DOCKER_REGISTRY_HOST}"
+    echo -n "  Username: "
+    read -r CONTAINER_REGISTRY_USER
+    echo -n "  Password: "
+    read -rs CONTAINER_REGISTRY_PASS
+    echo ""
+    export CONTAINER_REGISTRY_USER CONTAINER_REGISTRY_PASS
+}
+
 build_jenkins_agent_image() {
     log_info "Building Jenkins agent image..."
     run_script_if_exists "$PROJECT_ROOT/k8s/jenkins/agent/build-agent-image.sh" "Jenkins agent image" "true"
@@ -600,23 +610,6 @@ configure_nexus() {
     run_script_if_exists "$SCRIPT_DIR/02-configure/configure-nexus.sh" "Nexus repositories" "true"
 }
 
-configure_docker_registry_certs() {
-    # Docker trust is now configured by 00-prepare-cluster.sh
-    # This function just verifies it's in place
-    log_info "Verifying Docker registry certificates..."
-
-    local cert_dir="/etc/docker/certs.d/${DOCKER_REGISTRY_HOST}"
-
-    if [[ ! -f "${cert_dir}/ca.crt" ]]; then
-        log_error "Docker CA cert not found: ${cert_dir}/ca.crt"
-        log_error "Run prepare-cluster first:"
-        log_error "  ./scripts/00-prepare-cluster.sh $CONFIG_FILE"
-        return 1
-    fi
-
-    log_info "  Docker trust configured: ${cert_dir}/ca.crt"
-    return 0
-}
 
 setup_argocd_applications() {
     log_info "Setting up ArgoCD applications..."
@@ -626,65 +619,58 @@ setup_argocd_applications() {
 configure_services() {
     log_step "Step 5: Configuring services"
 
-    local errors=0
-
     # 5a. Create GitLab API token (required for all subsequent GitLab operations)
-    configure_gitlab_api_token || ((++errors))
+    configure_gitlab_api_token
 
     # 5b. Create GitLab projects
-    configure_gitlab_projects || ((++errors))
+    configure_gitlab_projects
 
     # 5c. Configure GitLab network settings (allow local webhook URLs)
-    configure_gitlab_network_settings || ((++errors))
+    configure_gitlab_network_settings
 
     # 5d. Setup git remotes for this cluster
-    setup_git_remotes || ((++errors))
+    setup_git_remotes
 
     # 5e. Sync subtrees to GitLab (pushes example-app and k8s-deployments)
-    sync_subtrees_to_gitlab || ((++errors))
+    sync_subtrees_to_gitlab
 
     # 5f. Setup environment branches (dev/stage/prod) in k8s-deployments
-    setup_environment_branches || ((++errors))
+    setup_environment_branches
 
     # 5g. Setup ArgoCD applications (after env branches exist)
-    setup_argocd_applications || ((++errors))
+    setup_argocd_applications
 
-    # 5h. Configure Docker registry certificates (needed for image push)
-    configure_docker_registry_certs || ((++errors))
+    # 5h. Configure Nexus repositories (Docker registry needed for agent image)
+    configure_nexus
 
-    # 5i. Configure Nexus repositories (Docker registry needed for agent image)
-    configure_nexus || ((++errors))
+    # 5i. Create Jenkins credentials secret (needed for webhook setup)
+    create_jenkins_credentials_secret
 
-    # 5j. Create Jenkins credentials secret (needed for webhook setup)
-    create_jenkins_credentials_secret || ((++errors))
+    # 5j. Prompt for container registry credentials (needed for image push)
+    prompt_registry_credentials
 
-    # 5k. Build Jenkins agent image (push to Nexus registry)
-    build_jenkins_agent_image || ((++errors))
+    # 5k. Build Jenkins agent image (push to external registry)
+    build_jenkins_agent_image
 
     # 5l. Install required Jenkins plugins (must be done before job creation)
-    install_jenkins_plugins || ((++errors))
+    install_jenkins_plugins
 
     # 5m. Configure Jenkins Kubernetes cloud (for pod-based agents)
-    configure_jenkins_kubernetes_cloud || ((++errors))
+    configure_jenkins_kubernetes_cloud
 
-    # 5m2. Configure Jenkins global environment variables (needed for pipeline env.VAR access)
-    configure_jenkins_global_env || ((++errors))
+    # 5n. Configure Jenkins global environment variables (needed for pipeline env.VAR access)
+    configure_jenkins_global_env
 
-    # 5n. Configure Jenkins script security (approve required signatures)
-    configure_jenkins_script_security || ((++errors))
+    # 5o. Configure Jenkins script security (approve required signatures)
+    configure_jenkins_script_security
 
-    # 5o. Setup Jenkins pipelines and webhooks
-    setup_jenkins_pipelines || ((++errors))
+    # 5p. Setup Jenkins pipelines and webhooks
+    setup_jenkins_pipelines
 
-    # 5p. Configure merge requirements (optional)
+    # 5q. Configure merge requirements (optional)
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/configure-merge-requirements.sh" "Merge requirements" || true
 
-    if [[ $errors -gt 0 ]]; then
-        log_warn "Service configuration completed with $errors warning(s)"
-        log_warn "Some features may not work correctly until issues are resolved"
-    else
-        log_info "Service configuration completed successfully"
-    fi
+    log_info "Service configuration completed successfully"
 }
 
 # =============================================================================

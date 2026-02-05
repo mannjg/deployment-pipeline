@@ -71,6 +71,43 @@ tag_image() {
     log_info "Tagged as: ${FULL_IMAGE}"
 }
 
+docker_login() {
+    log_step "Authenticating with registry..."
+
+    # Use credentials from environment if available
+    local reg_user="${CONTAINER_REGISTRY_USER:-}"
+    local reg_pass="${CONTAINER_REGISTRY_PASS:-}"
+
+    if [[ -n "$reg_user" && -n "$reg_pass" ]]; then
+        if echo "$reg_pass" | docker login -u "$reg_user" --password-stdin "$REGISTRY_URL" &>/dev/null; then
+            log_pass "Authenticated with registry"
+            return 0
+        fi
+    fi
+
+    # Check if already logged in (try a small push to test)
+    if docker push "${FULL_IMAGE}" &>/dev/null 2>&1; then
+        log_info "Already authenticated"
+        return 0
+    fi
+
+    # Prompt for credentials
+    log_info "Registry credentials required for push"
+    echo -n "  Username: "
+    read -r reg_user
+    echo -n "  Password: "
+    read -rs reg_pass
+    echo ""
+
+    if echo "$reg_pass" | docker login -u "$reg_user" --password-stdin "$REGISTRY_URL" &>/dev/null; then
+        log_pass "Authenticated with registry"
+        return 0
+    fi
+
+    log_fail "Failed to authenticate with registry"
+    return 1
+}
+
 push_image() {
     log_step "Pushing image to registry..."
     log_info "Registry: ${REGISTRY_URL}"
@@ -80,9 +117,7 @@ push_image() {
         log_pass "Image pushed: ${FULL_IMAGE}"
     else
         log_fail "Failed to push image"
-        log_info "Make sure the registry is accessible and configured as insecure if using HTTP"
-        log_info "For Docker: add to /etc/docker/daemon.json:"
-        log_info "  {\"insecure-registries\": [\"${REGISTRY_URL}\"]}"
+        log_info "Check registry authentication and accessibility"
         exit 1
     fi
 }
@@ -113,6 +148,7 @@ main() {
     check_docker
     build_image
     tag_image
+    docker_login
     push_image
     verify_image
 
