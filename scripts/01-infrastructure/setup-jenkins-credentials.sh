@@ -210,6 +210,26 @@ setup_argocd_credentials() {
     fi
 }
 
+setup_docker_registry_credentials() {
+    log_info "Setting up Docker registry credentials..."
+
+    # External container registry credentials (for pushing app images)
+    # These are passed as env vars by bootstrap.sh after prompt_registry_credentials()
+    local reg_user="${CONTAINER_REGISTRY_USER:-}"
+    local reg_pass="${CONTAINER_REGISTRY_PASS:-}"
+
+    if [[ -n "$reg_user" && -n "$reg_pass" ]]; then
+        create_username_password_credential \
+            "docker-registry-credentials" \
+            "$reg_user" \
+            "$reg_pass" \
+            "Docker Registry credentials for image push (${DOCKER_REGISTRY_HOST:-external registry})"
+    else
+        log_warn "  docker-registry-credentials: CONTAINER_REGISTRY_USER/PASS not set (skipping)"
+        log_warn "  Set these env vars or re-run bootstrap to configure"
+    fi
+}
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -224,6 +244,7 @@ main() {
     setup_gitlab_credentials
     setup_nexus_credentials
     setup_argocd_credentials
+    setup_docker_registry_credentials
 
     echo ""
     log_info "=== Credential setup complete ==="
