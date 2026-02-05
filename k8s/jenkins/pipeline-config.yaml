@@ -66,8 +66,8 @@ data:
   # ==========================================================================
   ARGOCD_URL_EXTERNAL: "https://${ARGOCD_HOST}"
   ARGOCD_URL_INTERNAL: "http://argocd-server.${ARGOCD_NAMESPACE}.svc.cluster.local"
-  ARGOCD_SERVER: "argocd-server.${ARGOCD_NAMESPACE}.svc.cluster.local:80"
-  ARGOCD_OPTS: "--plaintext --grpc-web"
+  ARGOCD_SERVER: "argocd-server.${ARGOCD_NAMESPACE}.svc.cluster.local"
+  ARGOCD_OPTS: "--insecure --grpc-web"
 
   # ==========================================================================
   # Git Configuration
