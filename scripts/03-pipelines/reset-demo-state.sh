@@ -817,7 +817,14 @@ reset_cue_config() {
         # After merge, webhooks trigger env branch builds. Wait for them to complete
         # so the next demo's preflight check passes (no running/queued builds).
         # This is simpler than tracking specific build timestamps.
-        if ! wait_for_env_quiescence "$env" 180; then
+        #
+        # Exception: When EXAMPLE_APP_IMAGE is "does-not-exist", the Jenkins build
+        # will be stuck waiting for ArgoCD sync (image doesn't exist yet). The build's
+        # 300s ArgoCD timeout exceeds our quiescence timeout, so waiting is pointless.
+        # Skip entirely — the builds will finish on their own in the background.
+        if [[ "${EXAMPLE_APP_IMAGE:-}" == *":does-not-exist" ]]; then
+            log_info "  ⊘ Skipping $env quiescence wait (image tag 'does-not-exist' — builds will timeout on ArgoCD sync)"
+        elif ! wait_for_env_quiescence "$env" 180; then
             failed_envs+=("$env")
         fi
     done
