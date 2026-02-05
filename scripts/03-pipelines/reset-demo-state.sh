@@ -150,7 +150,7 @@ wait_for_pipeline_quiescence() {
         # 3. Check for ANY Jenkins agent pods (catches feature branch, example-app,
         #    and any other builds that the env branch check above would miss)
         local agent_count=$(kubectl get pods -n "${JENKINS_NAMESPACE}" --no-headers \
-            -o custom-columns=NAME:.metadata.name 2>/dev/null | grep -cv "^jenkins-" 2>/dev/null || echo 0)
+            -o custom-columns=NAME:.metadata.name 2>/dev/null | grep -v "^jenkins-" | wc -l)
         if [[ "$agent_count" -gt 0 ]]; then
             status_parts+=("pods:${agent_count}")
         fi
@@ -696,6 +696,12 @@ wait_for_env_quiescence() {
         local elapsed=$((current_time - start_time))
 
         if [[ $elapsed -ge $timeout ]]; then
+            # First-run: build is stuck on ArgoCD sync for non-existent image.
+            # The Jenkinsfile's 300s ArgoCD wait exceeds our quiescence timeout.
+            if [[ "${EXAMPLE_APP_IMAGE:-}" == *":does-not-exist" ]]; then
+                log_info "  ⊘ $env quiescence timeout after ${timeout}s (expected - image tag 'does-not-exist' means ArgoCD sync will fail)"
+                return 0
+            fi
             log_error "  ✗ Quiescence timeout for $env after ${timeout}s"
             return 1
         fi
