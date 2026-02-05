@@ -239,11 +239,9 @@ mw_wait_for_mr_pipeline() {
 
     while [[ $elapsed -lt $timeout ]]; do
         local status_json
-        status_json=$("$jenkins_cli" status "$jenkins_job_path" 2>/dev/null) || true
-
-        if [[ -n "$status_json" ]]; then
-            local building=$(echo "$status_json" | jq -r '.building // true')
-            local result=$(echo "$status_json" | jq -r '.result // empty')
+        if status_json=$("$jenkins_cli" status "$jenkins_job_path" 2>/dev/null); then
+            local building=$(echo "$status_json" | jq -r '.building // true' 2>/dev/null)
+            local result=$(echo "$status_json" | jq -r '.result // empty' 2>/dev/null)
 
             if [[ "$building" == "false" && -n "$result" ]]; then
                 case "$result" in
@@ -252,6 +250,7 @@ mw_wait_for_mr_pipeline() {
                 esac
             fi
         fi
+        # Job may not exist yet (webhook → branch scan → build creation takes time)
 
         sleep $poll_interval
         elapsed=$((elapsed + poll_interval))
