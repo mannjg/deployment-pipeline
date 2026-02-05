@@ -31,6 +31,19 @@ JENKINS_URL="${JENKINS_URL_EXTERNAL}"
 # Helper Functions
 # =============================================================================
 
+# Get Jenkins CSRF crumb
+get_crumb() {
+    local crumb_json
+    crumb_json=$(curl -sfk -u "$JENKINS_AUTH" \
+        "$JENKINS_URL/crumbIssuer/api/json" 2>/dev/null) || {
+        log_error "Failed to get Jenkins CSRF crumb"
+        return 1
+    }
+    CRUMB_FIELD=$(echo "$crumb_json" | jq -r '.crumbRequestField')
+    CRUMB_VALUE=$(echo "$crumb_json" | jq -r '.crumb')
+    log_info "Got Jenkins CSRF crumb"
+}
+
 # Check if a credential exists in Jenkins
 credential_exists() {
     local cred_id="$1"
@@ -70,6 +83,7 @@ EOF
 )
 
     if curl -sfk -u "$JENKINS_AUTH" \
+        -H "$CRUMB_FIELD: $CRUMB_VALUE" \
         -X POST "$JENKINS_URL/credentials/store/system/domain/_/createCredentials" \
         --data-urlencode "json=${json_payload}" 2>/dev/null; then
         log_info "  $cred_id: created"
@@ -106,6 +120,7 @@ EOF
 )
 
     if curl -sfk -u "$JENKINS_AUTH" \
+        -H "$CRUMB_FIELD: $CRUMB_VALUE" \
         -X POST "$JENKINS_URL/credentials/store/system/domain/_/createCredentials" \
         --data-urlencode "json=${json_payload}" 2>/dev/null; then
         log_info "  $cred_id: created"
@@ -197,6 +212,8 @@ main() {
     log_info "=== Setting up Jenkins Credentials ==="
     log_info "Jenkins URL: $JENKINS_URL"
     echo ""
+
+    get_crumb
 
     setup_gitlab_credentials
     setup_nexus_credentials

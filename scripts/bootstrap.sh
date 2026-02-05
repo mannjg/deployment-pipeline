@@ -447,6 +447,16 @@ run_script_if_exists() {
 configure_gitlab_api_token() {
     log_info "Creating GitLab API token..."
     run_script_if_exists "$SCRIPT_DIR/02-configure/create-gitlab-api-token.sh" "GitLab API token" "true"
+
+    # Also create the gitlab-admin-credentials K8s secret (stores username)
+    # This is needed by setup-jenkins-credentials.sh to create Jenkins git credentials
+    if ! kubectl get secret "$GITLAB_USER_SECRET" -n "$GITLAB_NAMESPACE" &>/dev/null; then
+        log_info "Creating GitLab admin credentials secret..."
+        kubectl create secret generic "$GITLAB_USER_SECRET" \
+            -n "$GITLAB_NAMESPACE" \
+            --from-literal="${GITLAB_USER_KEY}=root"
+        log_info "  Created $GITLAB_USER_SECRET secret"
+    fi
 }
 
 configure_gitlab_projects() {
