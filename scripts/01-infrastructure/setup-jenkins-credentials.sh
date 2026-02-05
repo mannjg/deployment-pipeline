@@ -198,19 +198,12 @@ main() {
     log_info "Jenkins URL: $JENKINS_URL"
     echo ""
 
-    local failed=0
-
-    setup_gitlab_credentials || ((failed++))
-    setup_nexus_credentials || ((failed++))
-    setup_argocd_credentials || ((failed++))
+    setup_gitlab_credentials
+    setup_nexus_credentials
+    setup_argocd_credentials
 
     echo ""
-    if [[ $failed -eq 0 ]]; then
-        log_info "=== Credential setup complete ==="
-    else
-        log_error "=== Credential setup completed with $failed error(s) ==="
-        exit 1
-    fi
+    log_info "=== Credential setup complete ==="
 }
 
 main "$@"

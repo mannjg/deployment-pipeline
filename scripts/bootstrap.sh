@@ -581,6 +581,11 @@ configure_jenkins_script_security() {
     run_script_if_exists "$SCRIPT_DIR/02-configure/configure-jenkins-script-security.sh" "Jenkins script security" "true"
 }
 
+setup_jenkins_pipeline_credentials() {
+    log_info "Setting up Jenkins pipeline credentials..."
+    run_script_if_exists "$SCRIPT_DIR/01-infrastructure/setup-jenkins-credentials.sh" "Jenkins pipeline credentials" "true"
+}
+
 prompt_registry_credentials() {
     # Prompt for container registry credentials (used for Docker push)
     # Credentials are passed via env vars to child scripts
@@ -664,10 +669,13 @@ configure_services() {
     # 5o. Configure Jenkins script security (approve required signatures)
     configure_jenkins_script_security
 
-    # 5p. Setup Jenkins pipelines and webhooks
+    # 5p. Setup Jenkins pipeline credentials (gitlab-api-token-secret, nexus, argocd)
+    setup_jenkins_pipeline_credentials
+
+    # 5q. Setup Jenkins pipelines and webhooks
     setup_jenkins_pipelines
 
-    # 5q. Configure merge requirements (optional)
+    # 5r. Configure merge requirements (optional)
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/configure-merge-requirements.sh" "Merge requirements" || true
 
     log_info "Service configuration completed successfully"
