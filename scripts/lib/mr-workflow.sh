@@ -240,15 +240,27 @@ mw_wait_for_mr_pipeline() {
     while [[ $elapsed -lt $timeout ]]; do
         local status_json
         if status_json=$("$jenkins_cli" status "$jenkins_job_path" 2>/dev/null); then
-            local building=$(echo "$status_json" | jq -r '.building // true' 2>/dev/null)
-            local result=$(echo "$status_json" | jq -r '.result // empty' 2>/dev/null)
+            # Extract values - no defaults, fail if fields missing
+            local building=$(echo "$status_json" | jq -r '.building')
+            local result=$(echo "$status_json" | jq -r '.result')
 
-            if [[ "$building" == "false" && -n "$result" ]]; then
+            # Validate we got actual values (not null/empty)
+            if [[ "$building" == "null" || -z "$building" ]]; then
+                echo "Jenkins returned invalid building status" >&2
+                return 1
+            fi
+
+            if [[ "$building" == "false" ]]; then
+                if [[ "$result" == "null" || -z "$result" ]]; then
+                    echo "Build complete but no result - unexpected state" >&2
+                    return 1
+                fi
                 case "$result" in
                     SUCCESS) return 0 ;;
                     *) return 1 ;;
                 esac
             fi
+            # Still building, continue polling
         fi
         # Job may not exist yet (webhook → branch scan → build creation takes time)
 
