@@ -28,21 +28,25 @@ main() {
     log_info "Namespace: $GITLAB_NAMESPACE"
     echo ""
 
-    log_step "Enabling local network requests for webhooks..."
+    log_step "Configuring GitLab application settings..."
 
-    # Use Rails runner to update the application setting
-    # This allows webhooks to call internal/private network addresses
+    # Use Rails runner to update application settings:
+    # 1. Allow local network requests for webhooks (Jenkins is in-cluster)
+    # 2. Disable Auto DevOps (we use Jenkins for CI/CD, not GitLab CI)
+    # 3. Disable shared runners (no GitLab Runners configured)
     local result
     if result=$(kubectl exec -n "$GITLAB_NAMESPACE" deployment/gitlab -- \
         gitlab-rails runner "
             settings = ApplicationSetting.current || ApplicationSetting.create_from_defaults
             settings.update!(
                 allow_local_requests_from_web_hooks_and_services: true,
-                allow_local_requests_from_system_hooks: true
+                allow_local_requests_from_system_hooks: true,
+                auto_devops_enabled: false,
+                shared_runners_enabled: false
             )
-            puts 'Settings updated: allow_local_requests_from_web_hooks_and_services=true'
+            puts 'allow_local_requests=true, auto_devops=false, shared_runners=false'
         " 2>&1); then
-        log_pass "Local network requests enabled for webhooks"
+        log_pass "GitLab application settings configured"
         log_info "$result"
     else
         log_fail "Failed to update GitLab settings"

@@ -207,6 +207,10 @@ mw_create_mr() {
 # Wait for MR pipeline (Jenkins CI) to complete
 # Usage: mw_wait_for_mr_pipeline <project> <mr_iid> [timeout]
 # Returns: 0 if passed, 1 if failed or timeout
+#
+# Polls Jenkins directly for build status of the MR's source branch.
+# Jenkins is the CI source of truth — the GitLab webhook triggers
+# Jenkins MultiBranch pipeline which builds the feature branch.
 mw_wait_for_mr_pipeline() {
     local project="$1"
     local mr_iid="$2"
@@ -215,28 +219,39 @@ mw_wait_for_mr_pipeline() {
     local encoded_project=$(_mw_encode_project "$project")
     local gitlab_url="${GITLAB_URL_EXTERNAL}"
     local gitlab_token="${GITLAB_TOKEN}"
-    # Note: We do NOT trigger a full MultiBranch scan here.
-    # The GitLab push webhook triggers Jenkins automatically for the feature branch.
-    # Triggering a broad scan would cause duplicate builds for any recently-updated
-    # env branches (dev/stage/prod) that haven't finished processing yet.
 
+    # Get source branch from MR
+    local mr_info=$(curl -sk -H "PRIVATE-TOKEN: $gitlab_token" \
+        "$gitlab_url/api/v4/projects/$encoded_project/merge_requests/$mr_iid" 2>/dev/null)
+    local source_branch=$(echo "$mr_info" | jq -r '.source_branch // empty')
+    if [[ -z "$source_branch" ]]; then
+        echo "Could not get source branch for MR !$mr_iid" >&2
+        return 1
+    fi
+
+    # Derive Jenkins job path: p2c/example-app → example-app/<branch>
+    local jenkins_job_name="${project##*/}"
+    local jenkins_job_path="${jenkins_job_name}/${source_branch}"
+
+    local jenkins_cli="$MR_WORKFLOW_LIB_DIR/../04-operations/jenkins-cli.sh"
     local poll_interval="${MR_WORKFLOW_POLL_INTERVAL}"
     local elapsed=0
 
     while [[ $elapsed -lt $timeout ]]; do
-        local mr_info=$(curl -sk -H "PRIVATE-TOKEN: $gitlab_token" \
-            "$gitlab_url/api/v4/projects/$encoded_project/merge_requests/$mr_iid" 2>/dev/null)
+        local status_json
+        status_json=$("$jenkins_cli" status "$jenkins_job_path" 2>/dev/null) || true
 
-        local pipeline_status=$(echo "$mr_info" | jq -r '.head_pipeline.status // empty')
+        if [[ -n "$status_json" ]]; then
+            local building=$(echo "$status_json" | jq -r '.building // true')
+            local result=$(echo "$status_json" | jq -r '.result // empty')
 
-        case "$pipeline_status" in
-            success)
-                return 0
-                ;;
-            failed)
-                return 1
-                ;;
-        esac
+            if [[ "$building" == "false" && -n "$result" ]]; then
+                case "$result" in
+                    SUCCESS) return 0 ;;
+                    *) return 1 ;;
+                esac
+            fi
+        fi
 
         sleep $poll_interval
         elapsed=$((elapsed + poll_interval))
