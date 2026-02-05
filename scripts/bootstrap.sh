@@ -670,6 +670,33 @@ configure_argocd_dns() {
         log_warn "  Cluster CA cert not found, ArgoCD may not trust GitLab TLS"
     fi
 
+    # Configure repository credentials so ArgoCD can clone from GitLab
+    log_info "  Configuring ArgoCD repository credentials for GitLab..."
+    local gitlab_token
+    gitlab_token=$(kubectl get secret gitlab-api-token -n "$GITLAB_NAMESPACE" \
+        -o jsonpath='{.data.token}' | base64 -d)
+    if [[ -n "$gitlab_token" ]]; then
+        kubectl apply -n "$ARGOCD_NAMESPACE" -f - <<REPO_CREDS_EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: repo-creds-gitlab
+  namespace: ${ARGOCD_NAMESPACE}
+  labels:
+    argocd.argoproj.io/secret-type: repo-creds
+type: Opaque
+stringData:
+  type: git
+  url: ${GITLAB_URL_EXTERNAL}
+  username: root
+  password: ${gitlab_token}
+REPO_CREDS_EOF
+        log_info "  ArgoCD repository credentials configured"
+    else
+        log_error "  Could not get GitLab API token for ArgoCD"
+        return 1
+    fi
+
     # Wait for rollout to complete
     log_info "  Waiting for argocd-repo-server rollout..."
     kubectl rollout status deployment/argocd-repo-server -n "$ARGOCD_NAMESPACE" --timeout=120s
