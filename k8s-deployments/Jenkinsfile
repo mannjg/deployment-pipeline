@@ -531,6 +531,10 @@ spec:
         DEPLOYMENTS_REPO = "${env.DEPLOYMENTS_REPO_URL ?: ''}"
         // External Docker registry (HTTPS) for Docker daemon operations
         DOCKER_REGISTRY_EXTERNAL = "${env.DOCKER_REGISTRY_EXTERNAL ?: ''}"
+        // Container registry path prefix (e.g., 'p2c' for registry-dso.jmann.local/p2c/...)
+        CONTAINER_REGISTRY_PATH_PREFIX = "${env.CONTAINER_REGISTRY_PATH_PREFIX ?: ''}"
+        // Nexus URL for Maven artifact promotion
+        NEXUS_URL_INTERNAL = "${env.NEXUS_URL_INTERNAL ?: ''}"
         ARGOCD_SERVER = "${env.ARGOCD_SERVER ?: ''}"
         ARGOCD_OPTS = "${env.ARGOCD_OPTS ?: ''}"
         ENV_BRANCHES = 'dev,stage,prod'
@@ -555,6 +559,7 @@ Build: ${env.BUILD_URL}
                         if (!env.JENKINS_AGENT_IMAGE) missingVars.add('JENKINS_AGENT_IMAGE')
                         if (!env.GITLAB_URL_INTERNAL) missingVars.add('GITLAB_URL_INTERNAL')
                         if (!env.DOCKER_REGISTRY_EXTERNAL) missingVars.add('DOCKER_REGISTRY_EXTERNAL')
+                        if (!env.CONTAINER_REGISTRY_PATH_PREFIX) missingVars.add('CONTAINER_REGISTRY_PATH_PREFIX')
 
                         if (missingVars.size() > 0) {
                             error "Missing required ConfigMap variables: ${missingVars.join(', ')}. Configure pipeline-config ConfigMap."
