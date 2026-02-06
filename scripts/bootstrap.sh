@@ -185,24 +185,43 @@ generate_password() {
     head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 16
 }
 
-# Base directory for cluster secrets (matches 00-prepare-cluster.sh)
+# Base directory for cluster secrets
 CLUSTERS_DATA_DIR="${HOME}/.local/share/deployment-pipeline/clusters"
 
 get_cluster_ca_paths() {
-    # Set paths to pre-generated CA files
     CLUSTER_DATA_DIR="${CLUSTERS_DATA_DIR}/${CLUSTER_NAME}"
     CA_CERT="${CLUSTER_DATA_DIR}/ca.crt"
     CA_KEY="${CLUSTER_DATA_DIR}/ca.key"
 }
 
-verify_cluster_prepared() {
-    log_info "Verifying cluster preparation..."
+ensure_cluster_ca() {
+    log_info "Checking cluster CA certificate..."
 
     get_cluster_ca_paths
 
-    if [[ ! -f "$CA_CERT" ]] || [[ ! -f "$CA_KEY" ]]; then
-        log_error "Cluster CA not found. Run prepare-cluster first:"
-        log_error "  ./scripts/00-prepare-cluster.sh $CONFIG_FILE"
+    if [[ -f "$CA_CERT" ]] && [[ -f "$CA_KEY" ]]; then
+        log_info "  CA already exists for cluster: $CLUSTER_NAME"
+    else
+        log_info "  Generating new CA certificate..."
+        mkdir -p "$CLUSTER_DATA_DIR"
+        chmod 700 "$CLUSTER_DATA_DIR"
+
+        openssl ecparam -name prime256v1 -genkey -noout -out "$CA_KEY" 2>/dev/null
+        chmod 600 "$CA_KEY"
+
+        openssl req -new -x509 -sha256 \
+            -key "$CA_KEY" \
+            -out "$CA_CERT" \
+            -days 3650 \
+            -subj "/CN=${CLUSTER_NAME}-ca" \
+            2>/dev/null
+
+        log_info "  CA certificate generated"
+    fi
+
+    # Verify CA is valid
+    if ! openssl x509 -in "$CA_CERT" -noout 2>/dev/null; then
+        log_error "CA cert is invalid: $CA_CERT"
         exit 1
     fi
 
@@ -853,7 +872,7 @@ main() {
     validate_config "$CONFIG_FILE"
 
     # Verify host is prepared (CA exists, Docker trust configured)
-    verify_cluster_prepared
+    ensure_cluster_ca
 
     log_info "Bootstrapping cluster: $CLUSTER_NAME"
     log_info "Config file: $CONFIG_FILE"
