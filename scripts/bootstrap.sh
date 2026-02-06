@@ -409,11 +409,20 @@ wait_for_pods() {
         sleep 5
     done
 
-    # Now wait for pods to be ready
+    # Now wait for non-terminating pods to be ready
+    # kubectl wait --all includes pods being removed by rolling updates,
+    # which will never become ready. Use a label selector to exclude them.
     if ! kubectl wait --for=condition=ready pod --all -n "$namespace" --timeout="${timeout}s" 2>/dev/null; then
-        log_warn "Some pods in $namespace may not be ready. Current status:"
-        kubectl get pods -n "$namespace" 2>/dev/null || true
-        return 1
+        # Check if failure is just due to terminating pods from rolling updates
+        local not_ready
+        not_ready=$(kubectl get pods -n "$namespace" --no-headers 2>/dev/null | grep -v Terminating | grep -v '1/1.*Running' | grep -v '2/2.*Running' | grep -v Completed || true)
+        if [[ -z "$not_ready" ]]; then
+            log_info "All running pods are ready (terminating pods from rolling updates ignored)"
+        else
+            log_warn "Some pods in $namespace may not be ready:"
+            echo "$not_ready"
+            return 1
+        fi
     fi
 
     log_info "Pods ready in $description"
@@ -422,17 +431,14 @@ wait_for_pods() {
 wait_for_infrastructure() {
     log_step "Step 4: Waiting for infrastructure pods"
 
-    # GitLab takes longer due to initialization
-    wait_for_pods "$GITLAB_NAMESPACE" 600 "GitLab"
+    # Deduplicate: configs may map multiple components to the same namespace
+    # Use the most generous timeout (600s) for any shared namespace
+    local infra_namespaces
+    infra_namespaces=$(echo "$GITLAB_NAMESPACE $JENKINS_NAMESPACE $NEXUS_NAMESPACE $ARGOCD_NAMESPACE" | tr ' ' '\n' | sort -u)
 
-    # Jenkins
-    wait_for_pods "$JENKINS_NAMESPACE" 300 "Jenkins"
-
-    # Nexus
-    wait_for_pods "$NEXUS_NAMESPACE" 180 "Nexus"
-
-    # ArgoCD
-    wait_for_pods "$ARGOCD_NAMESPACE" 180 "ArgoCD"
+    for ns in $infra_namespaces; do
+        wait_for_pods "$ns" 600 "$ns"
+    done
 
     log_info "All infrastructure pods ready"
 }
