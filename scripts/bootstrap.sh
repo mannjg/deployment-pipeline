@@ -599,12 +599,6 @@ setup_jenkins_pipeline_credentials() {
 prompt_registry_credentials() {
     # Prompt for container registry credentials (used for Docker push)
     # Credentials are passed via env vars to child scripts
-    if [[ -n "${CONTAINER_REGISTRY_USER:-}" && -n "${CONTAINER_REGISTRY_PASS:-}" ]]; then
-        log_info "Using registry credentials from environment"
-        export CONTAINER_REGISTRY_USER CONTAINER_REGISTRY_PASS
-        return 0
-    fi
-
     log_info "Container registry credentials needed for image push"
     log_info "Registry: ${DOCKER_REGISTRY_HOST}"
     echo -n "  Username: "
