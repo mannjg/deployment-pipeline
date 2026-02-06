@@ -80,7 +80,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 done
 
 demo_action "Checking current deployment strategy..."
-current_max_unavailable=$(kubectl get deployment "$DEMO_APP" -n dev \
+current_max_unavailable=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace dev)" \
     -o jsonpath='{.spec.strategy.rollingUpdate.maxUnavailable}' 2>/dev/null || echo "unknown")
 demo_info "Current maxUnavailable in dev: $current_max_unavailable"
 
@@ -212,7 +212,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
     # Verify K8s state - check deployment strategy
     demo_action "Verifying deployment strategy in K8s deployment..."
-    max_unavailable=$(kubectl get deployment "$DEMO_APP" -n "$env" \
+    max_unavailable=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" \
         -o jsonpath='{.spec.strategy.rollingUpdate.maxUnavailable}' 2>/dev/null || echo "")
 
     if [[ "$max_unavailable" == "0" ]]; then
@@ -238,11 +238,11 @@ for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
 
     # Check deployment spec
-    max_unavailable=$(kubectl get deployment "$DEMO_APP" -n "$env" \
+    max_unavailable=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" \
         -o jsonpath='{.spec.strategy.rollingUpdate.maxUnavailable}' 2>/dev/null || echo "")
-    max_surge=$(kubectl get deployment "$DEMO_APP" -n "$env" \
+    max_surge=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" \
         -o jsonpath='{.spec.strategy.rollingUpdate.maxSurge}' 2>/dev/null || echo "")
-    strategy_type=$(kubectl get deployment "$DEMO_APP" -n "$env" \
+    strategy_type=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" \
         -o jsonpath='{.spec.strategy.type}' 2>/dev/null || echo "")
 
     if [[ "$max_unavailable" == "0" ]]; then
@@ -255,7 +255,7 @@ for env in "${ENVIRONMENTS[@]}"; do
     demo_info "$env: strategy=$strategy_type, maxSurge=$max_surge, maxUnavailable=$max_unavailable"
 
     # Verify pod is running
-    pod_status=$(kubectl get pods -n "$env" -l app="$DEMO_APP" -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
+    pod_status=$(kubectl get pods -n "$(get_namespace "$env")" -l app="$DEMO_APP" -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
     if [[ "$pod_status" == "Running" ]]; then
         demo_verify "$env: Pod is Running with new strategy"
     else

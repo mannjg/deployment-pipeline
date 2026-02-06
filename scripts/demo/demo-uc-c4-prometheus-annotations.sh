@@ -120,7 +120,7 @@ demo_info "Confirming '$DEMO_ANNOTATION_KEY' does not exist in any environment..
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
-    assert_pod_annotation_absent "$env" "$DEMO_APP" "$DEMO_ANNOTATION_KEY" || {
+    assert_pod_annotation_absent "$(get_namespace "$env")" "$DEMO_APP" "$DEMO_ANNOTATION_KEY" || {
         demo_warn "Annotation '$DEMO_ANNOTATION_KEY' already exists in $env - demo may have stale state"
         demo_info "Run reset-demo-state.sh to clean up"
         exit 1
@@ -250,7 +250,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
     # Verify K8s state
     demo_action "Verifying annotation in K8s deployment..."
-    assert_pod_annotation_equals "$env" "$DEMO_APP" "$DEMO_ANNOTATION_KEY" "$DEMO_ANNOTATION_VALUE" || exit 1
+    assert_pod_annotation_equals "$(get_namespace "$env")" "$DEMO_APP" "$DEMO_ANNOTATION_KEY" "$DEMO_ANNOTATION_VALUE" || exit 1
 
     demo_verify "Promotion to $env complete"
     echo ""
@@ -267,7 +267,7 @@ demo_info "Verifying Prometheus scrape-interval propagated to ALL environments..
 assert_env_propagation "deployment" "$DEMO_APP" \
     "{.spec.template.metadata.annotations.prometheus\\.io/scrape-interval}" \
     "$DEMO_ANNOTATION_VALUE" \
-    "${ENVIRONMENTS[@]}" || exit 1
+    "$(get_namespace dev)" "$(get_namespace stage)" "$(get_namespace prod)" || exit 1
 
 # ---------------------------------------------------------------------------
 # Step 7: Summary

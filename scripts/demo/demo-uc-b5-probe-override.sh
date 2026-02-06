@@ -100,7 +100,7 @@ done
 
 demo_action "Checking deployments exist in all environments..."
 for env in "${ENVIRONMENTS[@]}"; do
-    if kubectl get deployment "$DEMO_APP" -n "$env" &>/dev/null; then
+    if kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" &>/dev/null; then
         demo_verify "Deployment $DEMO_APP exists in $env"
     else
         demo_fail "Deployment $DEMO_APP not found in $env"
@@ -119,7 +119,7 @@ demo_info "(App-level default is ${APP_DEFAULT_TIMEOUT}s, prod will override to 
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
-    current=$(kubectl get deployment "$DEMO_APP" -n "$env" \
+    current=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" \
         -o jsonpath='{.spec.template.spec.containers[0].readinessProbe.timeoutSeconds}' 2>/dev/null || echo "unset")
     demo_info "$env: timeoutSeconds = $current"
 done
@@ -301,7 +301,7 @@ else
 
         # Verify K8s state
         demo_action "Verifying readinessProbe timeout in K8s..."
-        assert_readiness_probe_timeout "$env" "$DEMO_APP" "$APP_DEFAULT_TIMEOUT" || exit 1
+        assert_readiness_probe_timeout "$(get_namespace "$env")" "$DEMO_APP" "$APP_DEFAULT_TIMEOUT" || exit 1
 
         demo_verify "Promotion to $env complete"
         echo ""
@@ -319,7 +319,7 @@ demo_info "(Baseline already deployed, or just promoted via Phase 1)"
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
-    assert_readiness_probe_timeout "$env" "$DEMO_APP" "$APP_DEFAULT_TIMEOUT" || exit 1
+    assert_readiness_probe_timeout "$(get_namespace "$env")" "$DEMO_APP" "$APP_DEFAULT_TIMEOUT" || exit 1
 done
 
 demo_verify "CHECKPOINT: All environments have readinessProbe.timeoutSeconds=$APP_DEFAULT_TIMEOUT"
@@ -444,15 +444,15 @@ demo_info "Verifying final state across all environments..."
 
 # Dev should still have app default
 demo_action "Checking dev..."
-assert_readiness_probe_timeout "dev" "$DEMO_APP" "$APP_DEFAULT_TIMEOUT" || exit 1
+assert_readiness_probe_timeout "$(get_namespace "dev")" "$DEMO_APP" "$APP_DEFAULT_TIMEOUT" || exit 1
 
 # Stage should still have app default
 demo_action "Checking stage..."
-assert_readiness_probe_timeout "stage" "$DEMO_APP" "$APP_DEFAULT_TIMEOUT" || exit 1
+assert_readiness_probe_timeout "$(get_namespace "stage")" "$DEMO_APP" "$APP_DEFAULT_TIMEOUT" || exit 1
 
 # Prod should have the override
 demo_action "Checking prod..."
-assert_readiness_probe_timeout "prod" "$DEMO_APP" "$PROD_OVERRIDE_TIMEOUT" || exit 1
+assert_readiness_probe_timeout "$(get_namespace "prod")" "$DEMO_APP" "$PROD_OVERRIDE_TIMEOUT" || exit 1
 
 demo_verify "VERIFIED: Override hierarchy works correctly!"
 demo_info "  - dev:   readinessProbe.timeoutSeconds = $APP_DEFAULT_TIMEOUT (app default)"

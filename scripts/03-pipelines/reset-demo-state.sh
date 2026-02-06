@@ -550,21 +550,9 @@ extract_images_from_env_cue() {
         log_info "  exampleApp image: $EXAMPLE_APP_IMAGE"
     fi
 
-    # Postgres image is always extracted from the branch (no override needed)
-    local content=$("$gitlab_cli" file get "$DEPLOYMENTS_REPO_PATH" env.cue --ref "$env" 2>/dev/null)
-    POSTGRES_IMAGE=$(echo "$content" | awk '
-        /postgres:.*\{/ { in_postgres=1 }
-        in_postgres && /image:/ {
-            gsub(/.*image:[[:space:]]*"/, "")
-            gsub(/".*/, "")
-            print
-            exit
-        }
-    ')
-
-    if [[ -z "$POSTGRES_IMAGE" ]]; then
-        POSTGRES_IMAGE="postgres:16-alpine"
-    fi
+    # Postgres image is always reset to the canonical baseline
+    # This ensures demos like UC-D4 (3rd party upgrade) start from a known state
+    POSTGRES_IMAGE="postgres:16-alpine"
 
     log_info "  postgres image: $POSTGRES_IMAGE"
 }

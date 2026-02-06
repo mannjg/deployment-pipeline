@@ -212,7 +212,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
     # Verify K8s state
     demo_action "Verifying label in K8s deployment..."
-    assert_pod_label_equals "$env" "$DEMO_APP" "$DEMO_LABEL_KEY" "$PLATFORM_LABEL_VALUE" || exit 1
+    assert_pod_label_equals "$(get_namespace "$env")" "$DEMO_APP" "$DEMO_LABEL_KEY" "$PLATFORM_LABEL_VALUE" || exit 1
 
     demo_verify "Promotion to $env complete"
     echo ""
@@ -229,7 +229,7 @@ demo_info "Verifying platform default propagated to ALL environments..."
 assert_env_propagation "deployment" "$DEMO_APP" \
     "{.spec.template.metadata.labels.$DEMO_LABEL_KEY}" \
     "$PLATFORM_LABEL_VALUE" \
-    "${ENVIRONMENTS[@]}" || exit 1
+    "$(get_namespace dev)" "$(get_namespace stage)" "$(get_namespace prod)" || exit 1
 
 demo_verify "CHECKPOINT: All environments have '$DEMO_LABEL_KEY: $PLATFORM_LABEL_VALUE'"
 demo_info "This proves UC-C1-like behavior: platform-wide propagation works."
@@ -325,15 +325,15 @@ demo_info "Verifying final state across all environments..."
 
 # Dev should still have platform default
 demo_action "Checking dev..."
-assert_pod_label_equals "dev" "$DEMO_APP" "$DEMO_LABEL_KEY" "$PLATFORM_LABEL_VALUE" || exit 1
+assert_pod_label_equals "$(get_namespace dev)" "$DEMO_APP" "$DEMO_LABEL_KEY" "$PLATFORM_LABEL_VALUE" || exit 1
 
 # Stage should still have platform default
 demo_action "Checking stage..."
-assert_pod_label_equals "stage" "$DEMO_APP" "$DEMO_LABEL_KEY" "$PLATFORM_LABEL_VALUE" || exit 1
+assert_pod_label_equals "$(get_namespace stage)" "$DEMO_APP" "$DEMO_LABEL_KEY" "$PLATFORM_LABEL_VALUE" || exit 1
 
 # Prod should have the override
 demo_action "Checking prod..."
-assert_pod_label_equals "prod" "$DEMO_APP" "$DEMO_LABEL_KEY" "$PROD_OVERRIDE_VALUE" || exit 1
+assert_pod_label_equals "$(get_namespace prod)" "$DEMO_APP" "$DEMO_LABEL_KEY" "$PROD_OVERRIDE_VALUE" || exit 1
 
 demo_verify "VERIFIED: Environment isolation works correctly!"
 demo_info "  - dev:   $DEMO_LABEL_KEY = $PLATFORM_LABEL_VALUE (platform default)"

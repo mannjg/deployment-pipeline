@@ -65,7 +65,9 @@ GITLAB_CLI="${PROJECT_ROOT}/scripts/04-operations/gitlab-cli.sh"
 get_deployment_image() {
     local env="$1"
     local deployment="$2"
-    kubectl get deployment "$deployment" -n "$env" \
+    local ns
+    ns=$(get_namespace "$env")
+    kubectl get deployment "$deployment" -n "$ns" \
         -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null
 }
 
@@ -108,7 +110,8 @@ demo_verify "Connected to Kubernetes cluster"
 demo_action "Checking deployments exist in both environments..."
 for app in "$APP_TO_PROMOTE_K8S" "$APP_TO_HOLD"; do
     for env in "$SOURCE_ENV" "$TARGET_ENV"; do
-        if kubectl get deployment "$app" -n "$env" &>/dev/null; then
+        ns=$(get_namespace "$env")
+        if kubectl get deployment "$app" -n "$ns" &>/dev/null; then
             demo_verify "$app deployment exists in $env"
         else
             demo_fail "$app deployment not found in $env"
@@ -263,6 +266,8 @@ demo_action "Cloning branch for local promotion..."
 # Clone from GitLab k8s-deployments repo (use external URL from config)
 GITLAB_K8S_URL="${DEPLOYMENTS_REPO_URL_EXTERNAL:?DEPLOYMENTS_REPO_URL_EXTERNAL not set - source cluster config}"
 export GIT_SSL_NO_VERIFY=true
+# Setup git credentials for GitLab clone
+git config --global credential.helper "!f() { echo username=oauth2; echo password=${GITLAB_TOKEN}; }; f"
 git clone --quiet --branch "$FEATURE_BRANCH" "$GITLAB_K8S_URL" "$WORK_DIR" || {
     demo_fail "Failed to clone branch $FEATURE_BRANCH from GitLab"
     rm -rf "$WORK_DIR"
@@ -541,5 +546,8 @@ demo_postflight_check
 
 demo_action "Returning to original branch: $ORIGINAL_BRANCH"
 git checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
+
+# Cleanup git credentials
+git config --global --unset credential.helper 2>/dev/null || true
 
 demo_complete

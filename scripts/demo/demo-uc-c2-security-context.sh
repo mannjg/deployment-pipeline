@@ -81,7 +81,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 done
 
 demo_action "Verifying container runs as non-root (prerequisite)..."
-dev_uid=$(kubectl exec -n dev deployment/${DEMO_APP} -- id -u 2>/dev/null || echo "unknown")
+dev_uid=$(kubectl exec -n "$(get_namespace dev)" deployment/${DEMO_APP} -- id -u 2>/dev/null || echo "unknown")
 if [[ "$dev_uid" != "0" ]] && [[ "$dev_uid" != "unknown" ]]; then
     demo_verify "Container runs as non-root (uid=$dev_uid)"
 else
@@ -216,7 +216,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
     # Verify K8s state - check pod security context
     demo_action "Verifying securityContext in K8s deployment..."
-    run_as_non_root=$(kubectl get deployment "$DEMO_APP" -n "$env" \
+    run_as_non_root=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" \
         -o jsonpath='{.spec.template.spec.securityContext.runAsNonRoot}' 2>/dev/null || echo "")
 
     if [[ "$run_as_non_root" == "true" ]]; then
@@ -242,7 +242,7 @@ for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
 
     # Check deployment spec
-    run_as_non_root=$(kubectl get deployment "$DEMO_APP" -n "$env" \
+    run_as_non_root=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" \
         -o jsonpath='{.spec.template.spec.securityContext.runAsNonRoot}' 2>/dev/null || echo "")
 
     if [[ "$run_as_non_root" == "true" ]]; then
@@ -253,7 +253,7 @@ for env in "${ENVIRONMENTS[@]}"; do
     fi
 
     # Verify pod is actually running (security context didn't break it)
-    pod_status=$(kubectl get pods -n "$env" -l app="$DEMO_APP" -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
+    pod_status=$(kubectl get pods -n "$(get_namespace "$env")" -l app="$DEMO_APP" -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
     if [[ "$pod_status" == "Running" ]]; then
         demo_verify "$env: Pod is Running with security context enforced"
     else

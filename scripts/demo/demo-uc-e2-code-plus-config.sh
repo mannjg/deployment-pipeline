@@ -113,7 +113,7 @@ demo_info "Confirming '$DEMO_ENV_VAR_NAME' does not exist in any environment..."
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
-    if kubectl get deployment "$DEMO_APP" -n "$env" -o jsonpath='{.spec.template.spec.containers[0].env[*].name}' 2>/dev/null | grep -q "$DEMO_ENV_VAR_NAME"; then
+    if kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" -o jsonpath='{.spec.template.spec.containers[0].env[*].name}' 2>/dev/null | grep -q "$DEMO_ENV_VAR_NAME"; then
         demo_warn "Env var '$DEMO_ENV_VAR_NAME' already exists in $env - demo may have stale state"
         demo_info "Run reset-demo-state.sh to clean up"
         exit 1
@@ -474,7 +474,7 @@ for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Verifying deployment has new image AND env var..."
 
     # Check image contains version
-    DEPLOYED_IMAGE=$(kubectl get deployment "$DEMO_APP" -n "$env" \
+    DEPLOYED_IMAGE=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" \
         -o jsonpath='{.spec.template.spec.containers[0].image}')
     if [[ "$DEPLOYED_IMAGE" == *"$NEW_VERSION"* ]] || [[ "$DEPLOYED_IMAGE" == *"${NEW_VERSION%-SNAPSHOT}"* ]]; then
         demo_verify "Image contains version: $DEPLOYED_IMAGE"
@@ -484,7 +484,7 @@ for env in "${ENVIRONMENTS[@]}"; do
     fi
 
     # Check env var
-    assert_deployment_env_var "$env" "$DEMO_APP" "$DEMO_ENV_VAR_NAME" "$DEMO_ENV_VAR_VALUE" || exit 1
+    assert_deployment_env_var "$(get_namespace "$env")" "$DEMO_APP" "$DEMO_ENV_VAR_NAME" "$DEMO_ENV_VAR_VALUE" || exit 1
 
     demo_verify "Promotion to $env complete (both image AND config deployed)"
     echo ""
@@ -502,12 +502,12 @@ for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
 
     # Verify image
-    DEPLOYED_IMAGE=$(kubectl get deployment "$DEMO_APP" -n "$env" \
+    DEPLOYED_IMAGE=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" \
         -o jsonpath='{.spec.template.spec.containers[0].image}')
     demo_info "  Image: $DEPLOYED_IMAGE"
 
     # Verify env var
-    assert_deployment_env_var "$env" "$DEMO_APP" "$DEMO_ENV_VAR_NAME" "$DEMO_ENV_VAR_VALUE" || exit 1
+    assert_deployment_env_var "$(get_namespace "$env")" "$DEMO_APP" "$DEMO_ENV_VAR_NAME" "$DEMO_ENV_VAR_VALUE" || exit 1
     demo_info "  $DEMO_ENV_VAR_NAME: $DEMO_ENV_VAR_VALUE"
 done
 

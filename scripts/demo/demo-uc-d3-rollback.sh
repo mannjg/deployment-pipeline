@@ -121,7 +121,7 @@ demo_info "Stage baseline commit: $BASELINE_COMMIT"
 
 # Capture ConfigMap state (should NOT have our test key)
 demo_action "Verifying test key does NOT exist in $TARGET_ENV ConfigMap..."
-if kubectl get configmap "${DEMO_APP}-config" -n "$TARGET_ENV" -o jsonpath="{.data.${BAD_CONFIGMAP_KEY}}" 2>/dev/null | grep -q .; then
+if kubectl get configmap "${DEMO_APP}-config" -n "$(get_namespace "$TARGET_ENV")" -o jsonpath="{.data.${BAD_CONFIGMAP_KEY}}" 2>/dev/null | grep -q .; then
     demo_warn "Test key already exists - demo state not clean"
     demo_info "Run reset-demo-state.sh to clean up"
     exit 1
@@ -203,7 +203,7 @@ BAD_COMMIT=$("$GITLAB_CLI" commit list p2c/k8s-deployments --ref "$TARGET_ENV" -
 demo_info "Bad commit: $BAD_COMMIT"
 
 # Verify the ConfigMap has our bad value
-actual_value=$(kubectl get configmap "${DEMO_APP}-config" -n "$TARGET_ENV" \
+actual_value=$(kubectl get configmap "${DEMO_APP}-config" -n "$(get_namespace "$TARGET_ENV")" \
     -o jsonpath="{.data.${BAD_CONFIGMAP_KEY}}" 2>/dev/null || echo "")
 
 if [[ "$actual_value" == "$BAD_CONFIGMAP_VALUE" ]]; then
@@ -281,7 +281,7 @@ demo_action "Waiting for ArgoCD to sync the rollback..."
 wait_for_argocd_sync "${DEMO_APP}-${TARGET_ENV}" "$argocd_baseline" || exit 1
 
 demo_action "Verifying bad ConfigMap entry is now GONE..."
-actual_value=$(kubectl get configmap "${DEMO_APP}-config" -n "$TARGET_ENV" \
+actual_value=$(kubectl get configmap "${DEMO_APP}-config" -n "$(get_namespace "$TARGET_ENV")" \
     -o jsonpath="{.data.${BAD_CONFIGMAP_KEY}}" 2>/dev/null || echo "")
 
 if [[ -z "$actual_value" ]]; then

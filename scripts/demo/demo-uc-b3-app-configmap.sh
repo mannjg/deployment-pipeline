@@ -91,7 +91,7 @@ done
 
 demo_action "Checking deployments exist in all environments..."
 for env in "${ENVIRONMENTS[@]}"; do
-    if kubectl get deployment "$DEMO_APP" -n "$env" &>/dev/null; then
+    if kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" &>/dev/null; then
         demo_verify "Deployment $DEMO_APP exists in $env"
     else
         demo_fail "Deployment $DEMO_APP not found in $env"
@@ -110,8 +110,8 @@ demo_info "Confirming '$DEMO_CONFIGMAP_KEY' does not exist in any environment's 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
     # ConfigMap may not exist yet, which is fine for baseline
-    if kubectl get configmap "$CONFIGMAP_NAME" -n "$env" &>/dev/null; then
-        assert_configmap_entry_absent "$env" "$CONFIGMAP_NAME" "$DEMO_CONFIGMAP_KEY" || {
+    if kubectl get configmap "$CONFIGMAP_NAME" -n "$(get_namespace "$env")" &>/dev/null; then
+        assert_configmap_entry_absent "$(get_namespace "$env")" "$CONFIGMAP_NAME" "$DEMO_CONFIGMAP_KEY" || {
             demo_warn "ConfigMap key '$DEMO_CONFIGMAP_KEY' already exists in $env - demo may have stale state"
             demo_info "Run reset-demo-state.sh to clean up"
             exit 1
@@ -274,7 +274,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
     # Verify K8s state
     demo_action "Verifying ConfigMap entry in $env..."
-    assert_configmap_entry "$env" "$CONFIGMAP_NAME" "$DEMO_CONFIGMAP_KEY" "$DEMO_CONFIGMAP_VALUE" || exit 1
+    assert_configmap_entry "$(get_namespace "$env")" "$CONFIGMAP_NAME" "$DEMO_CONFIGMAP_KEY" "$DEMO_CONFIGMAP_VALUE" || exit 1
 
     demo_verify "Promotion to $env complete"
     echo ""
@@ -290,7 +290,7 @@ demo_info "Verifying ConfigMap entry propagated to ALL environments..."
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
-    assert_configmap_entry "$env" "$CONFIGMAP_NAME" "$DEMO_CONFIGMAP_KEY" "$DEMO_CONFIGMAP_VALUE" || exit 1
+    assert_configmap_entry "$(get_namespace "$env")" "$CONFIGMAP_NAME" "$DEMO_CONFIGMAP_KEY" "$DEMO_CONFIGMAP_VALUE" || exit 1
 done
 
 demo_verify "VERIFIED: '$DEMO_CONFIGMAP_KEY' present in all environments!"

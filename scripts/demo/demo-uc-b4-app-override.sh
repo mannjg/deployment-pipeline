@@ -106,7 +106,7 @@ done
 
 demo_action "Checking ConfigMaps exist in all environments..."
 for env in "${ENVIRONMENTS[@]}"; do
-    if kubectl get configmap "$DEMO_CONFIGMAP" -n "$env" &>/dev/null; then
+    if kubectl get configmap "$DEMO_CONFIGMAP" -n "$(get_namespace "$env")" &>/dev/null; then
         demo_verify "ConfigMap $DEMO_CONFIGMAP exists in $env"
     else
         demo_fail "ConfigMap $DEMO_CONFIGMAP not found in $env"
@@ -124,7 +124,7 @@ demo_info "Confirming '$DEMO_KEY' does not exist in any environment..."
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
-    assert_configmap_entry_absent "$env" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
+    assert_configmap_entry_absent "$(get_namespace "$env")" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
         demo_warn "Key '$DEMO_KEY' already exists in $env - demo may have stale state"
         demo_info "Run reset-demo-state.sh to clean up"
         exit 1
@@ -287,7 +287,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
     # Verify K8s state
     demo_action "Verifying ConfigMap in K8s..."
-    assert_configmap_entry "$env" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$APP_DEFAULT_VALUE" || exit 1
+    assert_configmap_entry "$(get_namespace "$env")" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$APP_DEFAULT_VALUE" || exit 1
 
     demo_verify "Promotion to $env complete"
     echo ""
@@ -303,7 +303,7 @@ demo_info "Verifying app default propagated to ALL environments..."
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
-    assert_configmap_entry "$env" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$APP_DEFAULT_VALUE" || exit 1
+    assert_configmap_entry "$(get_namespace "$env")" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$APP_DEFAULT_VALUE" || exit 1
 done
 
 demo_verify "CHECKPOINT: All environments have '$DEMO_KEY: $APP_DEFAULT_VALUE'"
@@ -434,15 +434,15 @@ demo_info "Verifying final state across all environments..."
 
 # Dev should still have app default
 demo_action "Checking dev..."
-assert_configmap_entry "dev" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$APP_DEFAULT_VALUE" || exit 1
+assert_configmap_entry "$(get_namespace "dev")" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$APP_DEFAULT_VALUE" || exit 1
 
 # Stage should still have app default
 demo_action "Checking stage..."
-assert_configmap_entry "stage" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$APP_DEFAULT_VALUE" || exit 1
+assert_configmap_entry "$(get_namespace "stage")" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$APP_DEFAULT_VALUE" || exit 1
 
 # Prod should have the override
 demo_action "Checking prod..."
-assert_configmap_entry "prod" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$PROD_OVERRIDE_VALUE" || exit 1
+assert_configmap_entry "$(get_namespace "prod")" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$PROD_OVERRIDE_VALUE" || exit 1
 
 demo_verify "VERIFIED: Override hierarchy works correctly!"
 demo_info "  - dev:   $DEMO_KEY = $APP_DEFAULT_VALUE (app default)"

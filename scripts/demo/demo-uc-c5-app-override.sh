@@ -110,7 +110,7 @@ done
 
 demo_action "Verifying platform default annotation exists..."
 # Check that example-app has prometheus scraping enabled (from UC-C4)
-if assert_pod_annotation_equals "dev" "$UNAFFECTED_APP" "$DEMO_ANNOTATION_KEY" "$PLATFORM_DEFAULT_VALUE" 2>/dev/null; then
+if assert_pod_annotation_equals "$(get_namespace dev)" "$UNAFFECTED_APP" "$DEMO_ANNOTATION_KEY" "$PLATFORM_DEFAULT_VALUE" 2>/dev/null; then
     demo_verify "Platform default ($DEMO_ANNOTATION_KEY=$PLATFORM_DEFAULT_VALUE) is active"
 else
     demo_fail "Platform default not set. Run UC-C4 demo first."
@@ -127,9 +127,9 @@ demo_info "Before override, both apps should have platform default annotation"
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env environment..."
-    assert_pod_annotation_equals "$env" "$UNAFFECTED_APP" "$DEMO_ANNOTATION_KEY" "$PLATFORM_DEFAULT_VALUE" || exit 1
+    assert_pod_annotation_equals "$(get_namespace "$env")" "$UNAFFECTED_APP" "$DEMO_ANNOTATION_KEY" "$PLATFORM_DEFAULT_VALUE" || exit 1
     # Postgres may or may not have the annotation initially - just note the state
-    postgres_val=$(kubectl get deployment "$OVERRIDE_APP" -n "$env" \
+    postgres_val=$(kubectl get deployment "$OVERRIDE_APP" -n "$(get_namespace "$env")" \
         -o jsonpath="{.spec.template.metadata.annotations.prometheus\\.io/scrape}" 2>/dev/null || echo "not-set")
     demo_info "  postgres.$DEMO_ANNOTATION_KEY = $postgres_val"
 done
@@ -240,9 +240,9 @@ for env in "${ENVIRONMENTS[@]}"; do
     # Verify K8s state - THE KEY ASSERTION
     demo_action "Verifying annotations diverge as expected..."
     # example-app should STILL have platform default (scraping enabled)
-    assert_pod_annotation_equals "$env" "$UNAFFECTED_APP" "$DEMO_ANNOTATION_KEY" "$PLATFORM_DEFAULT_VALUE" || exit 1
+    assert_pod_annotation_equals "$(get_namespace "$env")" "$UNAFFECTED_APP" "$DEMO_ANNOTATION_KEY" "$PLATFORM_DEFAULT_VALUE" || exit 1
     # postgres should have app override (scraping disabled)
-    assert_pod_annotation_equals "$env" "$OVERRIDE_APP" "$DEMO_ANNOTATION_KEY" "$APP_OVERRIDE_VALUE" || exit 1
+    assert_pod_annotation_equals "$(get_namespace "$env")" "$OVERRIDE_APP" "$DEMO_ANNOTATION_KEY" "$APP_OVERRIDE_VALUE" || exit 1
 
     demo_verify "Promotion to $env complete - apps have divergent annotations"
     echo ""
@@ -260,13 +260,13 @@ demo_action "example-app should have platform default (scraping ENABLED)..."
 assert_env_propagation "deployment" "$UNAFFECTED_APP" \
     "{.spec.template.metadata.annotations.prometheus\\.io/scrape}" \
     "$PLATFORM_DEFAULT_VALUE" \
-    "${ENVIRONMENTS[@]}" || exit 1
+    "$(get_namespace dev)" "$(get_namespace stage)" "$(get_namespace prod)" || exit 1
 
 demo_action "postgres should have app override (scraping DISABLED)..."
 assert_env_propagation "deployment" "$OVERRIDE_APP" \
     "{.spec.template.metadata.annotations.prometheus\\.io/scrape}" \
     "$APP_OVERRIDE_VALUE" \
-    "${ENVIRONMENTS[@]}" || exit 1
+    "$(get_namespace dev)" "$(get_namespace stage)" "$(get_namespace prod)" || exit 1
 
 # ---------------------------------------------------------------------------
 # Step 7: Summary

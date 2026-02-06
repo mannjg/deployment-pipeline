@@ -972,7 +972,7 @@ verify_deployment() {
 
 verify_env_deployment() {
     local env_name="$1"
-    local namespace="${env_name}"
+    local namespace="$(get_namespace "$env_name")"
 
     log_step "Verifying deployment ($env_name)..."
 
@@ -1067,11 +1067,11 @@ verify_version_lifecycle() {
     local deployment="example-app"
 
     # Get image tags from each environment
-    local dev_image=$(kubectl get deployment "$deployment" -n dev \
+    local dev_image=$(kubectl get deployment "$deployment" -n "$(get_namespace dev)" \
         -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
-    local stage_image=$(kubectl get deployment "$deployment" -n stage \
+    local stage_image=$(kubectl get deployment "$deployment" -n "$(get_namespace stage)" \
         -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
-    local prod_image=$(kubectl get deployment "$deployment" -n prod \
+    local prod_image=$(kubectl get deployment "$deployment" -n "$(get_namespace prod)" \
         -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
 
     local dev_tag=$(echo "$dev_image" | sed 's/.*://')

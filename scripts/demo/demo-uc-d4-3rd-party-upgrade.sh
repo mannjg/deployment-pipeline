@@ -61,7 +61,9 @@ GITLAB_CLI="${PROJECT_ROOT}/scripts/04-operations/gitlab-cli.sh"
 # Get postgres image from a deployment
 get_postgres_image() {
     local env="$1"
-    kubectl get deployment postgres -n "$env" \
+    local ns
+    ns=$(get_namespace "$env")
+    kubectl get deployment postgres -n "$ns" \
         -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null
 }
 
@@ -111,7 +113,8 @@ demo_verify "Connected to Kubernetes cluster"
 
 demo_action "Checking postgres deployments exist in all environments..."
 for env in dev stage prod; do
-    if kubectl get deployment postgres -n "$env" &>/dev/null; then
+    ns=$(get_namespace "$env")
+    if kubectl get deployment postgres -n "$ns" &>/dev/null; then
         demo_verify "postgres deployment exists in $env"
     else
         demo_fail "postgres deployment not found in $env"
@@ -134,6 +137,23 @@ done
 # ---------------------------------------------------------------------------
 
 demo_step 2 "Verify Baseline State"
+
+demo_info "Ensuring ArgoCD postgres apps are synced and healthy..."
+for env in dev stage prod; do
+    trigger_argocd_refresh "postgres-${env}"
+    tries=0
+    while [[ $tries -lt 12 ]]; do
+        sync=$(kubectl get application "postgres-${env}" -n "${ARGOCD_NAMESPACE}" \
+            -o jsonpath='{.status.sync.status}' 2>/dev/null)
+        health=$(kubectl get application "postgres-${env}" -n "${ARGOCD_NAMESPACE}" \
+            -o jsonpath='{.status.health.status}' 2>/dev/null)
+        if [[ "$sync" == "Synced" && "$health" == "Healthy" ]]; then
+            break
+        fi
+        sleep 5
+        ((tries++))
+    done
+done
 
 demo_info "Confirming all environments have the same postgres version..."
 
@@ -420,11 +440,12 @@ demo_info "(Apps should be independent - postgres change shouldn't touch example
 # Get example-app images from all environments
 for env in dev stage prod; do
     demo_action "Checking example-app in $env..."
-    ea_image=$(kubectl get deployment example-app -n "$env" \
+    ns=$(get_namespace "$env")
+    ea_image=$(kubectl get deployment example-app -n "$ns" \
         -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
 
     # Just verify it still has a valid CI/CD image (wasn't corrupted)
-    if echo "$ea_image" | grep -qE "docker\.jmann\.local/p2c/example-app:"; then
+    if echo "$ea_image" | grep -qE "${DOCKER_REGISTRY_EXTERNAL}/p2c/example-app:"; then
         demo_verify "example-app in $env: $ea_image (unchanged)"
     else
         demo_fail "example-app in $env has unexpected image: $ea_image"

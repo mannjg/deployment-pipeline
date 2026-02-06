@@ -102,7 +102,8 @@ done
 
 demo_action "Checking ConfigMaps exist in all environments..."
 for env in "$TARGET_ENV" "${OTHER_ENVS[@]}"; do
-    if kubectl get configmap "$DEMO_CONFIGMAP" -n "$env" &>/dev/null; then
+    ns=$(get_namespace "$env")
+    if kubectl get configmap "$DEMO_CONFIGMAP" -n "$ns" &>/dev/null; then
         demo_verify "ConfigMap $DEMO_CONFIGMAP exists in $env"
     else
         demo_fail "ConfigMap $DEMO_CONFIGMAP not found in $env"
@@ -120,7 +121,7 @@ demo_info "Confirming '$DEMO_KEY' does not exist in any environment..."
 
 for env in "$TARGET_ENV" "${OTHER_ENVS[@]}"; do
     demo_action "Checking $env..."
-    assert_configmap_entry_absent "$env" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
+    assert_configmap_entry_absent "$(get_namespace "$env")" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
         demo_warn "Key '$DEMO_KEY' already exists in $env - demo may have stale state"
         demo_info "Run reset-demo-state.sh to clean up"
         exit 1
@@ -247,12 +248,12 @@ demo_info "Verifying '$DEMO_KEY' exists ONLY in $TARGET_ENV..."
 
 # Verify prod HAS the entry
 demo_action "Checking $TARGET_ENV (should HAVE the fix)..."
-assert_configmap_entry "$TARGET_ENV" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$DEMO_VALUE" || exit 1
+assert_configmap_entry "$(get_namespace "$TARGET_ENV")" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$DEMO_VALUE" || exit 1
 
 # Verify dev/stage do NOT have the entry
 for env in "${OTHER_ENVS[@]}"; do
     demo_action "Checking $env (should NOT have the fix)..."
-    assert_configmap_entry_absent "$env" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
+    assert_configmap_entry_absent "$(get_namespace "$env")" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
         demo_fail "ISOLATION VIOLATED: $env has '$DEMO_KEY' but should not!"
         exit 1
     }
@@ -376,7 +377,7 @@ wait_for_argocd_sync "${DEMO_APP}-${TARGET_ENV}" "$cleanup_argocd_baseline" || e
 
 # Verify cleanup worked
 demo_action "Verifying hotfix key removed from prod..."
-assert_configmap_entry_absent "$TARGET_ENV" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
+assert_configmap_entry_absent "$(get_namespace "$TARGET_ENV")" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
     demo_fail "Cleanup failed: '$DEMO_KEY' still exists in $TARGET_ENV"
     exit 1
 }

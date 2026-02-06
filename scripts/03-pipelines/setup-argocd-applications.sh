@@ -1,5 +1,5 @@
 #!/bin/bash
-# Setup ArgoCD applications for example-app in all environments
+# Setup ArgoCD applications for all apps in all environments
 #
 # Usage: ./scripts/03-pipelines/setup-argocd-applications.sh <config-file>
 #
@@ -62,6 +62,59 @@ spec:
       selfHeal: true
     syncOptions:
     - CreateNamespace=true
+EOF
+
+    log_pass "Created/updated $app_name"
+done
+
+# Create postgres applications for each environment
+echo ""
+log_step "Creating postgres ArgoCD applications..."
+for env in dev stage prod; do
+    app_name="postgres-${env}"
+    target_ns="${env}"
+
+    # Use cluster-specific namespace if defined
+    case $env in
+        dev)   target_ns="${DEV_NAMESPACE:-dev}" ;;
+        stage) target_ns="${STAGE_NAMESPACE:-stage}" ;;
+        prod)  target_ns="${PROD_NAMESPACE:-prod}" ;;
+    esac
+
+    log_step "Creating ArgoCD application: $app_name"
+    log_info "  Target namespace: $target_ns"
+    log_info "  Source branch: $env"
+
+    # Check if application already exists
+    if kubectl get application "$app_name" -n "$ARGOCD_NAMESPACE" &>/dev/null; then
+        log_info "  Application already exists, updating..."
+    fi
+
+    cat <<EOF | kubectl apply -f -
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ${app_name}
+  namespace: ${ARGOCD_NAMESPACE}
+  labels:
+    app: postgres
+    environment: ${env}
+spec:
+  project: default
+  source:
+    repoURL: ${GITLAB_URL_EXTERNAL}/${DEPLOYMENTS_REPO_PATH}.git
+    targetRevision: ${env}
+    path: manifests/postgres
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ${target_ns}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - PruneLast=true
 EOF
 
     log_pass "Created/updated $app_name"

@@ -96,10 +96,10 @@ else
 fi
 
 demo_action "Checking prod deployment exists..."
-if kubectl get deployment "$DEMO_APP" -n "$TARGET_ENV" &>/dev/null; then
+if kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$TARGET_ENV")" &>/dev/null; then
     demo_verify "Deployment $DEMO_APP exists in $TARGET_ENV"
 else
-    demo_fail "Deployment $DEMO_APP not found in $TARGET_ENV"
+    demo_fail "Deployment $DEMO_APP not found in $(get_namespace "$TARGET_ENV")"
     exit 1
 fi
 
@@ -112,18 +112,18 @@ demo_step 2 "Capture Baseline State"
 demo_info "Capturing current prod state as the 'good' version to roll back to..."
 
 # Get current image tag from prod
-GOOD_IMAGE=$(kubectl get deployment "$DEMO_APP" -n "$TARGET_ENV" \
+GOOD_IMAGE=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$TARGET_ENV")" \
     -o jsonpath='{.spec.template.spec.containers[0].image}')
 GOOD_TAG=$(echo "$GOOD_IMAGE" | sed 's/.*://')
 
 demo_info "Good image tag: $GOOD_TAG"
 
 # Capture current env settings (replicas, resources)
-PROD_REPLICAS=$(kubectl get deployment "$DEMO_APP" -n "$TARGET_ENV" \
+PROD_REPLICAS=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$TARGET_ENV")" \
     -o jsonpath='{.spec.replicas}')
-PROD_CPU_REQUEST=$(kubectl get deployment "$DEMO_APP" -n "$TARGET_ENV" \
+PROD_CPU_REQUEST=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$TARGET_ENV")" \
     -o jsonpath='{.spec.template.spec.containers[0].resources.requests.cpu}' 2>/dev/null || echo "not-set")
-PROD_MEM_REQUEST=$(kubectl get deployment "$DEMO_APP" -n "$TARGET_ENV" \
+PROD_MEM_REQUEST=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$TARGET_ENV")" \
     -o jsonpath='{.spec.template.spec.containers[0].resources.requests.memory}' 2>/dev/null || echo "not-set")
 
 demo_info "Prod replicas: $PROD_REPLICAS"
@@ -302,7 +302,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 done
 
 # Verify bad version is deployed
-BAD_IMAGE=$(kubectl get deployment "$DEMO_APP" -n "$TARGET_ENV" \
+BAD_IMAGE=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$TARGET_ENV")" \
     -o jsonpath='{.spec.template.spec.containers[0].image}')
 BAD_TAG=$(echo "$BAD_IMAGE" | sed 's/.*://')
 
@@ -387,7 +387,7 @@ demo_action "Waiting for ArgoCD to sync rollback..."
 wait_for_argocd_sync "${DEMO_APP}-${TARGET_ENV}" "$argocd_baseline" || exit 1
 
 # Verify image is rolled back
-CURRENT_IMAGE=$(kubectl get deployment "$DEMO_APP" -n "$TARGET_ENV" \
+CURRENT_IMAGE=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$TARGET_ENV")" \
     -o jsonpath='{.spec.template.spec.containers[0].image}')
 CURRENT_TAG=$(echo "$CURRENT_IMAGE" | sed 's/.*://')
 
@@ -399,11 +399,11 @@ else
 fi
 
 # Verify env settings are preserved
-NEW_REPLICAS=$(kubectl get deployment "$DEMO_APP" -n "$TARGET_ENV" \
+NEW_REPLICAS=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$TARGET_ENV")" \
     -o jsonpath='{.spec.replicas}')
-NEW_CPU=$(kubectl get deployment "$DEMO_APP" -n "$TARGET_ENV" \
+NEW_CPU=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$TARGET_ENV")" \
     -o jsonpath='{.spec.template.spec.containers[0].resources.requests.cpu}' 2>/dev/null || echo "not-set")
-NEW_MEM=$(kubectl get deployment "$DEMO_APP" -n "$TARGET_ENV" \
+NEW_MEM=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$TARGET_ENV")" \
     -o jsonpath='{.spec.template.spec.containers[0].resources.requests.memory}' 2>/dev/null || echo "not-set")
 
 demo_info "Checking env settings preserved..."
@@ -441,7 +441,7 @@ demo_info "Verifying dev and stage still have the 'bad' version..."
 
 for env in dev stage; do
     demo_action "Checking $env..."
-    OTHER_IMAGE=$(kubectl get deployment "$DEMO_APP" -n "$env" \
+    OTHER_IMAGE=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" \
         -o jsonpath='{.spec.template.spec.containers[0].image}')
     OTHER_TAG=$(echo "$OTHER_IMAGE" | sed 's/.*://')
 

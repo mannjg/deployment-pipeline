@@ -105,7 +105,7 @@ done
 
 demo_action "Checking deployments exist in all environments..."
 for env in "$TARGET_ENV" "${OTHER_ENVS[@]}"; do
-    if kubectl get deployment "$DEMO_APP" -n "$env" &>/dev/null; then
+    if kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" &>/dev/null; then
         demo_verify "Deployment $DEMO_APP exists in $env"
     else
         demo_fail "Deployment $DEMO_APP not found in $env"
@@ -123,7 +123,7 @@ demo_info "Capturing baseline replica counts..."
 
 # Verify dev has baseline replicas (what we'll change)
 demo_action "Checking $TARGET_ENV baseline..."
-if ! assert_replicas "$TARGET_ENV" "$DEMO_APP" "$BASELINE_REPLICAS"; then
+if ! assert_replicas "$(get_namespace "$TARGET_ENV")" "$DEMO_APP" "$BASELINE_REPLICAS"; then
     demo_warn "$TARGET_ENV does not have replicas: $BASELINE_REPLICAS"
     demo_info "Run reset-demo-state.sh to clean up"
     exit 1
@@ -133,7 +133,7 @@ fi
 declare -A OTHER_ENV_REPLICAS
 for env in "${OTHER_ENVS[@]}"; do
     demo_action "Capturing $env replica count..."
-    OTHER_ENV_REPLICAS[$env]=$(kubectl get deployment "$DEMO_APP" -n "$env" \
+    OTHER_ENV_REPLICAS[$env]=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" \
         -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "1")
     demo_verify "$env has replicas: ${OTHER_ENV_REPLICAS[$env]}"
 done
@@ -265,13 +265,13 @@ demo_info "Verifying $TARGET_ENV has replicas: $NEW_REPLICAS but other environme
 
 # Verify dev HAS the new replica count
 demo_action "Checking $TARGET_ENV..."
-assert_replicas "$TARGET_ENV" "$DEMO_APP" "$NEW_REPLICAS" || exit 1
+assert_replicas "$(get_namespace "$TARGET_ENV")" "$DEMO_APP" "$NEW_REPLICAS" || exit 1
 
 # Verify stage/prod still have their original replica counts (unchanged)
 for env in "${OTHER_ENVS[@]}"; do
     demo_action "Checking $env..."
     expected="${OTHER_ENV_REPLICAS[$env]}"
-    if ! assert_replicas "$env" "$DEMO_APP" "$expected"; then
+    if ! assert_replicas "$(get_namespace "$env")" "$DEMO_APP" "$expected"; then
         demo_fail "ISOLATION VIOLATED: $env replicas changed but should not!"
         exit 1
     fi
@@ -292,7 +292,7 @@ demo_action "Waiting for $TARGET_ENV to have $NEW_REPLICAS ready pods..."
 timeout=60
 elapsed=0
 while [[ $elapsed -lt $timeout ]]; do
-    ready_pods=$(kubectl get deployment "$DEMO_APP" -n "$TARGET_ENV" \
+    ready_pods=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$TARGET_ENV")" \
         -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
     if [[ "$ready_pods" == "$NEW_REPLICAS" ]]; then
         break
@@ -310,7 +310,7 @@ fi
 
 # Show pod status
 demo_action "Pod status in $TARGET_ENV:"
-kubectl get pods -n "$TARGET_ENV" -l "app=$DEMO_APP" --no-headers | head -5
+kubectl get pods -n "$(get_namespace "$TARGET_ENV")" -l "app=$DEMO_APP" --no-headers | head -5
 
 # ---------------------------------------------------------------------------
 # Step 9: Summary

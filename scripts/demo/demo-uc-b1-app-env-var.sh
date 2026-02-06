@@ -90,7 +90,7 @@ done
 
 demo_action "Checking deployments exist in all environments..."
 for env in "${ENVIRONMENTS[@]}"; do
-    if kubectl get deployment "$DEMO_APP" -n "$env" &>/dev/null; then
+    if kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" &>/dev/null; then
         demo_verify "Deployment $DEMO_APP exists in $env"
     else
         demo_fail "Deployment $DEMO_APP not found in $env"
@@ -108,7 +108,7 @@ demo_info "Confirming '$DEMO_ENV_VAR_NAME' does not exist in any environment..."
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
-    assert_deployment_env_var_absent "$env" "$DEMO_APP" "$DEMO_ENV_VAR_NAME" || {
+    assert_deployment_env_var_absent "$(get_namespace "$env")" "$DEMO_APP" "$DEMO_ENV_VAR_NAME" || {
         demo_warn "Env var '$DEMO_ENV_VAR_NAME' already exists in $env - demo may have stale state"
         demo_info "Run reset-demo-state.sh to clean up"
         exit 1
@@ -265,7 +265,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
     # Verify K8s state
     demo_action "Verifying env var in deployment..."
-    assert_deployment_env_var "$env" "$DEMO_APP" "$DEMO_ENV_VAR_NAME" "$DEMO_ENV_VAR_VALUE" || exit 1
+    assert_deployment_env_var "$(get_namespace "$env")" "$DEMO_APP" "$DEMO_ENV_VAR_NAME" "$DEMO_ENV_VAR_VALUE" || exit 1
 
     demo_verify "Promotion to $env complete"
     echo ""
@@ -281,7 +281,7 @@ demo_info "Verifying env var propagated to ALL environments..."
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
-    assert_deployment_env_var "$env" "$DEMO_APP" "$DEMO_ENV_VAR_NAME" "$DEMO_ENV_VAR_VALUE" || exit 1
+    assert_deployment_env_var "$(get_namespace "$env")" "$DEMO_APP" "$DEMO_ENV_VAR_NAME" "$DEMO_ENV_VAR_VALUE" || exit 1
 done
 
 demo_verify "VERIFIED: '$DEMO_ENV_VAR_NAME' present in all environments!"

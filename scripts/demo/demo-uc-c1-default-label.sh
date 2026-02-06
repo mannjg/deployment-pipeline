@@ -243,7 +243,7 @@ for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Verifying label in K8s deployment..."
     if [[ "$env" == "prod" ]]; then
         # Prod may have environment override - just verify label exists
-        prod_label=$(kubectl get deployment "$DEMO_APP" -n prod -o jsonpath="{.spec.template.metadata.labels.$DEMO_LABEL_KEY}" 2>/dev/null || echo "")
+        prod_label=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace prod)" -o jsonpath="{.spec.template.metadata.labels.$DEMO_LABEL_KEY}" 2>/dev/null || echo "")
         if [[ -n "$prod_label" ]]; then
             if [[ "$prod_label" == "$DEMO_LABEL_VALUE" ]]; then
                 demo_verify "Field {.spec.template.metadata.labels.$DEMO_LABEL_KEY} = '$prod_label'"
@@ -255,7 +255,7 @@ for env in "${ENVIRONMENTS[@]}"; do
             exit 1
         fi
     else
-        assert_pod_label_equals "$env" "$DEMO_APP" "$DEMO_LABEL_KEY" "$DEMO_LABEL_VALUE" || exit 1
+        assert_pod_label_equals "$(get_namespace "$env")" "$DEMO_APP" "$DEMO_LABEL_KEY" "$DEMO_LABEL_VALUE" || exit 1
     fi
 
     demo_verify "Promotion to $env complete"
@@ -273,12 +273,12 @@ demo_info "Verifying label present in ALL environments..."
 # dev and stage should have the platform default
 for env in dev stage; do
     demo_action "Checking $env..."
-    assert_pod_label_equals "$env" "$DEMO_APP" "$DEMO_LABEL_KEY" "$DEMO_LABEL_VALUE" || exit 1
+    assert_pod_label_equals "$(get_namespace "$env")" "$DEMO_APP" "$DEMO_LABEL_KEY" "$DEMO_LABEL_VALUE" || exit 1
 done
 
 # prod should have its override value (if it exists)
 demo_action "Checking prod (may have environment override)..."
-prod_value=$(kubectl get deployment "$DEMO_APP" -n prod -o jsonpath="{.spec.template.metadata.labels.$DEMO_LABEL_KEY}" 2>/dev/null || echo "")
+prod_value=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace prod)" -o jsonpath="{.spec.template.metadata.labels.$DEMO_LABEL_KEY}" 2>/dev/null || echo "")
 if [[ -n "$prod_value" ]]; then
     if [[ "$prod_value" == "$DEMO_LABEL_VALUE" ]]; then
         demo_verify "prod has platform default: $DEMO_LABEL_KEY=$prod_value"

@@ -103,7 +103,7 @@ done
 
 demo_action "Checking deployments exist in all environments..."
 for env in "$TARGET_ENV" "${OTHER_ENVS[@]}"; do
-    if kubectl get deployment "$DEMO_APP" -n "$env" &>/dev/null; then
+    if kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" &>/dev/null; then
         demo_verify "Deployment $DEMO_APP exists in $env"
     else
         demo_fail "Deployment $DEMO_APP not found in $env"
@@ -122,7 +122,7 @@ demo_info "Confirming debug mode is disabled in all environments..."
 # Check for DEBUG env var absence (indicates debug: false)
 for env in "$TARGET_ENV" "${OTHER_ENVS[@]}"; do
     demo_action "Checking $env for DEBUG env var..."
-    if ! assert_deployment_env_var_absent "$env" "$DEMO_APP" "DEBUG"; then
+    if ! assert_deployment_env_var_absent "$(get_namespace "$env")" "$DEMO_APP" "DEBUG"; then
         demo_warn "DEBUG env var already exists in $env - demo may have stale state"
         demo_info "Run reset-demo-state.sh to clean up"
         exit 1
@@ -132,7 +132,7 @@ done
 # Check for debug Service absence
 for env in "$TARGET_ENV" "${OTHER_ENVS[@]}"; do
     demo_action "Checking $env for debug Service..."
-    if kubectl get service "$DEBUG_SERVICE" -n "$env" &>/dev/null; then
+    if kubectl get service "$DEBUG_SERVICE" -n "$(get_namespace "$env")" &>/dev/null; then
         demo_warn "Debug Service already exists in $env - demo may have stale state"
         demo_info "Run reset-demo-state.sh to clean up"
         exit 1
@@ -273,11 +273,11 @@ demo_info "Verifying debug artifacts exist in $TARGET_ENV..."
 
 # Verify DEBUG env var exists with value "true"
 demo_action "Checking for DEBUG env var..."
-assert_deployment_env_var "$TARGET_ENV" "$DEMO_APP" "DEBUG" "yes" || exit 1
+assert_deployment_env_var "$(get_namespace "$TARGET_ENV")" "$DEMO_APP" "DEBUG" "yes" || exit 1
 
 # Verify debug Service exists
 demo_action "Checking for debug Service..."
-if kubectl get service "$DEBUG_SERVICE" -n "$TARGET_ENV" &>/dev/null; then
+if kubectl get service "$DEBUG_SERVICE" -n "$(get_namespace "$TARGET_ENV")" &>/dev/null; then
     demo_verify "Debug Service $DEBUG_SERVICE exists in $TARGET_ENV"
 else
     demo_fail "Debug Service $DEBUG_SERVICE not found in $TARGET_ENV"
@@ -286,7 +286,7 @@ fi
 
 # Show debug port configuration
 demo_action "Debug port configuration:"
-kubectl get service "$DEBUG_SERVICE" -n "$TARGET_ENV" -o jsonpath='{.spec.ports[0].port}' 2>/dev/null && echo ""
+kubectl get service "$DEBUG_SERVICE" -n "$(get_namespace "$TARGET_ENV")" -o jsonpath='{.spec.ports[0].port}' 2>/dev/null && echo ""
 
 demo_verify "Debug mode fully enabled in $TARGET_ENV"
 
@@ -301,7 +301,7 @@ demo_info "Verifying debug mode is NOT enabled in stage/prod..."
 # Verify stage/prod do NOT have DEBUG env var
 for env in "${OTHER_ENVS[@]}"; do
     demo_action "Checking $env for DEBUG env var..."
-    if ! assert_deployment_env_var_absent "$env" "$DEMO_APP" "DEBUG"; then
+    if ! assert_deployment_env_var_absent "$(get_namespace "$env")" "$DEMO_APP" "DEBUG"; then
         demo_fail "ISOLATION VIOLATED: $env has DEBUG env var but should not!"
         exit 1
     fi
@@ -310,7 +310,7 @@ done
 # Verify stage/prod do NOT have debug Service
 for env in "${OTHER_ENVS[@]}"; do
     demo_action "Checking $env for debug Service..."
-    if kubectl get service "$DEBUG_SERVICE" -n "$env" &>/dev/null; then
+    if kubectl get service "$DEBUG_SERVICE" -n "$(get_namespace "$env")" &>/dev/null; then
         demo_fail "ISOLATION VIOLATED: $env has debug Service but should not!"
         exit 1
     fi

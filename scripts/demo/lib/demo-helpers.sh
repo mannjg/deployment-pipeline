@@ -343,6 +343,23 @@ demo_require_branch() {
 }
 
 # ============================================================================
+# NAMESPACE RESOLUTION
+# ============================================================================
+
+# Map environment name to cluster-specific K8s namespace
+# Usage: get_namespace <env>
+# Example: get_namespace "dev" → "dev-alpha" (for alpha cluster)
+get_namespace() {
+    local env="$1"
+    case "$env" in
+        dev)   echo "${DEV_NAMESPACE:?DEV_NAMESPACE not set}" ;;
+        stage) echo "${STAGE_NAMESPACE:?STAGE_NAMESPACE not set}" ;;
+        prod)  echo "${PROD_NAMESPACE:?PROD_NAMESPACE not set}" ;;
+        *)     echo "Unknown environment: $env" >&2; return 1 ;;
+    esac
+}
+
+# ============================================================================
 # INITIALIZATION
 # ============================================================================
 

@@ -104,7 +104,7 @@ done
 
 demo_action "Checking deployments exist in all environments..."
 for env in "${ENVIRONMENTS[@]}"; do
-    if kubectl get deployment "$DEMO_APP" -n "$env" &>/dev/null; then
+    if kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" &>/dev/null; then
         demo_verify "Deployment $DEMO_APP exists in $env"
     else
         demo_fail "Deployment $DEMO_APP not found in $env"
@@ -123,7 +123,7 @@ demo_info "(Should not exist yet - we'll add it at app level)"
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
-    current=$(kubectl get deployment "$DEMO_APP" -n "$env" \
+    current=$(kubectl get deployment "$DEMO_APP" -n "$(get_namespace "$env")" \
         -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name==\"$ENV_VAR_NAME\")].value}" 2>/dev/null || echo "")
     if [[ -z "$current" ]]; then
         demo_verify "$env: $ENV_VAR_NAME not set (expected)"
@@ -288,7 +288,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
     # Verify K8s state - env var should be INFO in all environments
     demo_action "Verifying $ENV_VAR_NAME in K8s..."
-    assert_deployment_env_var "$env" "$DEMO_APP" "$ENV_VAR_NAME" "$APP_DEFAULT_VALUE" || exit 1
+    assert_deployment_env_var "$(get_namespace "$env")" "$DEMO_APP" "$ENV_VAR_NAME" "$APP_DEFAULT_VALUE" || exit 1
 
     demo_verify "Promotion to $env complete"
     echo ""
@@ -304,7 +304,7 @@ demo_info "Verifying app default propagated to ALL environments..."
 
 for env in "${ENVIRONMENTS[@]}"; do
     demo_action "Checking $env..."
-    assert_deployment_env_var "$env" "$DEMO_APP" "$ENV_VAR_NAME" "$APP_DEFAULT_VALUE" || exit 1
+    assert_deployment_env_var "$(get_namespace "$env")" "$DEMO_APP" "$ENV_VAR_NAME" "$APP_DEFAULT_VALUE" || exit 1
 done
 
 demo_verify "CHECKPOINT: All environments have $ENV_VAR_NAME=$APP_DEFAULT_VALUE"
@@ -436,15 +436,15 @@ demo_info "Verifying final state across all environments..."
 # So dev should have LOG_LEVEL=DEBUG (override), stage/prod have LOG_LEVEL=INFO
 
 demo_action "Checking dev env var (override should work)..."
-assert_deployment_env_var "dev" "$DEMO_APP" "$ENV_VAR_NAME" "$DEV_OVERRIDE_VALUE" || exit 1
+assert_deployment_env_var "$(get_namespace "dev")" "$DEMO_APP" "$ENV_VAR_NAME" "$DEV_OVERRIDE_VALUE" || exit 1
 
 # Stage should have only app default
 demo_action "Checking stage (should have app default)..."
-assert_deployment_env_var "stage" "$DEMO_APP" "$ENV_VAR_NAME" "$APP_DEFAULT_VALUE" || exit 1
+assert_deployment_env_var "$(get_namespace "stage")" "$DEMO_APP" "$ENV_VAR_NAME" "$APP_DEFAULT_VALUE" || exit 1
 
 # Prod should have only app default
 demo_action "Checking prod (should have app default)..."
-assert_deployment_env_var "prod" "$DEMO_APP" "$ENV_VAR_NAME" "$APP_DEFAULT_VALUE" || exit 1
+assert_deployment_env_var "$(get_namespace "prod")" "$DEMO_APP" "$ENV_VAR_NAME" "$APP_DEFAULT_VALUE" || exit 1
 
 demo_verify "Override works correctly!"
 demo_info "  - dev:   $ENV_VAR_NAME = $DEV_OVERRIDE_VALUE (override applied)"

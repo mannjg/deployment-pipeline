@@ -102,7 +102,7 @@ done
 
 demo_action "Checking ConfigMaps exist in all environments..."
 for env in "$TARGET_ENV" "${OTHER_ENVS[@]}"; do
-    if kubectl get configmap "$DEMO_CONFIGMAP" -n "$env" &>/dev/null; then
+    if kubectl get configmap "$DEMO_CONFIGMAP" -n "$(get_namespace "$env")" &>/dev/null; then
         demo_verify "ConfigMap $DEMO_CONFIGMAP exists in $env"
     else
         demo_fail "ConfigMap $DEMO_CONFIGMAP not found in $env"
@@ -120,7 +120,7 @@ demo_info "Confirming '$DEMO_KEY' does not exist in any environment..."
 
 for env in "$TARGET_ENV" "${OTHER_ENVS[@]}"; do
     demo_action "Checking $env..."
-    assert_configmap_entry_absent "$env" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
+    assert_configmap_entry_absent "$(get_namespace "$env")" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
         demo_warn "Key '$DEMO_KEY' already exists in $env - demo may have stale state"
         demo_info "Run reset-demo-state.sh to clean up"
         exit 1
@@ -270,12 +270,12 @@ demo_info "Verifying '$DEMO_KEY' exists in $TARGET_ENV but NOT in other environm
 
 # Verify dev HAS the entry
 demo_action "Checking $TARGET_ENV..."
-assert_configmap_entry "$TARGET_ENV" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$DEMO_VALUE" || exit 1
+assert_configmap_entry "$(get_namespace "$TARGET_ENV")" "$DEMO_CONFIGMAP" "$DEMO_KEY" "$DEMO_VALUE" || exit 1
 
 # Verify stage/prod do NOT have the entry
 for env in "${OTHER_ENVS[@]}"; do
     demo_action "Checking $env..."
-    assert_configmap_entry_absent "$env" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
+    assert_configmap_entry_absent "$(get_namespace "$env")" "$DEMO_CONFIGMAP" "$DEMO_KEY" || {
         demo_fail "ISOLATION VIOLATED: $env has '$DEMO_KEY' but should not!"
         exit 1
     }
