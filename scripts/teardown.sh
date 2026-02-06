@@ -136,6 +136,10 @@ check_protection() {
 # =============================================================================
 
 show_deletion_preview() {
+    # Deduplicate: configs may map multiple components to the same namespace
+    local unique_namespaces
+    unique_namespaces=$(echo "$ARGOCD_NAMESPACE $NEXUS_NAMESPACE $JENKINS_NAMESPACE $GITLAB_NAMESPACE $DEV_NAMESPACE $STAGE_NAMESPACE $PROD_NAMESPACE" | tr ' ' '\n' | sort -u)
+
     echo ""
     echo -e "${YELLOW}=============================================="
     echo "WARNING: DESTRUCTIVE OPERATION"
@@ -146,16 +150,9 @@ show_deletion_preview() {
     echo ""
     echo "The following namespaces will be DELETED:"
     echo ""
-    echo "  Infrastructure:"
-    echo "    - $ARGOCD_NAMESPACE"
-    echo "    - $NEXUS_NAMESPACE"
-    echo "    - $JENKINS_NAMESPACE"
-    echo "    - $GITLAB_NAMESPACE"
-    echo ""
-    echo "  Environments:"
-    echo "    - $DEV_NAMESPACE"
-    echo "    - $STAGE_NAMESPACE"
-    echo "    - $PROD_NAMESPACE"
+    for ns in $unique_namespaces; do
+        echo "    - $ns"
+    done
     echo ""
     echo -e "${RED}This action is IRREVERSIBLE. All data will be lost.${NC}"
     echo ""
@@ -251,7 +248,9 @@ cleanup_certificates() {
     kubectl delete certificate -A -l "cluster=$CLUSTER_NAME" 2>/dev/null || true
 
     # Also try to delete certificates by namespace if they exist
-    for ns in "$GITLAB_NAMESPACE" "$JENKINS_NAMESPACE" "$NEXUS_NAMESPACE" "$ARGOCD_NAMESPACE"; do
+    local cert_ns
+    cert_ns=$(echo "$GITLAB_NAMESPACE $JENKINS_NAMESPACE $NEXUS_NAMESPACE $ARGOCD_NAMESPACE" | tr ' ' '\n' | sort -u)
+    for ns in $cert_ns; do
         kubectl delete certificate --all -n "$ns" 2>/dev/null || true
     done
 
@@ -286,7 +285,9 @@ perform_teardown() {
 
     # Step 2: Delete environment namespaces
     log_info "Deleting environment namespaces..."
-    for ns in "$DEV_NAMESPACE" "$STAGE_NAMESPACE" "$PROD_NAMESPACE"; do
+    local env_ns
+    env_ns=$(echo "$DEV_NAMESPACE $STAGE_NAMESPACE $PROD_NAMESPACE" | tr ' ' '\n' | sort -u)
+    for ns in $env_ns; do
         if ! delete_namespace "$ns" 120; then
             ((errors++)) || true
         fi
@@ -294,7 +295,9 @@ perform_teardown() {
 
     # Step 3: Delete infrastructure namespaces (reverse order of bootstrap)
     log_info "Deleting infrastructure namespaces..."
-    for ns in "$ARGOCD_NAMESPACE" "$NEXUS_NAMESPACE" "$JENKINS_NAMESPACE" "$GITLAB_NAMESPACE"; do
+    local infra_ns
+    infra_ns=$(echo "$ARGOCD_NAMESPACE $NEXUS_NAMESPACE $JENKINS_NAMESPACE $GITLAB_NAMESPACE" | tr ' ' '\n' | sort -u)
+    for ns in $infra_ns; do
         if ! delete_namespace "$ns" 180; then
             ((errors++)) || true
         fi

@@ -130,7 +130,8 @@ validate_config() {
 # =============================================================================
 
 get_all_namespaces() {
-    echo "$GITLAB_NAMESPACE $JENKINS_NAMESPACE $NEXUS_NAMESPACE $ARGOCD_NAMESPACE $DEV_NAMESPACE $STAGE_NAMESPACE $PROD_NAMESPACE"
+    # Deduplicate: configs may map multiple components to the same namespace
+    echo "$GITLAB_NAMESPACE $JENKINS_NAMESPACE $NEXUS_NAMESPACE $ARGOCD_NAMESPACE $DEV_NAMESPACE $STAGE_NAMESPACE $PROD_NAMESPACE" | tr ' ' '\n' | sort -u | tr '\n' ' '
 }
 
 check_namespace_collisions() {
