@@ -347,13 +347,20 @@ def createPromotionMR(String sourceEnv) {
 
                 // Promote artifacts (Maven + Docker) and get new image tag
                 // Note: Use 'bash' explicitly since GitLab API doesn't preserve execute permissions
-                // Note: Explicitly export NEXUS_USER/NEXUS_PASSWORD to ensure they're available to the script
+                // Note: Explicitly export all required env vars to ensure they're available to the script
+                // Jenkins environment block variables may not be inherited by subprocesses
                 def newImageTag = ''
                 if (gitHash) {
                     newImageTag = sh(
                         script: """
                             export NEXUS_USER="\${NEXUS_USER}"
                             export NEXUS_PASSWORD="\${NEXUS_PASSWORD}"
+                            export NEXUS_URL_INTERNAL="${env.NEXUS_URL_INTERNAL}"
+                            export DOCKER_REGISTRY_EXTERNAL="${env.DOCKER_REGISTRY_EXTERNAL}"
+                            export CONTAINER_REGISTRY_PATH_PREFIX="${env.CONTAINER_REGISTRY_PATH_PREFIX}"
+                            export GITLAB_URL_INTERNAL="${env.GITLAB_URL_INTERNAL}"
+                            export GITLAB_GROUP="${env.GITLAB_GROUP}"
+                            export GITLAB_TOKEN="\${GITLAB_TOKEN}"
                             bash ./scripts/promote-artifact.sh \
                                 --source-env ${sourceEnv} \
                                 --target-env ${targetEnv} \
@@ -364,7 +371,8 @@ def createPromotionMR(String sourceEnv) {
                         returnStdout: true
                     ).trim()
 
-                    if (!newImageTag || newImageTag.contains("ERROR") || newImageTag.contains("[")) {
+                    // Check for script failures - look for "not set" error messages or empty output
+                    if (!newImageTag || newImageTag.contains("not set") || newImageTag.contains("ERROR") || newImageTag.contains("[")) {
                         echo "Artifact promotion output:"
                         sh "cat /tmp/promote.log || true"
                         error "Artifact promotion failed - cannot create promotion MR without valid image tag. If release version already exists in Nexus, bump the version in pom.xml."
