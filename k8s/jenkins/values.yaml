@@ -78,6 +78,8 @@ controller:
     - pipeline-utility-steps:2.17.0
     - http_request:1.20
     - build-token-root:151.va_e52fe3215fc  # Enables token-based remote builds bypassing CRUMB
+    - timestamper:1.30
+    - ansicolor:536.v13fa_b_860c267
 
   # Additional init scripts
   initScripts: []
