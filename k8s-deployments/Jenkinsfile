@@ -342,7 +342,7 @@ def createPromotionMR(String sourceEnv) {
                         script: '''
                             curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
                                 "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/repository/files/env.cue?ref=${PROMO_SOURCE}" \
-                                2>/dev/null | jq -r '.content' | base64 -d | grep 'image:' | sed -E 's/.*image:\s*"([^"]+)".*/\1/' | head -1
+                                2>/dev/null | jq -r '.content' | base64 -d | grep 'image:' | sed -E 's/.*image:\\s*"([^"]+)".*/\\1/' | head -1
                         ''',
                         returnStdout: true
                     ).trim()
