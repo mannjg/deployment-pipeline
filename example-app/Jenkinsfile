@@ -1,6 +1,48 @@
 // Production-Ready Jenkinsfile for example-app CI/CD pipeline
 // Refactored for maintainability, reliability, and production best practices
 
+/**
+ * Configures git credentials and identity, executes body, then cleans up.
+ * Uses local git config when repoDir is provided (preferred), falls back to --global.
+ * @param repoDir Optional directory for local git config scope. If null/empty, uses --global.
+ * @param body Closure to execute with credentials configured
+ */
+def withGitCredentials(String repoDir = null, Closure body) {
+    def gitCmd = 'git config --global'
+    if (repoDir?.trim()) {
+        if (!fileExists(repoDir)) {
+            error "withGitCredentials: repoDir '${repoDir}' does not exist"
+        }
+        gitCmd = "git -C ${repoDir} config"
+    }
+    try {
+        sh """
+            ${gitCmd} user.name 'Jenkins CI'
+            ${gitCmd} user.email 'jenkins@local'
+            ${gitCmd} credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "\${GIT_USERNAME}" "\${GIT_PASSWORD}"; }; f'
+        """
+        body()
+    } finally {
+        sh """
+            ${gitCmd} --unset credential.helper || true
+            ${gitCmd} --unset user.name || true
+            ${gitCmd} --unset user.email || true
+        """
+    }
+}
+
+/**
+ * Validates that all listed environment variables are set.
+ * Fails the build with a clear message listing all missing variables.
+ * @param vars List of environment variable names to check
+ */
+def validateRequiredEnvVars(List<String> vars) {
+    def missing = vars.findAll { !env."${it}" }
+    if (missing) {
+        error "Missing required ConfigMap variables: ${missing.join(', ')}. Check pipeline-config ConfigMap in Jenkins namespace."
+    }
+}
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
@@ -21,14 +63,7 @@ def deployToEnvironment(String environment, String branchPrefix, String mrTitle,
             withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
                                               usernameVariable: 'GIT_USERNAME',
                                               passwordVariable: 'GIT_PASSWORD')]) {
-                try {
-                    // Setup git credentials (ephemeral, memory-only)
-                    sh '''
-                        git config --global user.name "Jenkins CI"
-                        git config --global user.email "jenkins@local"
-                        git config --global credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "${GIT_USERNAME}" "${GIT_PASSWORD}"; }; f'
-                    '''
-
+                withGitCredentials {
                     // Clone or update deployment repository
                     sh """
                         rm -rf k8s-deployments
@@ -107,10 +142,6 @@ Image: ${FULL_IMAGE}" || echo "No changes to commit"
                     """
 
                     echo "[${environment.toUpperCase()}] ✓ MR created successfully: ${branchPrefix}-${env.IMAGE_TAG} → ${environment}"
-
-                } finally {
-                    // Always cleanup git credentials, even on failure
-                    sh 'git config --global --unset credential.helper || true'
                 }
             }
         }
@@ -225,15 +256,7 @@ spec:
                         echo "=== Checkout & Setup ==="
 
                         // Validate required environment variables from ConfigMap
-                        def missingVars = []
-                        if (!env.JENKINS_AGENT_IMAGE) missingVars.add('JENKINS_AGENT_IMAGE')
-                        if (!env.GITLAB_URL_INTERNAL) missingVars.add('GITLAB_URL_INTERNAL')
-                        if (!env.DEPLOYMENTS_REPO_URL) missingVars.add('DEPLOYMENTS_REPO_URL')
-                        if (!env.DOCKER_REGISTRY_EXTERNAL) missingVars.add('DOCKER_REGISTRY_EXTERNAL')
-
-                        if (missingVars.size() > 0) {
-                            error "Missing required ConfigMap variables: ${missingVars.join(', ')}. Configure pipeline-config ConfigMap."
-                        }
+                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'DEPLOYMENTS_REPO_URL', 'DOCKER_REGISTRY_EXTERNAL'])
 
                         // Extract version from pom.xml
                         env.APP_VERSION = sh(
