@@ -122,33 +122,43 @@ def getTargetEnvironment(String branchName) {
  * This enables MR-preview manifest generation: branches can generate manifests
  * using the target environment's env.cue when an MR exists.
  *
+ * Requires GITLAB_TOKEN and GITLAB_URL as shell env vars (caller wraps in withCredentials).
+ *
  * @param branchName The source branch name
- * @param gitlabToken GitLab API token
- * @param gitlabUrl GitLab server URL
  * @param projectPath GitLab project path (e.g., "p2c/k8s-deployments")
  * @return The target environment (dev, stage, or prod) if MR exists, null otherwise
  */
-def getMRTargetEnvironment(String branchName, String gitlabToken, String gitlabUrl, String projectPath) {
+def getMRTargetEnvironment(String branchName, String projectPath) {
     // Skip main/master - these are source of truth branches
     if (branchName in ['main', 'master']) {
+        return null
+    }
+
+    // Guard: GITLAB_URL must be set (from pipeline environment block)
+    if (!env.GITLAB_URL) {
+        echo "Warning: GITLAB_URL not set - cannot query GitLab MRs"
         return null
     }
 
     def isEnvBranch = branchName in ENV_BRANCHES
 
     try {
-        // URL-encode the project path
         def encodedProject = projectPath.replace('/', '%2F')
 
-        // Query GitLab API for open MRs with this source branch
-        def targetBranch = sh(
-            script: """
-                curl -sf -H "PRIVATE-TOKEN: ${gitlabToken}" \
-                    "${gitlabUrl}/api/v4/projects/${encodedProject}/merge_requests?state=opened&source_branch=${branchName}" \
-                    2>/dev/null | jq -r '.[0].target_branch // empty'
-            """,
-            returnStdout: true
-        ).trim()
+        // Scope Groovy locals as env vars for sh ''' blocks (not global env.*)
+        def targetBranch = withEnv([
+            "MR_QUERY_PROJECT=${encodedProject}",
+            "MR_QUERY_BRANCH=${branchName}"
+        ]) {
+            sh(
+                script: '''
+                    curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                        "${GITLAB_URL}/api/v4/projects/${MR_QUERY_PROJECT}/merge_requests?state=opened&source_branch=${MR_QUERY_BRANCH}" \
+                        2>/dev/null | jq -r '.[0].target_branch // empty'
+                ''',
+                returnStdout: true
+            ).trim()
+        }
 
         // Only return if target is an environment branch
         if (targetBranch in ENV_BRANCHES) {
@@ -287,6 +297,9 @@ def createPromotionMR(String sourceEnv) {
 
             echo "=== Creating Promotion MR: ${sourceEnv} -> ${targetEnv} ==="
 
+            def projectPath = env.GITLAB_GROUP ? "${env.GITLAB_GROUP}/k8s-deployments" : "p2c/k8s-deployments"
+            def encodedProject = projectPath.replace('/', '%2F')
+
             withCredentials([
                 usernamePassword(credentialsId: 'gitlab-credentials',
                                 usernameVariable: 'GIT_USERNAME',
@@ -296,15 +309,21 @@ def createPromotionMR(String sourceEnv) {
                                 usernameVariable: 'NEXUS_USER',
                                 passwordVariable: 'NEXUS_PASSWORD')
             ]) {
+                // Scope Groovy locals as env vars for sh ''' blocks (not global env.*)
+                withEnv([
+                    "PROMO_SOURCE=${sourceEnv}",
+                    "PROMO_TARGET=${targetEnv}",
+                    "PROMO_PREFIX=${PROMOTE_BRANCH_PREFIX}",
+                    "PROMO_ENCODED_PROJECT=${encodedProject}"
+                ]) {
                 // Check if there's already an open promotion MR to the target
-                def projectPath = env.GITLAB_GROUP ? "${env.GITLAB_GROUP}/k8s-deployments" : "p2c/k8s-deployments"
-                def encodedProject = projectPath.replace('/', '%2F')
                 def existingMR = sh(
-                    script: """
+                    script: '''
                         curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-                            "${env.GITLAB_URL}/api/v4/projects/${encodedProject}/merge_requests?state=opened&target_branch=${targetEnv}" \
-                            2>/dev/null | jq -r '[.[] | select(.source_branch | startswith("${PROMOTE_BRANCH_PREFIX}${targetEnv}-"))] | first | .iid // empty'
-                    """,
+                            "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/merge_requests?state=opened&target_branch=${PROMO_TARGET}" \
+                            2>/dev/null | jq -r --arg prefix "${PROMO_PREFIX}${PROMO_TARGET}-" \
+                            '[.[] | select(.source_branch | startswith($prefix))] | first | .iid // empty'
+                    ''',
                     returnStdout: true
                 ).trim()
 
@@ -315,11 +334,11 @@ def createPromotionMR(String sourceEnv) {
 
                 // Get git hash from source environment's current image
                 def sourceImageTag = sh(
-                    script: """
+                    script: '''
                         curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-                            "${env.GITLAB_URL}/api/v4/projects/${encodedProject}/repository/files/env.cue?ref=${sourceEnv}" \
-                            2>/dev/null | jq -r '.content' | base64 -d | grep 'image:' | sed -E 's/.*image:\\s*"([^"]+)".*/\\1/' | head -1
-                    """,
+                            "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/repository/files/env.cue?ref=${PROMO_SOURCE}" \
+                            2>/dev/null | jq -r '.content' | base64 -d | grep 'image:' | sed -E 's/.*image:\s*"([^"]+)".*/\1/' | head -1
+                    ''',
                     returnStdout: true
                 ).trim()
 
@@ -345,6 +364,8 @@ def createPromotionMR(String sourceEnv) {
                 // Jenkins environment block variables may not be inherited by subprocesses
                 def newImageTag = ''
                 if (gitHash) {
+                    // sh """ required: mixes Groovy-interpolated config (${env.*}, ${sourceEnv})
+                    // with \${}-escaped credentials (NEXUS_USER, NEXUS_PASSWORD, GITLAB_TOKEN)
                     newImageTag = sh(
                         script: """
                             export NEXUS_USER="\${NEXUS_USER}"
@@ -459,9 +480,10 @@ Build: ${env.BUILD_URL}"
 **Target:** ${targetEnv}
 **Jenkins Build:** ${env.BUILD_URL}"
 
-                        echo "Created promotion MR: \${PROMOTION_BRANCH} -> ${targetEnv}"
+                        echo "Created promotion MR: \${PROMOTION_BRANCH} → ${targetEnv}"
                     """
                 }
+                } // withEnv
             }
         }
     }
@@ -597,7 +619,7 @@ Build: ${env.BUILD_URL}
 
                         withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                             def projectPath = env.GITLAB_GROUP ? "${env.GITLAB_GROUP}/k8s-deployments" : "p2c/k8s-deployments"
-                            def mrTarget = getMRTargetEnvironment(env.BRANCH_NAME, GITLAB_TOKEN, env.GITLAB_URL, projectPath)
+                            def mrTarget = getMRTargetEnvironment(env.BRANCH_NAME, projectPath)
                             if (mrTarget) {
                                 env.HAS_OPEN_MR = 'true'
                                 env.MR_TARGET_ENV = mrTarget

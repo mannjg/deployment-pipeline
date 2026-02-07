@@ -88,88 +88,95 @@ def deployToEnvironment(String environment, String branchPrefix, String mrTitle,
         script {
             echo "[${environment.toUpperCase()}] Creating environment update and MR..."
 
-            withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
-                                              usernameVariable: 'GIT_USERNAME',
-                                              passwordVariable: 'GIT_PASSWORD')]) {
-                withGitCredentials {
-                    // Clone or update deployment repository
-                    sh """
-                        rm -rf k8s-deployments
-                        git clone ${DEPLOYMENT_REPO} k8s-deployments
-                        cd k8s-deployments
+            // Scope Groovy function params as env vars for sh ''' blocks (not global env.*)
+            withEnv([
+                "DEPLOY_ENV=${environment}",
+                "DEPLOY_BRANCH_PREFIX=${branchPrefix}",
+                "DEPLOY_MR_TITLE=${mrTitle}",
+                "DEPLOY_MR_DESCRIPTION=${mrDescription}"
+            ]) {
+                withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
+                                                  usernameVariable: 'GIT_USERNAME',
+                                                  passwordVariable: 'GIT_PASSWORD')]) {
+                    withGitCredentials {
+                        // Clone or update deployment repository
+                        sh '''
+                            rm -rf k8s-deployments
+                            git clone "${DEPLOYMENT_REPO}" k8s-deployments
+                            cd k8s-deployments
 
-                        # Fetch and checkout target environment branch
-                        git fetch origin ${environment}
-                        git checkout ${environment}
-                        git pull origin ${environment}
+                            # Fetch and checkout target environment branch
+                            git fetch origin "${DEPLOY_ENV}"
+                            git checkout "${DEPLOY_ENV}"
+                            git pull origin "${DEPLOY_ENV}"
 
-                        # Create feature branch for this update
-                        FEATURE_BRANCH="${branchPrefix}-\${IMAGE_TAG}"
-                        git checkout -b "\${FEATURE_BRANCH}"
-                    """
+                            # Create feature branch for this update
+                            FEATURE_BRANCH="${DEPLOY_BRANCH_PREFIX}-${IMAGE_TAG}"
+                            git checkout -b "${FEATURE_BRANCH}"
+                        '''
 
-                    // Update environment configuration (L5 + L6 only, no manifest generation)
-                    sh """
-                        cd k8s-deployments
+                        // Update environment configuration (L5 + L6 only, no manifest generation)
+                        sh '''
+                            cd k8s-deployments
 
-                        # L5: Sync app.cue from source repo (if exists)
-                        if [ -f "\${WORKSPACE}/deployment/app.cue" ]; then
+                            # L5: Sync app.cue from source repo (if exists)
+                            if [ -f "${WORKSPACE}/deployment/app.cue" ]; then
+                                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                                echo "Syncing deployment configuration (L5)..."
+                                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                                mkdir -p services/apps
+                                cp "${WORKSPACE}/deployment/app.cue" "services/apps/${APP_NAME}.cue"
+                                echo "✓ Synced services/apps/${APP_NAME}.cue"
+                            fi
+
+                            # L6: Update image tag in env.cue
                             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                            echo "Syncing deployment configuration (L5)..."
+                            echo "Updating image tag (L6)..."
                             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                            mkdir -p services/apps
-                            cp \${WORKSPACE}/deployment/app.cue services/apps/\${APP_NAME}.cue
-                            echo "✓ Synced services/apps/\${APP_NAME}.cue"
-                        fi
+                            ./scripts/update-app-image.sh "${DEPLOY_ENV}" "${APP_NAME}" "${FULL_IMAGE}"
+                            echo "✓ Updated ${APP_NAME} image in env.cue"
 
-                        # L6: Update image tag in env.cue
-                        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                        echo "Updating image tag (L6)..."
-                        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                        ./scripts/update-app-image.sh ${environment} ${APP_NAME} "${FULL_IMAGE}"
-                        echo "✓ Updated ${APP_NAME} image in env.cue"
+                            # Stage CUE changes only - k8s-deployments CI will generate manifests
+                            git add services/apps/ env.cue 2>/dev/null || git add env.cue
 
-                        # Stage CUE changes only - k8s-deployments CI will generate manifests
-                        git add services/apps/ env.cue 2>/dev/null || git add env.cue
-
-                        # Commit with metadata
-                        git commit -m "${mrTitle}
+                            # Commit with metadata
+                            git commit -m "${DEPLOY_MR_TITLE}
 
 L5/L6 update from application CI/CD pipeline.
 
 Changes:
-- Synced services/apps/\${APP_NAME}.cue (if changed)
-- Updated ${environment} environment image to \${IMAGE_TAG}
+- Synced services/apps/${APP_NAME}.cue (if changed)
+- Updated ${DEPLOY_ENV} environment image to ${IMAGE_TAG}
 
 Note: Manifests will be generated by k8s-deployments CI.
 
-Build: \${BUILD_URL}
-Git commit: \${GIT_SHORT_HASH}
+Build: ${BUILD_URL}
+Git commit: ${GIT_SHORT_HASH}
 Image: ${FULL_IMAGE}" || echo "No changes to commit"
-                    """
+                        '''
 
-                    // Push feature branch and create merge request
-                    sh """
-                        cd k8s-deployments
-                        FEATURE_BRANCH="${branchPrefix}-\${IMAGE_TAG}"
+                        // Push feature branch and create merge request
+                        sh '''
+                            cd k8s-deployments
+                            FEATURE_BRANCH="${DEPLOY_BRANCH_PREFIX}-${IMAGE_TAG}"
 
-                        # Delete remote branch if it exists, then push fresh
-                        git push origin --delete "\${FEATURE_BRANCH}" 2>/dev/null || echo "Branch does not exist remotely"
-                        git push -u origin "\${FEATURE_BRANCH}"
+                            # Delete remote branch if it exists, then push fresh
+                            git push origin --delete "${FEATURE_BRANCH}" 2>/dev/null || echo "Branch does not exist remotely"
+                            git push -u origin "${FEATURE_BRANCH}"
 
-                        # Create MR using GitLab API
-                        export GITLAB_TOKEN="${GITLAB_API_TOKEN}"
-                        export GITLAB_URL_INTERNAL="${GITLAB_URL}"
-                        export GITLAB_GROUP="${GITLAB_GROUP}"
+                            # Create MR using GitLab API
+                            export GITLAB_TOKEN="${GITLAB_API_TOKEN}"
+                            export GITLAB_URL_INTERNAL="${GITLAB_URL}"
 
-                        ./scripts/create-gitlab-mr.sh \
-                            "\${FEATURE_BRANCH}" \
-                            ${environment} \
-                            "${mrTitle}" \
-                            "${mrDescription}"
-                    """
+                            ./scripts/create-gitlab-mr.sh \
+                                "${FEATURE_BRANCH}" \
+                                "${DEPLOY_ENV}" \
+                                "${DEPLOY_MR_TITLE}" \
+                                "${DEPLOY_MR_DESCRIPTION}"
+                        '''
 
-                    echo "[${environment.toUpperCase()}] ✓ MR created successfully: ${branchPrefix}-${env.IMAGE_TAG} → ${environment}"
+                        echo "[${environment.toUpperCase()}] ✓ MR created successfully: ${branchPrefix}-${env.IMAGE_TAG} → ${environment}"
+                    }
                 }
             }
         }
@@ -371,7 +378,7 @@ spec:
 
                             // Build and push Docker image with Jib
                             echo "Building and pushing container image..."
-                            sh """
+                            sh '''
                                 mvn clean package \
                                     -Dquarkus.container-image.build=true \
                                     -Dquarkus.container-image.push=true \
@@ -383,7 +390,7 @@ spec:
                                     -Dquarkus.container-image.username=${DOCKER_CREDENTIALS_USR} \
                                     -Dquarkus.container-image.password=${DOCKER_CREDENTIALS_PSW} \
                                     -DsendCredentialsOverHttp=true
-                            """
+                            '''
 
                             // Publish Maven artifacts to Nexus
                             echo "Publishing Maven artifacts to Nexus..."
