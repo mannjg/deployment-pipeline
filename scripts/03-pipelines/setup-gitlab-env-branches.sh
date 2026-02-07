@@ -229,10 +229,10 @@ transform_env_config() {
         -e "s/replicas: 1/replicas: ${ENV_REPLICAS[$env]}/g" \
         -e "s/debug: true/debug: ${ENV_DEBUG[$env]}/g" \
         -e "s/value: \"DEBUG\"/value: \"${ENV_LOG_LEVEL[$env]}\"/g" \
-        -e "s/cpu:    \"100m\"/cpu:    \"${ENV_CPU_REQUEST[$env]}\"/g" \
         -e "s/cpu:    \"500m\"/cpu:    \"${ENV_CPU_LIMIT[$env]}\"/g" \
-        -e "s/memory: \"256Mi\"/memory: \"${ENV_MEM_REQUEST[$env]}\"/g" \
+        -e "s/cpu:    \"100m\"/cpu:    \"${ENV_CPU_REQUEST[$env]}\"/g" \
         -e "s/memory: \"512Mi\"/memory: \"${ENV_MEM_LIMIT[$env]}\"/g" \
+        -e "s/memory: \"256Mi\"/memory: \"${ENV_MEM_REQUEST[$env]}\"/g" \
         -e "s/storageSize: \"5Gi\"/storageSize: \"${ENV_STORAGE[$env]}\"/g" \
         -e "s|// Example environment configuration|// ${env^} environment configuration|g" \
         -e "s|// Example:|// ${env^}:|g" \
