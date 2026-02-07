@@ -43,6 +43,34 @@ def validateRequiredEnvVars(List<String> vars) {
     }
 }
 
+/**
+ * Reports commit status to GitLab. Non-fatal on failure.
+ * @param state GitLab commit status state (pending, success, failed)
+ * @param context Status context name (e.g., "jenkins/example-app")
+ * @param commitSha Full git commit SHA to report status for
+ * @param projectPath GitLab project path (e.g., "p2c/example-app")
+ */
+def reportGitLabStatus(String state, String context, String commitSha, String projectPath) {
+    def descriptions = [
+        'pending': 'Pipeline running',
+        'success': 'Pipeline passed',
+        'failed' : 'Pipeline failed',
+    ]
+    def description = descriptions[state] ?: state
+    def encodedProject = projectPath.replace('/', '%2F')
+
+    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+        sh """
+            curl -s -X POST \
+                -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d '{"state": "${state}", "description": "${description}", "context": "${context}"}' \
+                "${env.GITLAB_URL}/api/v4/projects/${encodedProject}/statuses/${commitSha}" \
+                || echo "Could not update commit status (non-fatal)"
+        """
+    }
+}
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
@@ -291,17 +319,7 @@ spec:
                         echo "✓ Deploy target: ${env.FULL_IMAGE}"
 
                         // Report "pending" status to GitLab so MR shows pipeline is running
-                        withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
-                            sh """
-                                echo "Reporting pending status to GitLab for commit: ${env.GIT_COMMIT_SHA}"
-                                curl -s -X POST \
-                                    -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                                    -H "Content-Type: application/json" \
-                                    -d '{"state": "pending", "description": "Pipeline running", "context": "jenkins/example-app"}' \
-                                    "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fexample-app/statuses/${env.GIT_COMMIT_SHA}" \
-                                    || echo "Could not update commit status (non-fatal)"
-                            """
-                        }
+                        reportGitLabStatus('pending', 'jenkins/example-app', env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP ?: 'p2c'}/example-app")
                     }
                 }
             }
@@ -450,17 +468,7 @@ Build URL: ${env.BUILD_URL}
 """
                 // Report success status to GitLab
                 container('maven') {
-                    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
-                        sh """
-                            echo "Reporting success status to GitLab for commit: ${env.GIT_COMMIT_SHA}"
-                            curl -s -X POST \
-                                -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                                -H "Content-Type: application/json" \
-                                -d '{"state": "success", "description": "Pipeline passed", "context": "jenkins/example-app"}' \
-                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fexample-app/statuses/${env.GIT_COMMIT_SHA}" \
-                                || echo "Could not update commit status"
-                        """
-                    }
+                    reportGitLabStatus('success', 'jenkins/example-app', env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP ?: 'p2c'}/example-app")
                 }
             }
         }
@@ -477,17 +485,7 @@ Check logs above for error details
 """
                 // Report failure status to GitLab
                 container('maven') {
-                    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
-                        sh """
-                            echo "Reporting failure status to GitLab for commit: ${env.GIT_COMMIT_SHA}"
-                            curl -s -X POST \
-                                -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                                -H "Content-Type: application/json" \
-                                -d '{"state": "failed", "description": "Pipeline failed", "context": "jenkins/example-app"}' \
-                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fexample-app/statuses/${env.GIT_COMMIT_SHA}" \
-                                || echo "Could not update commit status"
-                        """
-                    }
+                    reportGitLabStatus('failed', 'jenkins/example-app', env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP ?: 'p2c'}/example-app")
                 }
             }
         }

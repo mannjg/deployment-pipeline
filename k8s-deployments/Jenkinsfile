@@ -49,6 +49,34 @@ def validateRequiredEnvVars(List<String> vars) {
     }
 }
 
+/**
+ * Reports commit status to GitLab. Non-fatal on failure.
+ * @param state GitLab commit status state (pending, success, failed)
+ * @param context Status context name (e.g., "jenkins/k8s-deployments")
+ * @param commitSha Full git commit SHA to report status for
+ * @param projectPath GitLab project path (e.g., "p2c/k8s-deployments")
+ */
+def reportGitLabStatus(String state, String context, String commitSha, String projectPath) {
+    def descriptions = [
+        'pending': 'Pipeline running',
+        'success': 'Pipeline passed',
+        'failed' : 'Pipeline failed',
+    ]
+    def description = descriptions[state] ?: state
+    def encodedProject = projectPath.replace('/', '%2F')
+
+    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+        sh """
+            curl -s -X POST \
+                -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d '{"state": "${state}", "description": "${description}", "context": "${context}"}' \
+                "${env.GITLAB_URL}/api/v4/projects/${encodedProject}/statuses/${commitSha}" \
+                || echo "Could not update commit status (non-fatal)"
+        """
+    }
+}
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
@@ -899,18 +927,9 @@ Build: ${env.BUILD_URL}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
                 container('pipeline') {
-                    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
-                        sh """
-                            COMMIT_SHA="${env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA}"
-                            echo "Reporting success status for commit: \$COMMIT_SHA"
-                            curl -s -X POST \
-                                -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                                -H "Content-Type: application/json" \
-                                -d '{"state": "success", "description": "Pipeline passed", "context": "jenkins/k8s-deployments"}' \
-                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/statuses/\$COMMIT_SHA" \
-                                || echo "Could not update commit status"
-                        """
-                    }
+                    reportGitLabStatus('success', 'jenkins/k8s-deployments',
+                        env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA,
+                        "${env.GITLAB_GROUP ?: 'p2c'}/k8s-deployments")
                 }
             }
         }
@@ -926,18 +945,9 @@ Check logs above for error details.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
                 container('pipeline') {
-                    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
-                        sh """
-                            COMMIT_SHA="${env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA}"
-                            echo "Reporting failure status for commit: \$COMMIT_SHA"
-                            curl -s -X POST \
-                                -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                                -H "Content-Type: application/json" \
-                                -d '{"state": "failed", "description": "Pipeline failed", "context": "jenkins/k8s-deployments"}' \
-                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP ?: 'p2c'}%2Fk8s-deployments/statuses/\$COMMIT_SHA" \
-                                || echo "Could not update commit status"
-                        """
-                    }
+                    reportGitLabStatus('failed', 'jenkins/k8s-deployments',
+                        env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA,
+                        "${env.GITLAB_GROUP ?: 'p2c'}/k8s-deployments")
                 }
             }
         }
