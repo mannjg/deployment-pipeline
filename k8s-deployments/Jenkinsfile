@@ -164,14 +164,7 @@ def getMRTargetEnvironment(String branchName, String gitlabToken, String gitlabU
 
 /**
  * Merges the target environment branch into the current feature branch for MR-preview.
- * This ensures the feature branch has the latest env.cue from the target,
- * so that the generated manifests will merge cleanly when the MR is accepted.
- *
- * Conflict resolution strategy:
- * - For promote-* branches: keep OURS for env.cue and manifests (they have promoted versions)
- * - For other feature branches: take THEIRS for env.cue (we need target's config)
- * - Manifests: always keep OURS (they're derivative - will be regenerated if needed)
- * - Services: keep OURS (feature branch changes)
+ * Delegates to scripts/merge-preview.sh for conflict resolution logic.
  *
  * @param targetEnv The target environment branch (dev, stage, or prod)
  * @param isPromoteBranch Whether this is a promote-* branch
@@ -179,82 +172,7 @@ def getMRTargetEnvironment(String branchName, String gitlabToken, String gitlabU
  */
 def mergeTargetBranchForPreview(String targetEnv, boolean isPromoteBranch = false) {
     try {
-        sh """
-            echo "Merging ${targetEnv} into feature branch for clean MR-preview..."
-            git fetch origin ${targetEnv}
-
-            # Configure git for merge
-            git config user.name "Jenkins CI"
-            git config user.email "jenkins@local"
-
-            # Merge target branch into feature branch
-            git merge origin/${targetEnv} --no-commit --no-edit || true
-
-            # Handle env.cue conflicts
-            if git diff --name-only --diff-filter=U | grep -q "^env.cue\$"; then
-                if [ "${isPromoteBranch}" = "true" ]; then
-                    # Promote branches: keep OURS (has promoted image tags)
-                    echo "Resolving env.cue conflict (keeping promote branch version with promoted images)"
-                    git checkout --ours env.cue
-                else
-                    # Feature branches: take THEIRS (need target's env config)
-                    echo "Resolving env.cue conflict (taking version from ${targetEnv})"
-                    git show origin/${targetEnv}:env.cue > env.cue
-                fi
-                git add env.cue
-            fi
-
-            # Handle manifest conflicts - always keep OURS
-            # Manifests are derivative (generated from CUE). For non-promote branches,
-            # they'll be regenerated. For promote branches, they're already correct.
-            MANIFEST_CONFLICTS=\$(git diff --name-only --diff-filter=U 2>/dev/null | grep "^manifests/" || true)
-            if [ -n "\$MANIFEST_CONFLICTS" ]; then
-                echo "Resolving manifests/ conflicts (keeping current version - derivative files)"
-                for file in \$MANIFEST_CONFLICTS; do
-                    git checkout --ours "\$file" 2>/dev/null || true
-                    git add "\$file" 2>/dev/null || true
-                done
-            fi
-
-            # Resolve .mr-trigger conflicts (keep ours)
-            if git diff --name-only --diff-filter=U | grep -q "^.mr-trigger\$"; then
-                echo "Resolving .mr-trigger conflict (keeping current version)"
-                git checkout --ours .mr-trigger
-                git add .mr-trigger
-            fi
-
-            # Resolve services/ conflicts by keeping feature branch version (ours)
-            SERVICE_CONFLICTS=\$(git diff --name-only --diff-filter=U 2>/dev/null | grep "^services/" || true)
-            if [ -n "\$SERVICE_CONFLICTS" ]; then
-                echo "Resolving services/ conflicts (keeping feature branch version):"
-                echo "\$SERVICE_CONFLICTS"
-                for file in \$SERVICE_CONFLICTS; do
-                    git checkout --ours "\$file"
-                    git add "\$file"
-                done
-            fi
-
-            # Check for any remaining unresolved conflicts
-            CONFLICTS=\$(git diff --name-only --diff-filter=U 2>/dev/null || true)
-            if [ -n "\$CONFLICTS" ]; then
-                echo "ERROR: Unresolved merge conflicts:"
-                echo "\$CONFLICTS"
-                exit 1
-            fi
-
-            # Commit the merge if there were changes
-            if ! git diff --staged --quiet; then
-                git commit --no-edit -m "Merge ${targetEnv} into feature branch for MR-preview"
-            fi
-
-            echo "Successfully merged ${targetEnv} into feature branch"
-
-            # Verify env.cue exists
-            if [ ! -f "env.cue" ]; then
-                echo "ERROR: env.cue not found after merge"
-                exit 1
-            fi
-        """
+        sh "./scripts/merge-preview.sh ${isPromoteBranch ? '--promote ' : ''}${targetEnv}"
         return true
     } catch (Exception e) {
         echo "Warning: Could not merge ${targetEnv}: ${e.message}"
