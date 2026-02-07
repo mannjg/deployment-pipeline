@@ -135,6 +135,7 @@ def getMRTargetEnvironment(String branchName, String projectPath) {
     }
 
     // Guard: GITLAB_URL must be set (from pipeline environment block)
+    // Note: GITLAB_TOKEN is withCredentials-scoped (shell-only) and cannot be checked from Groovy
     if (!env.GITLAB_URL) {
         echo "Warning: GITLAB_URL not set - cannot query GitLab MRs"
         return null
@@ -309,23 +310,23 @@ def createPromotionMR(String sourceEnv) {
                                 usernameVariable: 'NEXUS_USER',
                                 passwordVariable: 'NEXUS_PASSWORD')
             ]) {
-                // Scope Groovy locals as env vars for sh ''' blocks (not global env.*)
-                withEnv([
-                    "PROMO_SOURCE=${sourceEnv}",
-                    "PROMO_TARGET=${targetEnv}",
-                    "PROMO_PREFIX=${PROMOTE_BRANCH_PREFIX}",
-                    "PROMO_ENCODED_PROJECT=${encodedProject}"
-                ]) {
                 // Check if there's already an open promotion MR to the target
-                def existingMR = sh(
-                    script: '''
-                        curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-                            "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/merge_requests?state=opened&target_branch=${PROMO_TARGET}" \
-                            2>/dev/null | jq -r --arg prefix "${PROMO_PREFIX}${PROMO_TARGET}-" \
-                            '[.[] | select(.source_branch | startswith($prefix))] | first | .iid // empty'
-                    ''',
-                    returnStdout: true
-                ).trim()
+                // Scope Groovy locals as env vars for sh ''' block (not global env.*)
+                def existingMR = withEnv([
+                    "PROMO_ENCODED_PROJECT=${encodedProject}",
+                    "PROMO_TARGET=${targetEnv}",
+                    "PROMO_PREFIX=${PROMOTE_BRANCH_PREFIX}"
+                ]) {
+                    sh(
+                        script: '''
+                            curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                                "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/merge_requests?state=opened&target_branch=${PROMO_TARGET}" \
+                                2>/dev/null | jq -r --arg prefix "${PROMO_PREFIX}${PROMO_TARGET}-" \
+                                '[.[] | select(.source_branch | startswith($prefix))] | first | .iid // empty'
+                        ''',
+                        returnStdout: true
+                    ).trim()
+                }
 
                 if (existingMR) {
                     echo "Promotion MR !${existingMR} already exists for ${targetEnv} - skipping creation"
@@ -333,14 +334,19 @@ def createPromotionMR(String sourceEnv) {
                 }
 
                 // Get git hash from source environment's current image
-                def sourceImageTag = sh(
-                    script: '''
-                        curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-                            "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/repository/files/env.cue?ref=${PROMO_SOURCE}" \
-                            2>/dev/null | jq -r '.content' | base64 -d | grep 'image:' | sed -E 's/.*image:\s*"([^"]+)".*/\1/' | head -1
-                    ''',
-                    returnStdout: true
-                ).trim()
+                def sourceImageTag = withEnv([
+                    "PROMO_ENCODED_PROJECT=${encodedProject}",
+                    "PROMO_SOURCE=${sourceEnv}"
+                ]) {
+                    sh(
+                        script: '''
+                            curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                                "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/repository/files/env.cue?ref=${PROMO_SOURCE}" \
+                                2>/dev/null | jq -r '.content' | base64 -d | grep 'image:' | sed -E 's/.*image:\s*"([^"]+)".*/\1/' | head -1
+                        ''',
+                        returnStdout: true
+                    ).trim()
+                }
 
                 // Extract just the tag portion (after the colon)
                 def imageTag = sourceImageTag.contains(':') ? sourceImageTag.split(':').last() : sourceImageTag
@@ -483,7 +489,6 @@ Build: ${env.BUILD_URL}"
                         echo "Created promotion MR: \${PROMOTION_BRANCH} → ${targetEnv}"
                     """
                 }
-                } // withEnv
             }
         }
     }

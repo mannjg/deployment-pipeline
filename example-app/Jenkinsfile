@@ -88,12 +88,14 @@ def deployToEnvironment(String environment, String branchPrefix, String mrTitle,
         script {
             echo "[${environment.toUpperCase()}] Creating environment update and MR..."
 
+            // Write MR description to temp file (multi-line content can break withEnv)
+            writeFile file: "${env.WORKSPACE}/.mr-description.txt", text: mrDescription
+
             // Scope Groovy function params as env vars for sh ''' blocks (not global env.*)
             withEnv([
                 "DEPLOY_ENV=${environment}",
                 "DEPLOY_BRANCH_PREFIX=${branchPrefix}",
-                "DEPLOY_MR_TITLE=${mrTitle}",
-                "DEPLOY_MR_DESCRIPTION=${mrDescription}"
+                "DEPLOY_MR_TITLE=${mrTitle}"
             ]) {
                 withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
                                                   usernameVariable: 'GIT_USERNAME',
@@ -172,7 +174,7 @@ Image: ${FULL_IMAGE}" || echo "No changes to commit"
                                 "${FEATURE_BRANCH}" \
                                 "${DEPLOY_ENV}" \
                                 "${DEPLOY_MR_TITLE}" \
-                                "${DEPLOY_MR_DESCRIPTION}"
+                                "$(cat "${WORKSPACE}/.mr-description.txt")"
                         '''
 
                         echo "[${environment.toUpperCase()}] ✓ MR created successfully: ${branchPrefix}-${env.IMAGE_TAG} → ${environment}"
