@@ -47,6 +47,9 @@ REQUIRED_PLUGINS=(
     # Kubernetes plugin for pod-based agents
     "kubernetes"
     "kubernetes-credentials"
+    # Pipeline UX: timestamps and colored output
+    "timestamper"
+    "ansicolor"
 )
 
 # Output helpers
