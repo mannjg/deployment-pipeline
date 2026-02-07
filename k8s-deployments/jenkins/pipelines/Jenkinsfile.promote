@@ -1,3 +1,7 @@
+import groovy.transform.Field
+
+@Field static final String PROMOTE_BRANCH_PREFIX = 'promote-'
+
 /**
  * Jenkins Pipeline: Promote Environment
  *
@@ -243,7 +247,7 @@ Check: kubectl get deployment ${params.APP_NAME} -n ${namespace}"""
                                     git pull origin ${params.TARGET_ENV}
 
                                     # Create feature branch for this promotion
-                                    FEATURE_BRANCH="promote-${params.TARGET_ENV}-${PROMOTE_IMAGE_TAG}"
+                                    FEATURE_BRANCH="${PROMOTE_BRANCH_PREFIX}${params.TARGET_ENV}-${PROMOTE_IMAGE_TAG}"
                                     git checkout -b "\${FEATURE_BRANCH}"
 
                                     echo "============================================"
@@ -314,7 +318,7 @@ ${params.TARGET_ENV == 'prod' ? '> **Production Deployment** - Please review car
 
                                 sh """
                                     cd k8s-deployments
-                                    FEATURE_BRANCH="promote-${params.TARGET_ENV}-${PROMOTE_IMAGE_TAG}"
+                                    FEATURE_BRANCH="${PROMOTE_BRANCH_PREFIX}${params.TARGET_ENV}-${PROMOTE_IMAGE_TAG}"
 
                                     # Delete remote branch if it exists, then push fresh
                                     git push origin --delete "\${FEATURE_BRANCH}" 2>/dev/null || echo "Branch does not exist remotely"
@@ -332,7 +336,7 @@ ${params.TARGET_ENV == 'prod' ? '> **Production Deployment** - Please review car
                                         "${mrDescription}"
                                 """
 
-                                echo "[${params.TARGET_ENV.toUpperCase()}] Promotion MR created successfully: promote-${params.TARGET_ENV}-${env.PROMOTE_IMAGE_TAG} -> ${params.TARGET_ENV}"
+                                echo "[${params.TARGET_ENV.toUpperCase()}] Promotion MR created successfully: ${PROMOTE_BRANCH_PREFIX}${params.TARGET_ENV}-${env.PROMOTE_IMAGE_TAG} -> ${params.TARGET_ENV}"
                             }
                         }
                     }

@@ -1,3 +1,7 @@
+import groovy.transform.Field
+
+@Field static final List<String> ENV_BRANCHES = ['dev', 'stage', 'prod']
+
 // Validation Pipeline for k8s-deployments Repository
 // Validates CUE configuration, manifest generation, and YAML syntax
 // Triggered by: GitLab webhook on k8s-deployments changes
@@ -153,7 +157,7 @@ See: k8s-deployments/docs/CONFIGURATION.md"""
                     script {
                         echo "=== Generating Kubernetes Manifests ==="
 
-                        def environments = params.VALIDATE_ALL_ENVS ? ['dev', 'stage', 'prod'] : [params.BRANCH_NAME]
+                        def environments = params.VALIDATE_ALL_ENVS ? ENV_BRANCHES : [params.BRANCH_NAME]
 
                         for (env in environments) {
                             echo "Generating manifests for: ${env}"
@@ -185,7 +189,7 @@ See: k8s-deployments/docs/CONFIGURATION.md"""
                     script {
                         echo "=== Validating Generated Manifests ==="
 
-                        def environments = params.VALIDATE_ALL_ENVS ? ['dev', 'stage', 'prod'] : [params.BRANCH_NAME]
+                        def environments = params.VALIDATE_ALL_ENVS ? ENV_BRANCHES : [params.BRANCH_NAME]
 
                         for (env in environments) {
                             echo "Validating manifests for: ${env}"
@@ -257,7 +261,7 @@ Build: ${BUILD_URL}"
                     script {
                         echo "=== Running Integration Tests ==="
 
-                        def environments = params.VALIDATE_ALL_ENVS ? ['dev', 'stage', 'prod'] : [params.BRANCH_NAME]
+                        def environments = params.VALIDATE_ALL_ENVS ? ENV_BRANCHES : [params.BRANCH_NAME]
 
                         sh """
                             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

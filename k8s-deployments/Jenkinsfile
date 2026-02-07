@@ -1,3 +1,9 @@
+import groovy.transform.Field
+
+@Field static final String UPDATE_BRANCH_PREFIX = 'update-'
+@Field static final String PROMOTE_BRANCH_PREFIX = 'promote-'
+@Field static final List<String> ENV_BRANCHES = ['dev', 'stage', 'prod']
+
 // k8s-deployments Pipeline
 //
 // Two distinct workflows:
@@ -93,18 +99,18 @@ def reportGitLabStatus(String state, String context, String commitSha, String pr
  */
 def getTargetEnvironment(String branchName) {
     // Direct environment branches
-    if (branchName in ['dev', 'stage', 'prod']) {
+    if (branchName in ENV_BRANCHES) {
         return branchName
     }
     // Feature branches targeting dev (from app CI)
-    if (branchName.startsWith('update-dev-')) {
+    if (branchName.startsWith("${UPDATE_BRANCH_PREFIX}dev-")) {
         return 'dev'
     }
     // Promotion branches
-    if (branchName.startsWith('promote-stage-')) {
+    if (branchName.startsWith("${PROMOTE_BRANCH_PREFIX}stage-")) {
         return 'stage'
     }
-    if (branchName.startsWith('promote-prod-')) {
+    if (branchName.startsWith("${PROMOTE_BRANCH_PREFIX}prod-")) {
         return 'prod'
     }
     // Unknown branch pattern
@@ -128,7 +134,7 @@ def getMRTargetEnvironment(String branchName, String gitlabToken, String gitlabU
         return null
     }
 
-    def isEnvBranch = branchName in ['dev', 'stage', 'prod']
+    def isEnvBranch = branchName in ENV_BRANCHES
 
     try {
         // URL-encode the project path
@@ -145,7 +151,7 @@ def getMRTargetEnvironment(String branchName, String gitlabToken, String gitlabU
         ).trim()
 
         // Only return if target is an environment branch
-        if (targetBranch in ['dev', 'stage', 'prod']) {
+        if (targetBranch in ENV_BRANCHES) {
             // For env-to-env MRs, only process if target is DIFFERENT from source
             if (isEnvBranch && targetBranch == branchName) {
                 echo "Skipping self-referential MR for ${branchName}"
@@ -297,7 +303,7 @@ def createPromotionMR(String sourceEnv) {
                     script: """
                         curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
                             "${env.GITLAB_URL}/api/v4/projects/${encodedProject}/merge_requests?state=opened&target_branch=${targetEnv}" \
-                            2>/dev/null | jq -r '[.[] | select(.source_branch | startswith("promote-${targetEnv}-"))] | first | .iid // empty'
+                            2>/dev/null | jq -r '[.[] | select(.source_branch | startswith("${PROMOTE_BRANCH_PREFIX}${targetEnv}-"))] | first | .iid // empty'
                     """,
                     returnStdout: true
                 ).trim()
@@ -375,7 +381,7 @@ def createPromotionMR(String sourceEnv) {
 
                         # Create promotion branch from target
                         TIMESTAMP=\$(date +%Y%m%d-%H%M%S)
-                        PROMOTION_BRANCH="promote-${targetEnv}-\${TIMESTAMP}"
+                        PROMOTION_BRANCH="${PROMOTE_BRANCH_PREFIX}${targetEnv}-\${TIMESTAMP}"
 
                         git checkout -B ${targetEnv} origin/${targetEnv}
                         git checkout -b "\${PROMOTION_BRANCH}"
@@ -585,7 +591,7 @@ Build: ${env.BUILD_URL}
                         }
 
                         // Determine branch type and MR status
-                        env.IS_ENV_BRANCH = (env.BRANCH_NAME in ['dev', 'stage', 'prod']) ? 'true' : 'false'
+                        env.IS_ENV_BRANCH = (env.BRANCH_NAME in ENV_BRANCHES) ? 'true' : 'false'
                         env.HAS_OPEN_MR = 'false'
                         env.MR_TARGET_ENV = ''
 
@@ -627,7 +633,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                     script {
                         echo "=== Preparing MR Preview: Merging ${env.MR_TARGET_ENV} ==="
 
-                        def isPromoteBranch = env.BRANCH_NAME.startsWith('promote-')
+                        def isPromoteBranch = env.BRANCH_NAME.startsWith(PROMOTE_BRANCH_PREFIX)
                         if (isPromoteBranch) {
                             echo "Promote branch detected - will preserve promoted image versions"
                         }
@@ -684,7 +690,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                     // Exclude promote-* branches - they carry already-generated manifests from source env
                     // (regenerating would cause feedback loop: build -> push -> webhook -> build)
                     env.TARGET_ENV != '' && env.HAS_OPEN_MR == 'true' && env.IS_ENV_BRANCH == 'false' &&
-                    !env.BRANCH_NAME.startsWith('promote-')
+                    !env.BRANCH_NAME.startsWith(PROMOTE_BRANCH_PREFIX)
                 }
             }
             steps {
