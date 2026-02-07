@@ -149,8 +149,9 @@ wait_for_pipeline_quiescence() {
 
         # 3. Check for ANY Jenkins agent pods (catches feature branch, example-app,
         #    and any other builds that the env branch check above would miss)
-        local agent_count=$(kubectl get pods -n "${JENKINS_NAMESPACE}" --no-headers \
-            -o custom-columns=NAME:.metadata.name 2>/dev/null | grep -v "^jenkins-" | wc -l)
+        # Use jenkins/label selector - the Kubernetes plugin labels all agent pods it creates
+        local agent_count=$(kubectl get pods -n "${JENKINS_NAMESPACE}" -l jenkins/label \
+            --no-headers 2>/dev/null | wc -l)
         if [[ "$agent_count" -gt 0 ]]; then
             status_parts+=("pods:${agent_count}")
         fi
@@ -231,13 +232,13 @@ cleanup_jenkins_queue() {
     log_info "  Aborted $aborted running builds"
 
     # 3. Delete all Jenkins agent pods
+    # Use jenkins/label selector - the Kubernetes plugin labels all agent pods it creates
     log_info "Deleting Jenkins agent pods..."
-    local deleted_pods=$(kubectl get pods -n "${JENKINS_NAMESPACE}" --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | \
-        grep -v "^jenkins-" | wc -l)
+    local deleted_pods=$(kubectl get pods -n "${JENKINS_NAMESPACE}" -l jenkins/label \
+        --no-headers 2>/dev/null | wc -l)
 
-    kubectl get pods -n "${JENKINS_NAMESPACE}" --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | \
-        grep -v "^jenkins-" | \
-        xargs -r kubectl delete pod -n "${JENKINS_NAMESPACE}" --force --grace-period=0 >/dev/null 2>&1 || true
+    kubectl delete pods -n "${JENKINS_NAMESPACE}" -l jenkins/label \
+        --force --grace-period=0 >/dev/null 2>&1 || true
 
     log_info "  Deleted $deleted_pods agent pods"
 
