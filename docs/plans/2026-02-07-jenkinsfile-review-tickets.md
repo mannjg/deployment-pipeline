@@ -24,28 +24,6 @@ The k8s-deployments pipeline correctly uses a DinD sidecar instead.
 
 ---
 
-## JENKINS-19: Add error handling for git push in Generate Manifests stage
-
-**Files:** `k8s-deployments/Jenkinsfile`
-
-**Problem:** Line 727 pushes generated manifests to the feature branch with no error handling beyond `set -e`. If the push fails (force-push protection, network error, auth failure), the pipeline continues and reports success via GitLab status. The MR shows stale manifests.
-
-**Fix:** Check the push exit code and fail the stage explicitly:
-```bash
-git push origin HEAD:${GIT_BRANCH#origin/} || {
-    echo "ERROR: Failed to push generated manifests"
-    exit 1
-}
-```
-
-Also consider: if the push fails, should the GitLab commit status report the *original* commit SHA (pre-manifest-generation) or the new one? Currently `FINAL_COMMIT_SHA` is set after the push block (line 735), so on push failure it would be unset and the post block would fall back to `ORIGINAL_COMMIT_SHA` — which is correct. Document this.
-
-**Acceptance criteria:**
-- Push failure causes stage failure
-- GitLab commit status reports against the correct SHA on both success and failure
-
----
-
 ## JENKINS-20: Prevent manifest push from triggering redundant webhook build
 
 **Files:** `k8s-deployments/Jenkinsfile`
