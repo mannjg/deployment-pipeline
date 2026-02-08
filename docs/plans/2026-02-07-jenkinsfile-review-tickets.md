@@ -26,6 +26,8 @@ The k8s-deployments pipeline correctly uses a DinD sidecar instead.
 
 ## JENKINS-22: Remove dead credential cleanup and container naming consistency
 
+**Status: IMPLEMENTED**
+
 **Files:** `example-app/Jenkinsfile`, `k8s-deployments/Jenkinsfile`, `k8s-deployments/jenkins/pipelines/Jenkinsfile.promote`
 
 **Problem (cleanup):** `withGitCredentials` carefully unsets `credential.helper`, `user.name`, and `user.email` in a `finally` block. The `post.always` block in example-app (line 500) also runs `git config --global --unset credential.helper`. But agents are ephemeral Kubernetes pods destroyed after the build. The cleanup is dead code.
