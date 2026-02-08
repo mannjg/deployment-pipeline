@@ -427,6 +427,10 @@ def createPromotionMR(String sourceEnv) {
                     echo "New image tag for ${targetEnv}: ${newImageTag}"
                 }
 
+                if (!imageTag) {
+                    error "Cannot create promotion MR: no image tag found in ${sourceEnv} env.cue"
+                }
+
                 withGitCredentials {
                     sh """
                         # Fetch both branches
