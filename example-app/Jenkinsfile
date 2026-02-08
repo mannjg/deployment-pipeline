@@ -197,7 +197,11 @@ Image: ${FULL_IMAGE}"
                                 "$(cat "${WORKSPACE}/.mr-description-${BUILD_NUMBER}.txt")"
                         '''
 
-                        echo "[${environment.toUpperCase()}] ✓ MR created successfully: ${branchPrefix}-${env.IMAGE_TAG} → ${environment}"
+                        if (fileExists("${env.WORKSPACE}/.no-changes-${env.BUILD_NUMBER}")) {
+                            echo "[${environment.toUpperCase()}] No changes detected - MR creation skipped (image tag already current)"
+                        } else {
+                            echo "[${environment.toUpperCase()}] ✓ MR created successfully: ${branchPrefix}-${env.IMAGE_TAG} → ${environment}"
+                        }
                     }
                 }
             }
