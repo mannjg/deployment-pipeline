@@ -51,7 +51,7 @@ def withGitCredentials(String repoDir = null, Closure body) {
 def validateRequiredEnvVars(List<String> vars) {
     def missing = vars.findAll { !env."${it}" }
     if (missing) {
-        error "Missing required ConfigMap variables: ${missing.join(', ')}. Check pipeline-config ConfigMap in Jenkins namespace."
+        error "Missing required pipeline environment variables: ${missing.join(', ')}. Check pipeline-config ConfigMap in Jenkins namespace."
     }
 }
 
@@ -298,7 +298,7 @@ def createPromotionMR(String sourceEnv) {
 
             echo "=== Creating Promotion MR: ${sourceEnv} -> ${targetEnv} ==="
 
-            def projectPath = env.GITLAB_GROUP ? "${env.GITLAB_GROUP}/k8s-deployments" : "p2c/k8s-deployments"
+            def projectPath = "${env.GITLAB_GROUP}/k8s-deployments"
             def encodedProject = projectPath.replace('/', '%2F')
 
             withCredentials([
@@ -586,7 +586,7 @@ Build: ${env.BUILD_URL}
 =======================================================
 """
                         // Validate required environment variables from ConfigMap
-                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'DOCKER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
+                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DOCKER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
                         env.ORIGINAL_COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                         echo "Commit SHA: ${env.ORIGINAL_COMMIT_SHA}"
@@ -619,17 +619,13 @@ Build: ${env.BUILD_URL}
                             }
                         }
 
-                        if (!env.GITLAB_URL) {
-                            error "GITLAB_URL_INTERNAL not set. Configure pipeline-config ConfigMap."
-                        }
-
                         // Determine branch type and MR status
                         env.IS_ENV_BRANCH = (env.BRANCH_NAME in ENV_BRANCHES) ? 'true' : 'false'
                         env.HAS_OPEN_MR = 'false'
                         env.MR_TARGET_ENV = ''
 
                         withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
-                            def projectPath = env.GITLAB_GROUP ? "${env.GITLAB_GROUP}/k8s-deployments" : "p2c/k8s-deployments"
+                            def projectPath = "${env.GITLAB_GROUP}/k8s-deployments"
                             def mrTarget = getMRTargetEnvironment(env.BRANCH_NAME, projectPath)
                             if (mrTarget) {
                                 env.HAS_OPEN_MR = 'true'
@@ -888,7 +884,7 @@ Build: ${env.BUILD_URL}
                 container('pipeline') {
                     reportGitLabStatus('success', 'jenkins/k8s-deployments',
                         env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA,
-                        "${env.GITLAB_GROUP ?: 'p2c'}/k8s-deployments")
+                        "${env.GITLAB_GROUP}/k8s-deployments")
                 }
             }
         }
@@ -906,7 +902,7 @@ Check logs above for error details.
                 container('pipeline') {
                     reportGitLabStatus('failed', 'jenkins/k8s-deployments',
                         env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA,
-                        "${env.GITLAB_GROUP ?: 'p2c'}/k8s-deployments")
+                        "${env.GITLAB_GROUP}/k8s-deployments")
                 }
             }
         }

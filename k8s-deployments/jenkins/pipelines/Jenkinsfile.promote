@@ -57,7 +57,7 @@ def withGitCredentials(String repoDir = null, Closure body) {
 def validateRequiredEnvVars(List<String> vars) {
     def missing = vars.findAll { !env."${it}" }
     if (missing) {
-        error "Missing required ConfigMap variables: ${missing.join(', ')}. Check pipeline-config ConfigMap in Jenkins namespace."
+        error "Missing required pipeline environment variables: ${missing.join(', ')}. Check pipeline-config ConfigMap in Jenkins namespace."
     }
 }
 
@@ -133,8 +133,8 @@ spec:
         // External registry for deployment manifests (what kubelet uses to pull)
         DEPLOY_REGISTRY = "${env.DOCKER_REGISTRY_EXTERNAL ?: ''}"
 
-        // Application group (Docker registry path segment, matches GitLab group)
-        APP_GROUP = 'p2c'
+        // Container registry path prefix (e.g., 'p2c' for registry/p2c/example-app)
+        APP_GROUP = "${env.CONTAINER_REGISTRY_PATH_PREFIX ?: ''}"
 
         // Credentials
         GITLAB_CREDENTIALS = credentials('gitlab-credentials')
@@ -149,7 +149,7 @@ spec:
                         echo "=== Validate Promotion Parameters ==="
 
                         // Validate required environment variables
-                        validateRequiredEnvVars(['GITLAB_URL', 'GITLAB_GROUP', 'DEPLOYMENT_REPO', 'DEPLOY_REGISTRY'])
+                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'DOCKER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
                         // Validate promotion path
                         def validPromotions = [

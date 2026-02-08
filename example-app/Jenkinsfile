@@ -39,7 +39,7 @@ def withGitCredentials(String repoDir = null, Closure body) {
 def validateRequiredEnvVars(List<String> vars) {
     def missing = vars.findAll { !env."${it}" }
     if (missing) {
-        error "Missing required ConfigMap variables: ${missing.join(', ')}. Check pipeline-config ConfigMap in Jenkins namespace."
+        error "Missing required pipeline environment variables: ${missing.join(', ')}. Check pipeline-config ConfigMap in Jenkins namespace."
     }
 }
 
@@ -263,7 +263,7 @@ spec:
     environment {
         // Application metadata
         APP_NAME = 'example-app'
-        APP_GROUP = 'p2c'
+        APP_GROUP = "${env.CONTAINER_REGISTRY_PATH_PREFIX ?: ''}"
 
         // Container registry - use external URL (nodes trust it, no CA changes needed)
         CONTAINER_REGISTRY = "${env.DOCKER_REGISTRY_EXTERNAL ?: ''}"
@@ -295,7 +295,7 @@ spec:
                         echo "=== Checkout & Setup ==="
 
                         // Validate required environment variables from ConfigMap
-                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'DEPLOYMENTS_REPO_URL', 'DOCKER_REGISTRY_EXTERNAL'])
+                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'DOCKER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
                         // Extract version from pom.xml
                         env.APP_VERSION = sh(
@@ -330,7 +330,7 @@ spec:
                         echo "✓ Deploy target: ${env.FULL_IMAGE}"
 
                         // Report "pending" status to GitLab so MR shows pipeline is running
-                        reportGitLabStatus('pending', 'jenkins/example-app', env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP ?: 'p2c'}/example-app")
+                        reportGitLabStatus('pending', 'jenkins/example-app', env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP}/example-app")
                     }
                 }
             }
@@ -479,7 +479,7 @@ Build URL: ${env.BUILD_URL}
 """
                 // Report success status to GitLab
                 container('maven') {
-                    reportGitLabStatus('success', 'jenkins/example-app', env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP ?: 'p2c'}/example-app")
+                    reportGitLabStatus('success', 'jenkins/example-app', env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP}/example-app")
                 }
             }
         }
@@ -496,7 +496,7 @@ Check logs above for error details
 """
                 // Report failure status to GitLab
                 container('maven') {
-                    reportGitLabStatus('failed', 'jenkins/example-app', env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP ?: 'p2c'}/example-app")
+                    reportGitLabStatus('failed', 'jenkins/example-app', env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP}/example-app")
                 }
             }
         }
