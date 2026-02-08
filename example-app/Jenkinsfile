@@ -169,10 +169,18 @@ Image: ${FULL_IMAGE}"
                             fi
                         '''
 
-                        // Push feature branch and create merge request
+                        // Push feature branch and create merge request (skip if no changes - JENKINS-18)
                         sh '''
                             cd k8s-deployments
                             FEATURE_BRANCH="${DEPLOY_BRANCH_PREFIX}-${IMAGE_TAG}"
+
+                            # Skip push and MR if the update block detected no changes.
+                            # The marker file is written by the commit block above when
+                            # git diff --cached --quiet indicates nothing was staged (JENKINS-18).
+                            if [ -f "${WORKSPACE}/.no-changes-${BUILD_NUMBER}" ]; then
+                                echo "Skipping push and MR creation - no changes detected."
+                                exit 0
+                            fi
 
                             # Delete remote branch if it exists, then push fresh
                             git push origin --delete "${FEATURE_BRANCH}" 2>/dev/null || echo "Branch does not exist remotely"
