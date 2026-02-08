@@ -498,6 +498,12 @@ Build: ${env.BUILD_URL}"
 // MAIN PIPELINE
 // ============================================================================
 
+// Agent image from system environment (set via ConfigMap envFrom).
+// System.getenv() is required here because this runs at Groovy parse time,
+// before the pipeline environment block is evaluated.
+def agentImage = System.getenv('JENKINS_AGENT_IMAGE')
+if (!agentImage) { error "JENKINS_AGENT_IMAGE not set - check pipeline-config ConfigMap" }
+
 pipeline {
     agent {
         kubernetes {
@@ -507,7 +513,7 @@ kind: Pod
 spec:
   containers:
   - name: pipeline
-    image: ${env.JENKINS_AGENT_IMAGE}
+    image: ${agentImage}
     command:
     - cat
     tty: true

@@ -61,7 +61,9 @@ def validateRequiredEnvVars(List<String> vars) {
     }
 }
 
-// Agent image from environment (ConfigMap)
+// Agent image from system environment (set via ConfigMap envFrom).
+// System.getenv() is required here because this runs at Groovy parse time,
+// before the pipeline environment block is evaluated.
 def agentImage = System.getenv('JENKINS_AGENT_IMAGE')
 if (!agentImage) {
     error "JENKINS_AGENT_IMAGE environment variable is required but not set. Configure it in the pipeline-config ConfigMap."
@@ -124,12 +126,12 @@ spec:
 
     environment {
         // Git repositories (from pipeline-config ConfigMap)
-        GITLAB_URL = System.getenv('GITLAB_URL_INTERNAL')
-        GITLAB_GROUP = System.getenv('GITLAB_GROUP')
-        DEPLOYMENT_REPO = System.getenv('DEPLOYMENTS_REPO_URL')
+        GITLAB_URL = "${env.GITLAB_URL_INTERNAL ?: ''}"
+        GITLAB_GROUP = "${env.GITLAB_GROUP ?: ''}"
+        DEPLOYMENT_REPO = "${env.DEPLOYMENTS_REPO_URL ?: ''}"
 
         // External registry for deployment manifests (what kubelet uses to pull)
-        DEPLOY_REGISTRY = System.getenv('DOCKER_REGISTRY_EXTERNAL')
+        DEPLOY_REGISTRY = "${env.DOCKER_REGISTRY_EXTERNAL ?: ''}"
 
         // Application group (Docker registry path segment, matches GitLab group)
         APP_GROUP = 'p2c'
