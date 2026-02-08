@@ -83,7 +83,7 @@ def reportGitLabStatus(String state, String context, String commitSha, String pr
  * @param mrDescription Detailed description for the merge request
  */
 def deployToEnvironment(String environment, String branchPrefix, String mrTitle, String mrDescription) {
-    container('maven') {
+    container('pipeline') {
         script {
             echo "[${environment.toUpperCase()}] Creating environment update and MR..."
 
@@ -242,7 +242,7 @@ apiVersion: v1
 kind: Pod
 spec:
   containers:
-  - name: maven
+  - name: pipeline
     image: ${agentImage}
     command:
     - cat
@@ -311,7 +311,7 @@ spec:
         stage('Checkout & Setup') {
             steps {
                 checkout scm
-                container('maven') {
+                container('pipeline') {
                     script {
                         echo "=== Checkout & Setup ==="
 
@@ -359,7 +359,7 @@ spec:
 
         stage('Unit Tests') {
             steps {
-                container('maven') {
+                container('pipeline') {
                     timeout(time: 15, unit: 'MINUTES') {
                         echo "=== Running Unit Tests ==="
                         sh 'mvn clean test'
@@ -378,7 +378,7 @@ spec:
                 expression { return !params.SKIP_INTEGRATION_TESTS }
             }
             steps {
-                container('maven') {
+                container('pipeline') {
                     timeout(time: 20, unit: 'MINUTES') {
                         echo "=== Running Integration Tests ==="
                         sh 'mvn verify -DskipITs=false'
@@ -394,7 +394,7 @@ spec:
 
         stage('Build & Publish') {
             steps {
-                container('maven') {
+                container('pipeline') {
                     script {
                         timeout(time: 30, unit: 'MINUTES') {
                             echo "=== Building and Publishing Artifacts ==="
@@ -499,7 +499,7 @@ Build URL: ${env.BUILD_URL}
 =======================================================
 """
                 // Report success status to GitLab
-                container('maven') {
+                container('pipeline') {
                     reportGitLabStatus('success', 'jenkins/example-app', env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP}/example-app")
                 }
             }
@@ -516,13 +516,13 @@ Check logs above for error details
 =======================================================
 """
                 // Report failure status to GitLab
-                container('maven') {
+                container('pipeline') {
                     reportGitLabStatus('failed', 'jenkins/example-app', env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP}/example-app")
                 }
             }
         }
         always {
-            container('maven') {
+            container('pipeline') {
                 script {
                     // Cleanup temporary files and credentials
                     sh '''
