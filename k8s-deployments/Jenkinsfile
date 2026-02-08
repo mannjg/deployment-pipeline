@@ -416,29 +416,23 @@ def createPromotionMR(String sourceEnv) {
                         git checkout -b "\${PROMOTION_BRANCH}"
 
                         # Promote app config from source to target
-                        ./scripts/promote-app-config.sh ${sourceEnv} ${targetEnv} || {
-                            echo "ERROR: App config promotion failed"
-                            exit 1
-                        }
-
-                        # Update image tag in env.cue with promoted version (if we have one)
+                        # If we have a promoted image tag, pass it as an override so
+                        # promote-app-config.sh writes the correct promoted image (e.g., RC)
+                        # instead of the source image (e.g., SNAPSHOT)
                         NEW_IMAGE_TAG="${newImageTag}"
+                        IMAGE_OVERRIDE_FLAG=""
                         if [ -n "\${NEW_IMAGE_TAG}" ]; then
-                            # Use external registry URL (HTTPS) - internal URL isn't resolvable from kubelet
                             REGISTRY="\${DOCKER_REGISTRY_EXTERNAL}"
                             PATH_PREFIX="\${CONTAINER_REGISTRY_PATH_PREFIX}"
                             NEW_IMAGE="\${REGISTRY}/\${PATH_PREFIX}/example-app:\${NEW_IMAGE_TAG}"
-
-                            echo "Updating env.cue with new image: \${NEW_IMAGE}"
-
-                            # Use sed to update the image field
-                            # Note: \\\" escapes through both Groovy and shell to produce literal "
-                            sed -i "s|image:.*example-app:[^\\\"]*\\\"|image: \\\"\${NEW_IMAGE}\\\"|" env.cue
-
-                            # Verify the update
-                            echo "Updated image in env.cue:"
-                            grep "image:" env.cue
+                            IMAGE_OVERRIDE_FLAG="--image-override example-app=\${NEW_IMAGE}"
+                            echo "Promoting with image override: \${NEW_IMAGE}"
                         fi
+
+                        ./scripts/promote-app-config.sh \${IMAGE_OVERRIDE_FLAG} ${sourceEnv} ${targetEnv} || {
+                            echo "ERROR: App config promotion failed"
+                            exit 1
+                        }
 
                         # Regenerate manifests with promoted config
                         ./scripts/generate-manifests.sh ${targetEnv} || {
