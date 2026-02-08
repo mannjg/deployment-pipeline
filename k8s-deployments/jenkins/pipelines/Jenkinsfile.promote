@@ -389,7 +389,6 @@ Check logs above for error details
                     // Cleanup temporary files and credentials
                     sh '''
                         echo "Performing cleanup..."
-                        git config --global --unset credential.helper || true
                         rm -rf k8s-deployments || true
                         echo "Cleanup completed"
                     '''
