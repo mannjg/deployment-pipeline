@@ -35,11 +35,8 @@ def withGitCredentials(String repoDir = null, Closure body) {
         """
         body()
     } finally {
-        sh """
-            ${gitCmd} --unset credential.helper || true
-            ${gitCmd} --unset user.name || true
-            ${gitCmd} --unset user.email || true
-        """
+        // No cleanup needed: Jenkins agents are ephemeral Kubernetes pods
+        // destroyed after each build. Credentials die with the pod.
     }
 }
 
