@@ -136,6 +136,8 @@ Add delete-before-push to match the `deployToEnvironment` pattern.
 
 ## JENKINS-18: Skip MR creation when deployToEnvironment has no changes
 
+**Status: Implemented**
+
 **Files:** `example-app/Jenkinsfile` (`deployToEnvironment` function)
 
 **Problem:** Line 148 uses `git commit ... || echo "No changes to commit"`. If the image tag matches what's already on the branch (e.g., rebuild of same commit), the commit silently no-ops. Lines 152-169 then push an empty branch and create an MR with no diff. The operator sees "MR created successfully" for an empty MR.

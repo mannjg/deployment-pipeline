@@ -1,7 +1,7 @@
 # JENKINS-18: Skip MR creation when deployToEnvironment has no changes
 
 **Date:** 2026-02-08
-**Status:** Design
+**Status:** Implemented
 **Files:** `example-app/Jenkinsfile` (`deployToEnvironment` function)
 
 ## Problem
