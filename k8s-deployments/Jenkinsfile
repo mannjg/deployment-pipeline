@@ -73,10 +73,12 @@ def reportGitLabStatus(String state, String context, String commitSha, String pr
 
     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
         sh """
+            JSON_PAYLOAD=\$(jq -n --arg state "${state}" --arg desc "${description}" --arg ctx "${context}" \
+                '{state: \$state, description: \$desc, context: \$ctx}')
             curl -s -X POST \
                 -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
                 -H "Content-Type: application/json" \
-                -d '{"state": "${state}", "description": "${description}", "context": "${context}"}' \
+                -d "\${JSON_PAYLOAD}" \
                 "${env.GITLAB_URL}/api/v4/projects/${encodedProject}/statuses/${commitSha}" \
                 || echo "Could not update commit status (non-fatal)"
         """
