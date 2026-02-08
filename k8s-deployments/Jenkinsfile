@@ -618,6 +618,19 @@ Build: ${env.BUILD_URL}
                         env.ORIGINAL_COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                         echo "Commit SHA: ${env.ORIGINAL_COMMIT_SHA}"
 
+                        // JENKINS-20: Skip redundant builds triggered by manifest push
+                        // The Generate Manifests stage pushes [jenkins-ci] commits back to feature
+                        // branches, which triggers the webhook again. Detect and skip these.
+                        if (env.BRANCH_NAME && !(env.BRANCH_NAME in ENV_BRANCHES)) {
+                            def lastCommitMsg = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
+                            if (lastCommitMsg.contains('[jenkins-ci]')) {
+                                currentBuild.result = 'NOT_BUILT'
+                                currentBuild.description = 'Skipped: CI-generated commit'
+                                echo "Skipping build: last commit is CI-generated ([jenkins-ci] marker found)"
+                                return
+                            }
+                        }
+
                         // Check for [no-promote] flag in the current merge only
                         // For merge commits: check commits from the merged branch (HEAD^1..HEAD^2)
                         // For direct pushes: check just HEAD
