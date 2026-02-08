@@ -374,7 +374,7 @@ def createPromotionMR(String sourceEnv) {
                 if (gitHash) {
                     // sh """ required: mixes Groovy-interpolated config (${env.*}, ${sourceEnv})
                     // with \${}-escaped credentials (NEXUS_USER, NEXUS_PASSWORD, GITLAB_TOKEN)
-                    newImageTag = sh(
+                    def promoteRc = sh(
                         script: """
                             export NEXUS_USER="\${NEXUS_USER}"
                             export NEXUS_PASSWORD="\${NEXUS_PASSWORD}"
@@ -389,17 +389,17 @@ def createPromotionMR(String sourceEnv) {
                                 --target-env ${targetEnv} \
                                 --app-name example-app \
                                 --git-hash ${gitHash} \
-                                2>&1 | tee /tmp/promote.log | tail -1
+                                2>&1 | tee /tmp/promote.log
                         """,
-                        returnStdout: true
-                    ).trim()
+                        returnStatus: true
+                    )
 
-                    // Check for script failures - look for "not set" error messages or empty output
-                    if (!newImageTag || newImageTag.contains("not set") || newImageTag.contains("ERROR") || newImageTag.contains("[")) {
+                    if (promoteRc != 0) {
                         echo "Artifact promotion output:"
                         sh "cat /tmp/promote.log || true"
                         error "Artifact promotion failed - cannot create promotion MR without valid image tag. If release version already exists in Nexus, bump the version in pom.xml."
                     }
+                    newImageTag = readFile('/tmp/promoted-image-tag').trim()
                     echo "New image tag for ${targetEnv}: ${newImageTag}"
                 }
 

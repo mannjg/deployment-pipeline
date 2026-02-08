@@ -28,6 +28,9 @@ preflight_check_command "jq" "https://stedolan.github.io/jq/download/"
 preflight_check_command "docker" "https://docs.docker.com/get-docker/"
 preflight_check_command "mvn" "https://maven.apache.org/install.html"
 
+# Output file for promoted image tag (read by Jenkinsfile)
+PROMOTED_IMAGE_TAG_FILE="/tmp/promoted-image-tag"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -78,9 +81,9 @@ Example:
   $0 --source-env dev --target-env stage --app-name example-app --git-hash abc123f
 
 Output:
-  On success, prints the new image tag as the last line of stdout.
-  All other output goes to stderr for easy capture:
-    NEW_TAG=\$($0 --source-env dev --target-env stage --app-name example-app --git-hash abc123)
+  On success, writes the new image tag to /tmp/promoted-image-tag.
+  Exit code 0 indicates success; non-zero indicates failure.
+  All log output goes to stderr.
 EOF
     exit 0
 }
@@ -239,7 +242,7 @@ SETTINGS_EOF
 }
 
 # Cleanup temporary files (Maven settings and temp directory)
-# Note: Silent cleanup to avoid interfering with stdout output that Jenkinsfile captures
+# Note: Does NOT clean up PROMOTED_IMAGE_TAG_FILE - that must persist for Jenkinsfile to read
 cleanup_temp_files() {
     if [[ -n "${MAVEN_SETTINGS_FILE:-}" && -f "$MAVEN_SETTINGS_FILE" ]]; then
         rm -f "$MAVEN_SETTINGS_FILE"
@@ -470,6 +473,9 @@ main() {
     log_info "=== Artifact Promotion: $SOURCE_ENV -> $TARGET_ENV ==="
     log_info "App: $APP_NAME, Git Hash: $GIT_HASH"
 
+    # Remove stale output file from previous runs
+    rm -f "$PROMOTED_IMAGE_TAG_FILE"
+
     # Create Maven settings for Nexus access
     create_maven_settings
     # Cleanup on early exit (errors) - for success path, cleanup is called manually
@@ -511,7 +517,7 @@ main() {
 
                 if [[ "$current_stage_hash" == "$GIT_HASH" ]]; then
                     log_info "Same git hash already in stage - skipping promotion"
-                    echo "$current_stage_tag"
+                    echo "$current_stage_tag" > "$PROMOTED_IMAGE_TAG_FILE"
                     exit 0
                 fi
             fi
@@ -577,12 +583,9 @@ main() {
     log_info "=== Promotion Complete ==="
     log_info "New image tag: $target_image_tag"
 
-    # Cleanup before final output to ensure tag is the last line
-    cleanup_temp_files
-
-    # Output the new image tag (for caller to capture)
-    # MUST be the absolute last line of output for Jenkinsfile to capture
-    echo "$target_image_tag"
+    # Write the promoted image tag to a well-known file for Jenkinsfile to read
+    echo "$target_image_tag" > "$PROMOTED_IMAGE_TAG_FILE"
+    log_info "Wrote promoted image tag to $PROMOTED_IMAGE_TAG_FILE"
 }
 
 main
