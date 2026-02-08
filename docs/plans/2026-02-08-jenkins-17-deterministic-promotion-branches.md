@@ -1,7 +1,7 @@
 # JENKINS-17: Deterministic Promotion Branch Names with Stale MR Cleanup
 
 **Date:** 2026-02-08
-**Status:** Approved
+**Status:** Implemented
 **Scope:** `k8s-deployments/Jenkinsfile` — `createPromotionMR` function
 
 ## Problem
