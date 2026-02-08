@@ -533,6 +533,7 @@ Check logs above for error details
                         git config --global --unset credential.helper || true
                         rm -rf k8s-deployments || true
                         rm -f /tmp/maven-settings.xml || true
+                        rm -f "${WORKSPACE}"/.no-changes-* || true
                         echo "✓ Cleanup completed"
                     '''
                 }
