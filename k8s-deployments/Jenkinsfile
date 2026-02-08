@@ -437,8 +437,11 @@ def createPromotionMR(String sourceEnv) {
                         git fetch origin ${sourceEnv} ${targetEnv}
 
                         # Create promotion branch from target
+                        # Branch convention: promote-{env}-{appVersion}-{timestamp}
+                        # App version extracted from image tag by stripping trailing git hash
+                        APP_VERSION=\$(echo "${imageTag}" | sed 's/-[a-f0-9]\\{6,\\}\$//')
                         TIMESTAMP=\$(date +%Y%m%d-%H%M%S)
-                        PROMOTION_BRANCH="${PROMOTE_BRANCH_PREFIX}${targetEnv}-\${TIMESTAMP}"
+                        PROMOTION_BRANCH="${PROMOTE_BRANCH_PREFIX}${targetEnv}-\${APP_VERSION}-\${TIMESTAMP}"
 
                         git checkout -B ${targetEnv} origin/${targetEnv}
                         git checkout -b "\${PROMOTION_BRANCH}"
