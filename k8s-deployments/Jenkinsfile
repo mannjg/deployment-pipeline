@@ -545,7 +545,7 @@ def createPromotionMR(String sourceEnv) {
                     error "Cannot create promotion MR: no image tag found in ${sourceEnv} env.cue"
                 }
 
-                withGitCredentials {
+                withGitCredentials('.') {
                     createPromotionBranchAndMR(sourceEnv, targetEnv, imageTag, newImageTag)
                 }
             }
@@ -744,7 +744,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                                             usernameVariable: 'GIT_USERNAME',
                                             passwordVariable: 'GIT_PASSWORD')
                         ]) {
-                            withGitCredentials {
+                            withGitCredentials('.') {
                                 if (!mergeTargetBranchForPreview(env.MR_TARGET_ENV, isPromoteBranch)) {
                                     error "Could not merge ${env.MR_TARGET_ENV} - cannot proceed"
                                 }
@@ -811,7 +811,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                                             usernameVariable: 'GIT_USERNAME',
                                             passwordVariable: 'GIT_PASSWORD')
                         ]) {
-                            withGitCredentials {
+                            withGitCredentials('.') {
                                 sh """
                                     git add manifests/ 2>/dev/null || true
 
