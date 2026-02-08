@@ -42,10 +42,19 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_debug() { echo -e "${BLUE}[DEBUG]${NC} $1"; }
 
+# Convert kebab-case app name to camelCase CUE identifier
+# e.g., example-app -> exampleApp, my-service -> myService
+# Duplicated from update-app-image.sh for standalone use
+convert_to_camel_case() {
+    local input="$1"
+    echo "$input" | sed -E 's/([-_])([a-z])/\U\2/g' | sed 's/^./\L&/'
+}
+
 # Parse arguments
 SOURCE_ENV=""
 TARGET_ENV=""
 ONLY_APPS=""
+declare -A IMAGE_OVERRIDES
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -63,16 +72,32 @@ while [[ $# -gt 0 ]]; do
             echo "  --only-apps <apps>  Comma-separated list of CUE identifiers to promote"
             echo "                      (e.g., exampleApp,postgres). If omitted, all apps"
             echo "                      are promoted."
+            echo "  --image-override <app>=<image>"
+            echo "                      Use <image> instead of the source environment's image"
+            echo "                      for <app>. App name can be kebab-case (example-app) or"
+            echo "                      camelCase (exampleApp). Can be specified multiple times."
             echo "  -h, --help          Show this help message"
             echo ""
             echo "Example:"
             echo "  git checkout stage"
             echo "  $0 dev stage"
             echo "  $0 --only-apps exampleApp dev stage"
+            echo "  $0 --image-override example-app=docker.local/p2c/example-app:1.0.0-rc1-abc123 dev stage"
             exit 0
             ;;
         --only-apps)
             ONLY_APPS="$2"
+            shift 2
+            ;;
+        --image-override)
+            override_spec="$2"
+            if [[ "$override_spec" != *=* ]]; then
+                log_error "--image-override value must be in format: app-name=image"
+                exit 1
+            fi
+            override_app="${override_spec%%=*}"
+            override_image="${override_spec#*=}"
+            IMAGE_OVERRIDES["$(convert_to_camel_case "$override_app")"]="$override_image"
             shift 2
             ;;
         *)
@@ -235,8 +260,14 @@ for APP in $APPS; do
 
     # 1. Update image if present
     if [[ -n "$SOURCE_IMAGE" ]]; then
-        log_info "  Updating image: $SOURCE_IMAGE"
-        "${SCRIPT_DIR}/update-app-image.sh" "$TARGET_ENV" "$APP" "$SOURCE_IMAGE" || {
+        if [[ -n "${IMAGE_OVERRIDES[$APP]+_}" ]]; then
+            EFFECTIVE_IMAGE="${IMAGE_OVERRIDES[$APP]}"
+            log_info "  Updating image (override): $EFFECTIVE_IMAGE"
+        else
+            EFFECTIVE_IMAGE="$SOURCE_IMAGE"
+            log_info "  Updating image: $EFFECTIVE_IMAGE"
+        fi
+        "${SCRIPT_DIR}/update-app-image.sh" "$TARGET_ENV" "$APP" "$EFFECTIVE_IMAGE" || {
             log_error "Failed to update image for $APP"
             mv "$BACKUP_FILE" env.cue
             exit 1
