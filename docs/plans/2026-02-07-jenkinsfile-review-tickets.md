@@ -24,29 +24,6 @@ The k8s-deployments pipeline correctly uses a DinD sidecar instead.
 
 ---
 
-## JENKINS-12: Standardize environment variable access pattern
-
-**Files:** `example-app/Jenkinsfile`, `k8s-deployments/Jenkinsfile`, `k8s-deployments/jenkins/pipelines/Jenkinsfile.promote`
-
-**Problem:** Three different patterns for reading ConfigMap variables:
-
-| Pattern | Where |
-|---|---|
-| `"${env.GITLAB_URL_INTERNAL ?: ''}"` | example-app, k8s-deployments `environment` blocks |
-| `System.getenv('GITLAB_URL_INTERNAL')` | Jenkinsfile.promote `environment` block |
-| `env.JENKINS_AGENT_IMAGE` (bare) | k8s-deployments pod YAML (line 483) |
-
-`System.getenv()` reads the JVM process environment at parse time; `env.` reads Jenkins' environment model at runtime. They can diverge.
-
-**Fix:** Standardize on `env.X ?: ''` pattern everywhere. Replace `System.getenv()` calls in Jenkinsfile.promote environment block. For the agent image read at parse time (outside `pipeline {}` block), `System.getenv()` is necessary — document why in a comment.
-
-**Acceptance criteria:**
-- All `environment {}` blocks use the `"${env.X ?: ''}"` pattern
-- `System.getenv()` is only used where required (agent image before pipeline block) and has a comment explaining why
-- No bare `env.X` references in string interpolations where null would break (e.g., pod YAML)
-
----
-
 ## JENKINS-13: Fix validateRequiredEnvVars — check ConfigMap names, fix error message
 
 **Files:** `example-app/Jenkinsfile`, `k8s-deployments/Jenkinsfile`, `k8s-deployments/jenkins/pipelines/Jenkinsfile.promote`
@@ -404,3 +381,55 @@ done
 **Acceptance criteria:**
 - Maven settings file is scoped to the block that needs it (not written to a shared temp path)
 - No cleanup code needed for the settings file
+
+---
+
+## JENKINS-29: Standardize infrastructure variable and credential naming
+
+**Files:** `config/infra.env`, `config/clusters/*.env`, `scripts/02-configure/configure-jenkins-global-env.sh`, `scripts/01-infrastructure/setup-jenkins-credentials.sh`, `example-app/Jenkinsfile`, `k8s-deployments/Jenkinsfile`, `k8s-deployments/jenkins/pipelines/Jenkinsfile.promote`, and ~17 scripts under `scripts/`
+
+**Problem:** Infrastructure variable names mix product names (Docker, Nexus) with functional names (container, maven). The preference is functional names — they describe *what the thing does*, not *what product provides it*:
+
+- `DOCKER_REGISTRY_EXTERNAL` / `DOCKER_REGISTRY_INTERNAL` — these are container registries, not necessarily Docker
+- `NEXUS_URL_INTERNAL` / `NEXUS_URL_EXTERNAL` — used as Maven repository URLs, not Nexus-specific operations
+- `nexus-credentials` / `docker-registry-credentials` — Jenkins credential IDs that reference products instead of roles
+
+This inconsistency makes it harder to swap implementations (e.g., replace Nexus with Artifactory, or use a non-Docker registry) and confuses new users about what each variable controls.
+
+**Environment variable renames:**
+
+| Current Name | New Name | Rationale |
+|-------------|----------|-----------|
+| `DOCKER_REGISTRY_EXTERNAL` | `CONTAINER_REGISTRY_EXTERNAL` | Functional: container registry, not Docker-specific |
+| `DOCKER_REGISTRY_INTERNAL` | `CONTAINER_REGISTRY_INTERNAL` | Same |
+| `DOCKER_REGISTRY_HOST` | `CONTAINER_REGISTRY_HOST` | Same (infra.env only) |
+| `NEXUS_URL_INTERNAL` | `MAVEN_REPO_URL_INTERNAL` | Functional: Maven artifact repository |
+| `NEXUS_URL_EXTERNAL` | `MAVEN_REPO_URL_EXTERNAL` | Same |
+| `NEXUS_HOST_INTERNAL` | `MAVEN_REPO_HOST_INTERNAL` | Same (infra.env only) |
+| `NEXUS_HOST_EXTERNAL` | `MAVEN_REPO_HOST_EXTERNAL` | Same (infra.env only) |
+
+**Jenkins credential ID renames:**
+
+| Current ID | New ID | Rationale |
+|-----------|--------|-----------|
+| `nexus-credentials` | `maven-repo-credentials` | Functional role, not product name |
+| `docker-registry-credentials` | `container-registry-credentials` | Functional role, not product name |
+
+**Out of scope:** Nexus product-admin resources (`nexus-admin-credentials` K8s secret, `NEXUS_NAMESPACE`, `NEXUS_ADMIN_*` vars, `configure-nexus.sh`). These configure the Nexus server itself — the product name is correct there.
+
+**Fix:**
+1. Rename variables in `config/infra.env` and `config/clusters/*.env`
+2. Update the Groovy list in `configure-jenkins-global-env.sh`
+3. Update credential IDs in `setup-jenkins-credentials.sh`
+4. Update all three Jenkinsfiles (pipeline `environment` blocks, `credentials()` calls, validation lists, usage)
+5. Update all scripts that reference the old names
+6. Update `CLAUDE.md` and docs if they reference old names
+
+**Acceptance criteria:**
+- No `DOCKER_REGISTRY_*` or `NEXUS_URL_*` variable names in infra.env, ConfigMap config, or Jenkinsfiles
+- `CONTAINER_REGISTRY_*` used consistently for registry URLs
+- `MAVEN_REPO_URL_*` used consistently for artifact repository URLs
+- Jenkins credential IDs use functional names (`maven-repo-credentials`, `container-registry-credentials`)
+- `setup-jenkins-credentials.sh` creates credentials with new IDs
+- All scripts and Jenkinsfiles use the new names
+- Bootstrap and demo scripts still work end-to-end
