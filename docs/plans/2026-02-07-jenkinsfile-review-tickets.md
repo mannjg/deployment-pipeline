@@ -24,33 +24,6 @@ The k8s-deployments pipeline correctly uses a DinD sidecar instead.
 
 ---
 
-## JENKINS-20: Prevent manifest push from triggering redundant webhook build
-
-**Files:** `k8s-deployments/Jenkinsfile`
-
-**Problem:** Line 727 pushes manifests to the feature branch, which triggers the GitLab webhook, which triggers the auto-promote router, which could trigger another k8s-deployments build. The second build queues (due to `disableConcurrentBuilds`), runs, finds no changes, and exits. Not broken, but wastes resources and confuses operators who see two builds per change.
-
-**Options:**
-1. Add `[ci skip]` or `[jenkins-ci]` to the commit message AND check for it in the Initialize stage
-2. Configure the GitLab webhook to ignore pushes from the Jenkins user
-3. Accept the extra build (it's cheap and self-correcting)
-
-**Recommendation:** Option 1 is the most portable. The commit message already contains `[jenkins-ci]` (line 723). Add a check in the Initialize stage:
-```groovy
-def lastCommitMsg = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
-if (lastCommitMsg.contains('[jenkins-ci]')) {
-    currentBuild.result = 'NOT_BUILT'
-    currentBuild.description = 'Skipped: CI-generated commit'
-    return
-}
-```
-
-**Acceptance criteria:**
-- Manifest push commit does not trigger a second build
-- Manual pushes and MR merges still trigger builds normally
-
----
-
 ## JENKINS-21: Refactor createPromotionMR into smaller functions
 
 **Files:** `k8s-deployments/Jenkinsfile`
