@@ -24,30 +24,6 @@ The k8s-deployments pipeline correctly uses a DinD sidecar instead.
 
 ---
 
-## JENKINS-21: Refactor createPromotionMR into smaller functions
-
-**Files:** `k8s-deployments/Jenkinsfile`
-
-**Depends on:** JENKINS-15, JENKINS-16, JENKINS-17 (functional fixes to createPromotionMR should land first)
-
-**Problem:** `createPromotionMR` (lines 274-468) is a 195-line function performing 5+ distinct operations: check existing MRs, extract image tags, promote artifacts, create branch + update config + generate manifests, push + create MR. This is difficult to read, test, and debug.
-
-The promote pipeline (`Jenkinsfile.promote`) does the same work but structured as discrete pipeline stages, which is much clearer.
-
-**Fix:** Extract into functions matching the logical steps:
-- `findExistingPromotionMR(targetEnv)` → returns MR IID or null
-- `extractSourceImageTag(sourceEnv)` → returns image tag
-- `promoteArtifacts(sourceEnv, targetEnv, gitHash)` → returns new image tag
-- `createPromotionBranch(sourceEnv, targetEnv, imageTag)` → creates branch, commits, pushes
-- `createPromotionMR` becomes an orchestrator calling these functions
-
-**Acceptance criteria:**
-- No function exceeds ~50 lines
-- Each function has a clear single responsibility
-- Existing behavior is preserved (validate with a promotion dry-run)
-
----
-
 ## JENKINS-22: Remove dead credential cleanup and container naming consistency
 
 **Files:** `example-app/Jenkinsfile`, `k8s-deployments/Jenkinsfile`, `k8s-deployments/jenkins/pipelines/Jenkinsfile.promote`
