@@ -294,7 +294,7 @@ def closeStalePromotionMRs(String encodedProject, String targetEnv) {
             STALE_MRS=$(curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
                 "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/merge_requests?state=opened&target_branch=${PROMO_TARGET}" \
                 2>/dev/null | jq -r --arg prefix "${PROMO_PREFIX}${PROMO_TARGET}-" \
-                '[.[] | select(.source_branch | startswith($prefix))] | .[] | "\(.iid) \(.source_branch)"')
+                '[.[] | select(.source_branch | startswith($prefix))] | .[] | "\\(.iid) \\(.source_branch)"')
 
             if [ -z "${STALE_MRS}" ]; then
                 echo "No stale promotion MRs found for ${PROMO_TARGET}"
