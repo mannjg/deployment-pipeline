@@ -24,31 +24,6 @@ The k8s-deployments pipeline correctly uses a DinD sidecar instead.
 
 ---
 
----
-
-## JENKINS-27: Close superseded MRs on new build
-
-**Files:** `example-app/Jenkinsfile` (`deployToEnvironment` function)
-
-**Problem:** If two commits to example-app/main land in quick succession, both builds create MRs to k8s-deployments dev with different image tags. The operator sees two open MRs and must know to merge only the latest. Stale MRs accumulate.
-
-**Fix:** Before creating a new MR in `deployToEnvironment`, query GitLab for open MRs with the same `update-dev-` prefix targeting the same branch. Close them with a comment explaining they've been superseded:
-```bash
-# Close superseded MRs
-EXISTING_MRS=$(curl -sf ... | jq -r '.[] | select(.source_branch | startswith("update-dev-")) | .iid')
-for mr_iid in $EXISTING_MRS; do
-    curl -sf -X PUT ... -d '{"state_event": "close"}' ...
-    # Add comment: "Superseded by update-dev-${IMAGE_TAG}"
-done
-```
-
-**Acceptance criteria:**
-- When a new deployment MR is created, any prior open MRs with the same prefix to the same target are closed
-- Closed MRs have a comment indicating which MR superseded them
-- Already-merged MRs are not affected
-
----
-
 ## JENKINS-28: Replace /tmp/maven-settings.xml with scoped credential pattern
 
 **Files:** `example-app/Jenkinsfile`

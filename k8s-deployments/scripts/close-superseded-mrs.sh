@@ -13,7 +13,8 @@ set -euo pipefail
 #   GITLAB_URL_INTERNAL   - GitLab base URL
 #   GITLAB_GROUP          - Project group (e.g., p2c)
 #
-# Exit code: Always 0 (supersession is best-effort, never breaks the build)
+# Exit code: 0 for all operational outcomes (supersession is best-effort).
+#   Preflight failures (missing config) are fatal by design.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
