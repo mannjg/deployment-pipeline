@@ -376,23 +376,24 @@ def promoteArtifacts(String sourceEnv, String targetEnv, String gitHash) {
             export GITLAB_URL_INTERNAL="${env.GITLAB_URL_INTERNAL}"
             export GITLAB_GROUP="${env.GITLAB_GROUP}"
             export GITLAB_TOKEN="\${GITLAB_TOKEN}"
+            export PROMOTED_IMAGE_TAG_FILE="\${WORKSPACE}/promoted-image-tag"
             bash ./scripts/promote-artifact.sh \
                 --source-env ${sourceEnv} \
                 --target-env ${targetEnv} \
                 --app-name example-app \
                 --git-hash ${gitHash} \
-                2>&1 | tee /tmp/promote.log
+                2>&1 | tee \${WORKSPACE}/promote.log
         """,
         returnStatus: true
     )
 
     if (promoteRc != 0) {
         echo "Artifact promotion output:"
-        sh "cat /tmp/promote.log || true"
+        sh "cat \${WORKSPACE}/promote.log || true"
         error "Artifact promotion failed - cannot create promotion MR without valid image tag. If release version already exists in Nexus, bump the version in pom.xml."
     }
 
-    def newImageTag = readFile('/tmp/promoted-image-tag').trim()
+    def newImageTag = readFile("${env.WORKSPACE}/promoted-image-tag").trim()
     echo "New image tag for ${targetEnv}: ${newImageTag}"
     return newImageTag
 }

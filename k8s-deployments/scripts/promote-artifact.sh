@@ -29,7 +29,7 @@ preflight_check_command "docker" "https://docs.docker.com/get-docker/"
 preflight_check_command "mvn" "https://maven.apache.org/install.html"
 
 # Output file for promoted image tag (read by Jenkinsfile)
-PROMOTED_IMAGE_TAG_FILE="/tmp/promoted-image-tag"
+PROMOTED_IMAGE_TAG_FILE="${PROMOTED_IMAGE_TAG_FILE:-/tmp/promoted-image-tag}"
 
 # Colors
 RED='\033[0;31m'
