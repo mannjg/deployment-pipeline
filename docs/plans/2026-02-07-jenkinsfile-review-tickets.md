@@ -24,20 +24,6 @@ The k8s-deployments pipeline correctly uses a DinD sidecar instead.
 
 ---
 
-## JENKINS-28: Replace /tmp/maven-settings.xml with scoped credential pattern
-
-**Files:** `example-app/Jenkinsfile`
-
-**Problem:** `createMavenSettings()` (lines 182-197) writes Nexus credentials to `/tmp/maven-settings.xml`. Cleanup in `post.always` does `rm -f /tmp/maven-settings.xml`, but on abort/timeout, cleanup may not run. In the ephemeral pod model this is harmless, but it's a bad pattern to demonstrate in a reference implementation.
-
-**Fix:** Use Jenkins' `configFileProvider` step or generate the settings file inline within the `sh` block that uses it (so it's scoped to that execution). Alternatively, use Maven's `-Dusername` and `-Dpassword` properties if the Nexus plugin supports it. Since JENKINS-22 removes the dead cleanup code, this ticket focuses on the creation pattern.
-
-**Acceptance criteria:**
-- Maven settings file is scoped to the block that needs it (not written to a shared temp path)
-- No cleanup code needed for the settings file
-
----
-
 ## JENKINS-29: Standardize infrastructure variable and credential naming
 
 **Files:** `config/infra.env`, `config/clusters/*.env`, `scripts/02-configure/configure-jenkins-global-env.sh`, `scripts/01-infrastructure/setup-jenkins-credentials.sh`, `example-app/Jenkinsfile`, `k8s-deployments/Jenkinsfile`, `k8s-deployments/jenkins/pipelines/Jenkinsfile.promote`, and ~17 scripts under `scripts/`
