@@ -16,7 +16,9 @@
 #   for your environment's internal services (GitLab, Nexus, Docker registry).
 #   This enables the agent to communicate with internal HTTPS services.
 
-FROM jenkins/inbound-agent:latest-jdk21
+# Pinned 2026-02-09. Check for updates: https://hub.docker.com/r/jenkins/inbound-agent/tags?name=jdk21
+ARG JENKINS_AGENT_VERSION=3355.v388858a_47b_33-12
+FROM jenkins/inbound-agent:${JENKINS_AGENT_VERSION}-jdk21
 
 USER root
 
@@ -29,8 +31,6 @@ RUN apt-get update && apt-get install -y \
     git \
     unzip \
     ca-certificates \
-    gnupg \
-    lsb-release \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
@@ -58,14 +58,10 @@ ENV PATH=$MAVEN_HOME/bin:$PATH
 # =============================================================================
 # Docker CLI
 # =============================================================================
-RUN mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
-    echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
-      $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-    apt-get update && \
-    apt-get install -y docker-ce-cli docker-buildx-plugin && \
-    rm -rf /var/lib/apt/lists/*
+ARG DOCKER_CLI_VERSION=27.5.1
+RUN curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" \
+    | tar -xz --strip-components=1 -C /usr/local/bin docker/docker && \
+    chmod +x /usr/local/bin/docker
 
 # =============================================================================
 # CUE CLI
@@ -81,7 +77,8 @@ RUN cd /tmp && \
 # =============================================================================
 # kubectl
 # =============================================================================
-RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+ARG KUBECTL_VERSION=v1.35.0
+RUN curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
     install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && \
     rm kubectl
 
