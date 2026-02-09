@@ -188,10 +188,17 @@ Image: ${FULL_IMAGE}"
                             git push origin --delete "${FEATURE_BRANCH}" 2>/dev/null || echo "Branch does not exist remotely"
                             git push -u origin "${FEATURE_BRANCH}"
 
-                            # Create MR using GitLab API
+                            # GitLab API credentials for MR operations
                             export GITLAB_TOKEN="${GITLAB_API_TOKEN}"
                             export GITLAB_URL_INTERNAL="${GITLAB_URL}"
 
+                            # Close any open MRs superseded by this build (JENKINS-27)
+                            ./scripts/close-superseded-mrs.sh \
+                                "${DEPLOY_ENV}" \
+                                "${DEPLOY_BRANCH_PREFIX}" \
+                                "${FEATURE_BRANCH}"
+
+                            # Create MR using GitLab API
                             ./scripts/create-gitlab-mr.sh \
                                 "${FEATURE_BRANCH}" \
                                 "${DEPLOY_ENV}" \
