@@ -52,6 +52,8 @@ Additionally, the `--global` fallback path (used by default since no caller pass
 
 ## JENKINS-23: Eliminate ENV_BRANCHES duplication
 
+**Status: IMPLEMENTED**
+
 **Files:** `k8s-deployments/Jenkinsfile`
 
 **Problem:** `ENV_BRANCHES` is defined twice:

@@ -3,6 +3,7 @@ import groovy.transform.Field
 @Field static final String UPDATE_BRANCH_PREFIX = 'update-'
 @Field static final String PROMOTE_BRANCH_PREFIX = 'promote-'
 @Field static final List<String> ENV_BRANCHES = ['dev', 'stage', 'prod']
+@Field static final List<String> PROMOTE_BRANCHES = ['dev', 'stage']
 
 // k8s-deployments Pipeline
 //
@@ -627,8 +628,6 @@ spec:
         NEXUS_URL_INTERNAL = "${env.NEXUS_URL_INTERNAL ?: ''}"
         ARGOCD_SERVER = "${env.ARGOCD_SERVER ?: ''}"
         ARGOCD_OPTS = "${env.ARGOCD_OPTS ?: ''}"
-        ENV_BRANCHES = 'dev,stage,prod'
-        PROMOTE_BRANCHES = 'dev,stage'
     }
 
     stages {
@@ -936,7 +935,7 @@ Build: ${env.BUILD_URL}
                 expression {
                     // Only create promotion MR for dev/stage after successful deployment
                     // Skip if commit message contains [no-promote]
-                    env.BRANCH_NAME in env.PROMOTE_BRANCHES.split(',') &&
+                    env.BRANCH_NAME in PROMOTE_BRANCHES &&
                     env.IS_ENV_BRANCH == 'true' &&
                     env.NO_PROMOTE != 'true'
                 }
