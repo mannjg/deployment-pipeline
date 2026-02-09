@@ -408,6 +408,9 @@ def promoteArtifacts(String sourceEnv, String targetEnv, String gitHash) {
  */
 def createPromotionBranchAndMR(String sourceEnv, String targetEnv, String imageTag, String newImageTag) {
     sh """
+        # Clean up promote temp files from workspace before git operations
+        rm -f promoted-image-tag promote.log
+
         # Fetch both branches
         git fetch origin ${sourceEnv} ${targetEnv}
 
