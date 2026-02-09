@@ -24,25 +24,6 @@ The k8s-deployments pipeline correctly uses a DinD sidecar instead.
 
 ---
 
-## JENKINS-26: Handle Maven release artifact duplicate on re-run
-
-**Files:** `example-app/Jenkinsfile`
-
-**Problem:** In Build & Publish (lines 394-406), `mvn deploy` to `maven-releases` fails if a non-SNAPSHOT artifact with the same version already exists (Nexus rejects duplicates). The Docker image push via Jib is idempotent (same tag overwrites), but Maven deploy is not. Re-running a successful build fails at Maven deploy.
-
-This also means the image is pushed before Maven deploy — if Maven fails, the image exists in the registry but the artifact doesn't exist in Nexus. The states are diverged.
-
-**Fix (choose one):**
-1. **Reorder:** Deploy Maven artifact before Docker image push. Maven is cheaper to retry and has no external side effects until committed.
-2. **Check-before-deploy:** Query Nexus for existing artifact before deploying. Skip deploy if it exists with matching checksum.
-3. **Allow redeploy:** Configure the Nexus `maven-releases` repo to allow redeployment (simplest, but weakens release immutability guarantees).
-
-**Recommendation:** Option 1 (reorder) — simplest change, no Nexus config required, and failing early on the cheaper operation is better practice.
-
-**Acceptance criteria:**
-- Re-running a build that previously succeeded does not fail
-- On partial failure, no state divergence between Nexus and Docker registry
-
 ---
 
 ## JENKINS-27: Close superseded MRs on new build

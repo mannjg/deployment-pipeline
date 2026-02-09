@@ -404,23 +404,8 @@ spec:
                         timeout(time: 30, unit: 'MINUTES') {
                             echo "=== Building and Publishing Artifacts ==="
 
-                            // Build and push Docker image with Jib
-                            echo "Building and pushing container image..."
-                            sh '''
-                                mvn clean package \
-                                    -Dquarkus.container-image.build=true \
-                                    -Dquarkus.container-image.push=true \
-                                    -Dquarkus.container-image.registry=${CONTAINER_REGISTRY} \
-                                    -Dquarkus.container-image.group=${APP_GROUP} \
-                                    -Dquarkus.container-image.name=${APP_NAME} \
-                                    -Dquarkus.container-image.tag=${IMAGE_TAG} \
-                                    -Dquarkus.container-image.insecure=true \
-                                    -Dquarkus.container-image.username=${DOCKER_CREDENTIALS_USR} \
-                                    -Dquarkus.container-image.password=${DOCKER_CREDENTIALS_PSW} \
-                                    -DsendCredentialsOverHttp=true
-                            '''
-
-                            // Publish Maven artifacts to Nexus
+                            // Deploy Maven artifact first — fails fast on duplicate
+                            // release before pushing a Docker image (JENKINS-26)
                             echo "Publishing Maven artifacts to Nexus..."
                             createMavenSettings()
 
@@ -435,13 +420,28 @@ spec:
                             }
 
                             sh """
-                                mvn deploy -DskipTests \
+                                mvn clean deploy -DskipTests \
                                     -s /tmp/maven-settings.xml \
                                     -DaltDeploymentRepository=nexus::default::${MAVEN_REPO_URL}/repository/${repoPath}/
                             """
-
-                            echo "✓ Published container image: ${FULL_IMAGE}"
                             echo "✓ Published Maven artifact: ${APP_NAME}-${APP_VERSION}"
+
+                            // Build and push Docker image with Jib (reuses build output)
+                            echo "Building and pushing container image..."
+                            sh '''
+                                mvn package \
+                                    -Dquarkus.container-image.build=true \
+                                    -Dquarkus.container-image.push=true \
+                                    -Dquarkus.container-image.registry=${CONTAINER_REGISTRY} \
+                                    -Dquarkus.container-image.group=${APP_GROUP} \
+                                    -Dquarkus.container-image.name=${APP_NAME} \
+                                    -Dquarkus.container-image.tag=${IMAGE_TAG} \
+                                    -Dquarkus.container-image.insecure=true \
+                                    -Dquarkus.container-image.username=${DOCKER_CREDENTIALS_USR} \
+                                    -Dquarkus.container-image.password=${DOCKER_CREDENTIALS_PSW} \
+                                    -DsendCredentialsOverHttp=true
+                            '''
+                            echo "✓ Published container image: ${FULL_IMAGE}"
                         }
                     }
                 }
