@@ -8,17 +8,5 @@ Tickets are grouped for efficient single-session execution and ordered so prereq
 
 ---
 
-## JENKINS-11: Remove vestigial Docker socket mount from example-app
-
-**Files:** `example-app/Jenkinsfile`
-
-**Problem:** Lines 228-233 mount the host Docker socket (`/var/run/docker.sock`) into the agent pod. This grants root-equivalent access to the host. The pipeline builds images via Quarkus/Jib (which pushes directly to the registry without a Docker daemon), so the socket mount is unused.
-
-The k8s-deployments pipeline correctly uses a DinD sidecar instead.
-
-**Fix:** Remove the `volumeMounts` and `volumes` entries for `docker-sock` from the pod YAML template.
-
-**Acceptance criteria:**
-- Pod YAML has no `docker-sock` volume or volumeMount
-- `mvn clean package -Dquarkus.container-image.build=true -Dquarkus.container-image.push=true` still succeeds
+All tickets have been implemented.
 
