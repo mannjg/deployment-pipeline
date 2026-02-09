@@ -55,21 +55,13 @@ log_info "Source: $SOURCE_BRANCH → Target: $TARGET_BRANCH"
 # Create the merge request using GitLab API
 # Documentation: https://docs.gitlab.com/ee/api/merge_requests.html#create-mr
 
-# Escape strings for JSON by replacing special characters
-# This handles newlines, quotes, and backslashes
-escape_json() {
-    local string="$1"
-    # Replace backslash with \\, then newline with \n, then double-quote with \"
-    printf '%s' "$string" | sed 's/\\/\\\\/g' | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g'
-}
-
-SOURCE_ESCAPED=$(escape_json "$SOURCE_BRANCH")
-TARGET_ESCAPED=$(escape_json "$TARGET_BRANCH")
-TITLE_ESCAPED=$(escape_json "$TITLE")
-DESC_ESCAPED=$(escape_json "$DESCRIPTION")
-
-# Construct JSON payload
-JSON_PAYLOAD="{\"source_branch\":\"$SOURCE_ESCAPED\",\"target_branch\":\"$TARGET_ESCAPED\",\"title\":\"$TITLE_ESCAPED\",\"description\":\"$DESC_ESCAPED\",\"remove_source_branch\":true,\"squash\":false}"
+# Construct JSON payload (jq handles all escaping — safe for tabs, unicode, control chars)
+JSON_PAYLOAD=$(jq -n \
+    --arg src "$SOURCE_BRANCH" \
+    --arg tgt "$TARGET_BRANCH" \
+    --arg title "$TITLE" \
+    --arg desc "$DESCRIPTION" \
+    '{source_branch: $src, target_branch: $tgt, title: $title, description: $desc, remove_source_branch: true, squash: false}')
 
 MR_RESPONSE=$(curl -s -w "\n%{http_code}" \
     --request POST \
@@ -85,8 +77,8 @@ RESPONSE_BODY=$(echo "$MR_RESPONSE" | sed '$d')
 # Check HTTP status code
 if [ "$HTTP_CODE" -eq 201 ]; then
     # Extract MR details from JSON response
-    MR_IID=$(echo "$RESPONSE_BODY" | grep -o '"iid":[0-9]*' | head -1 | cut -d':' -f2)
-    MR_WEB_URL=$(echo "$RESPONSE_BODY" | grep -o '"web_url":"[^"]*"' | head -1 | cut -d'"' -f4)
+    MR_IID=$(echo "$RESPONSE_BODY" | jq -r '.iid')
+    MR_WEB_URL=$(echo "$RESPONSE_BODY" | jq -r '.web_url')
 
     log_info "✅ Merge request created successfully!"
     echo ""
@@ -113,8 +105,8 @@ elif [ "$HTTP_CODE" -eq 409 ]; then
         --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
         "${GITLAB_URL}/api/v4/projects/${PROJECT_PATH_ENCODED}/merge_requests?source_branch=${SOURCE_BRANCH}&target_branch=${TARGET_BRANCH}&state=opened")
 
-    MR_IID=$(echo "$EXISTING_MR" | grep -o '"iid":[0-9]*' | head -1 | cut -d':' -f2)
-    MR_WEB_URL=$(echo "$EXISTING_MR" | grep -o '"web_url":"[^"]*"' | head -1 | cut -d'"' -f4)
+    MR_IID=$(echo "$EXISTING_MR" | jq -r '.[0].iid // empty')
+    MR_WEB_URL=$(echo "$EXISTING_MR" | jq -r '.[0].web_url // empty')
 
     if [ -n "$MR_IID" ]; then
         echo ""
