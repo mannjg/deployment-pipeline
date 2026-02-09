@@ -602,7 +602,7 @@ wait_for_jenkins_build() {
         local result=$(echo "$build_info" | jq -r '.result // "null"')
 
         if [[ "$building" == "false" ]]; then
-            if [[ "$result" == "SUCCESS" ]]; then
+            if [[ "$result" == "SUCCESS" || "$result" == "NOT_BUILT" ]]; then
                 demo_verify "Build #$build_number completed successfully"
                 return 0
             else

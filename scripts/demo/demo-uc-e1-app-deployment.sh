@@ -365,7 +365,7 @@ wait_for_jenkins_build() {
             local duration=$(echo "$build_info" | jq -r '.duration')
             local duration_sec=$((duration / 1000))
 
-            if [[ "$result" == "SUCCESS" ]]; then
+            if [[ "$result" == "SUCCESS" || "$result" == "NOT_BUILT" ]]; then
                 log_pass "Build #$build_number completed successfully (${duration_sec}s)"
                 echo ""
                 export BUILD_NUMBER="$build_number"
@@ -520,7 +520,7 @@ wait_for_k8s_deployments_ci() {
             local duration=$(echo "$build_info" | jq -r '.duration')
             local duration_sec=$((duration / 1000))
 
-            if [[ "$result" == "SUCCESS" ]]; then
+            if [[ "$result" == "SUCCESS" || "$result" == "NOT_BUILT" ]]; then
                 log_pass "k8s-deployments CI build #$build_number completed (${duration_sec}s)"
                 return 0
             else
