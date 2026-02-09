@@ -192,7 +192,7 @@ preflight_checks() {
 # Returns 0 if exists, 1 if not
 check_nexus_release_exists() {
     local version="$1"
-    local nexus_url="${NEXUS_URL_EXTERNAL:?NEXUS_URL_EXTERNAL not set - source cluster config}"
+    local nexus_url="${MAVEN_REPO_URL_EXTERNAL:?MAVEN_REPO_URL_EXTERNAL not set - source cluster config}"
 
     # Query Nexus for the release artifact
     local response=$(curl -sk "${nexus_url}/service/rest/v1/search?repository=maven-releases&group=com.example&name=example-app&version=${version}" 2>/dev/null)
@@ -786,7 +786,7 @@ except Exception as e:
     fi
 
     # Validate the image meets all requirements
-    local expected_registry="${DOCKER_REGISTRY_EXTERNAL:?DOCKER_REGISTRY_EXTERNAL not set}"
+    local expected_registry="${CONTAINER_REGISTRY_EXTERNAL:?CONTAINER_REGISTRY_EXTERNAL not set}"
     local expected_app="${APP_REPO_NAME}"
 
     # Check for placeholder/internal URLs (should have been replaced by Jenkins)
@@ -1131,7 +1131,7 @@ verify_version_lifecycle() {
 
     # 6. Verify artifacts exist in Nexus
     # Use external URL (accessible from outside cluster) with -k for self-signed certs
-    local nexus_url="${NEXUS_URL_EXTERNAL:?NEXUS_URL_EXTERNAL not set - source cluster config}"
+    local nexus_url="${MAVEN_REPO_URL_EXTERNAL:?MAVEN_REPO_URL_EXTERNAL not set - source cluster config}"
     local group_id="com.example"
     local app_name="example-app"
 

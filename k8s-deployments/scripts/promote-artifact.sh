@@ -67,8 +67,8 @@ Version Progression:
   stage -> prod:  RC -> Release (fails if release exists)
 
 Environment Variables (from pipeline-config ConfigMap):
-  NEXUS_URL_INTERNAL          Nexus base URL (required)
-  DOCKER_REGISTRY_EXTERNAL    Docker registry URL (required)
+  MAVEN_REPO_URL_INTERNAL     Nexus base URL (required)
+  CONTAINER_REGISTRY_EXTERNAL Container registry URL (required)
   GITLAB_URL_INTERNAL         GitLab URL for fetching env.cue (required)
   GITLAB_GROUP                GitLab group name (required)
   CONTAINER_REGISTRY_PATH_PREFIX  Registry path prefix (required)
@@ -132,8 +132,8 @@ case "$SOURCE_ENV-$TARGET_ENV" in
 esac
 
 # Configuration (from pipeline-config ConfigMap environment variables)
-NEXUS_URL="${NEXUS_URL:-${NEXUS_URL_INTERNAL:?NEXUS_URL_INTERNAL not set - check pipeline-config ConfigMap}}"
-DOCKER_REGISTRY="${DOCKER_REGISTRY_EXTERNAL:?DOCKER_REGISTRY_EXTERNAL not set - check pipeline-config ConfigMap}"
+NEXUS_URL="${NEXUS_URL:-${MAVEN_REPO_URL_INTERNAL:?MAVEN_REPO_URL_INTERNAL not set - check pipeline-config ConfigMap}}"
+CONTAINER_REGISTRY="${CONTAINER_REGISTRY_EXTERNAL:?CONTAINER_REGISTRY_EXTERNAL not set - check pipeline-config ConfigMap}"
 MAVEN_GROUP_ID="${MAVEN_GROUP_ID:-com.example}"
 GITLAB_URL="${GITLAB_URL:-${GITLAB_URL_INTERNAL:?GITLAB_URL_INTERNAL not set - check pipeline-config ConfigMap}}"
 GITLAB_PROJECT="${GITLAB_PROJECT:-${GITLAB_GROUP:?GITLAB_GROUP not set - check pipeline-config ConfigMap}/k8s-deployments}"
@@ -144,7 +144,7 @@ GIT_HASH="${GIT_HASH:0:7}"
 
 log_debug "Configuration:"
 log_debug "  NEXUS_URL: $NEXUS_URL"
-log_debug "  DOCKER_REGISTRY: $DOCKER_REGISTRY"
+log_debug "  CONTAINER_REGISTRY: $CONTAINER_REGISTRY"
 log_debug "  MAVEN_GROUP_ID: $MAVEN_GROUP_ID"
 log_debug "  GITLAB_URL: $GITLAB_URL"
 log_debug "  GITLAB_PROJECT: $GITLAB_PROJECT"
@@ -431,8 +431,8 @@ retag_docker_image() {
     local source_tag="$1"
     local target_tag="$2"
 
-    local source_image="${DOCKER_REGISTRY}/${CONTAINER_REGISTRY_PATH_PREFIX}/${APP_NAME}:${source_tag}"
-    local target_image="${DOCKER_REGISTRY}/${CONTAINER_REGISTRY_PATH_PREFIX}/${APP_NAME}:${target_tag}"
+    local source_image="${CONTAINER_REGISTRY}/${CONTAINER_REGISTRY_PATH_PREFIX}/${APP_NAME}:${source_tag}"
+    local target_image="${CONTAINER_REGISTRY}/${CONTAINER_REGISTRY_PATH_PREFIX}/${APP_NAME}:${target_tag}"
 
     log_info "Re-tagging Docker image: $source_tag -> $target_tag"
     log_debug "Source: $source_image"
@@ -440,8 +440,8 @@ retag_docker_image() {
 
     # Login to Docker registry if credentials provided
     if [[ -n "${NEXUS_USER:-}" && -n "${NEXUS_PASSWORD:-}" ]]; then
-        log_debug "Logging into Docker registry: $DOCKER_REGISTRY"
-        echo "$NEXUS_PASSWORD" | docker login "$DOCKER_REGISTRY" -u "$NEXUS_USER" --password-stdin || {
+        log_debug "Logging into Docker registry: $CONTAINER_REGISTRY"
+        echo "$NEXUS_PASSWORD" | docker login "$CONTAINER_REGISTRY" -u "$NEXUS_USER" --password-stdin || {
             log_error "Failed to login to Docker registry"
             return 1
         }

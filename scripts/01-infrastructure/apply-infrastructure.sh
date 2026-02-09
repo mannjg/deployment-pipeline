@@ -39,14 +39,14 @@ done
 # For backwards compatibility, support old variable names if new ones not set
 GITLAB_HOST="${GITLAB_HOST_EXTERNAL:-${GITLAB_HOST:-}}"
 JENKINS_HOST="${JENKINS_HOST_EXTERNAL:-${JENKINS_HOST:-}}"
-NEXUS_HOST="${NEXUS_HOST_EXTERNAL:-${NEXUS_HOST:-}}"
+MAVEN_REPO_HOST="${MAVEN_REPO_HOST_EXTERNAL:-${MAVEN_REPO_HOST:-}}"
 ARGOCD_HOST="${ARGOCD_HOST_EXTERNAL:-${ARGOCD_HOST:-}}"
 
 echo "=== Infrastructure Deployment ==="
 echo "Target: $REMOTE_USER@$REMOTE_HOST"
 echo "GitLab:  https://$GITLAB_HOST"
 echo "Jenkins: https://$JENKINS_HOST"
-echo "Nexus:   https://$NEXUS_HOST"
+echo "Nexus:   https://$MAVEN_REPO_HOST"
 echo "ArgoCD:  https://$ARGOCD_HOST"
 echo ""
 
@@ -149,6 +149,6 @@ ssh "$REMOTE_USER@$REMOTE_HOST" "kubectl get pods -A | grep -E 'gitlab|jenkins|n
 echo ""
 echo "=== Next Steps ==="
 echo "1. Add hosts entries to /etc/hosts:"
-echo "   $(ssh "$REMOTE_USER@$REMOTE_HOST" "hostname -I | awk '{print \$1}'") $GITLAB_HOST $JENKINS_HOST $NEXUS_HOST $ARGOCD_HOST"
+echo "   $(ssh "$REMOTE_USER@$REMOTE_HOST" "hostname -I | awk '{print \$1}'") $GITLAB_HOST $JENKINS_HOST $MAVEN_REPO_HOST $ARGOCD_HOST"
 echo ""
 echo "2. Run verification: ./scripts/verify-phase1.sh"

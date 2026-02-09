@@ -203,7 +203,7 @@ check_nexus() {
     fi
 
     # Check Nexus web UI is accessible (may require auth for API)
-    local nexus_http=$(curl -sk -o /dev/null -w "%{http_code}" "$NEXUS_URL_EXTERNAL/" 2>/dev/null)
+    local nexus_http=$(curl -sk -o /dev/null -w "%{http_code}" "$MAVEN_REPO_URL_EXTERNAL/" 2>/dev/null)
 
     if [[ "$nexus_http" == "200" || "$nexus_http" == "302" ]]; then
         check_pass "Nexus web UI reachable (HTTP $nexus_http)"
@@ -212,12 +212,12 @@ check_nexus() {
     fi
 
     # Check Docker registry (via catalog endpoint)
-    local docker_catalog=$(curl -sk "https://$DOCKER_REGISTRY_EXTERNAL/v2/_catalog" 2>/dev/null | jq -r '.repositories // empty')
+    local docker_catalog=$(curl -sk "https://$CONTAINER_REGISTRY_EXTERNAL/v2/_catalog" 2>/dev/null | jq -r '.repositories // empty')
 
     if [[ -n "$docker_catalog" ]]; then
-        check_pass "Docker registry reachable ($DOCKER_REGISTRY_EXTERNAL)"
+        check_pass "Container registry reachable ($CONTAINER_REGISTRY_EXTERNAL)"
     else
-        check_warn "Docker registry catalog unavailable (may require auth)"
+        check_warn "Container registry catalog unavailable (may require auth)"
     fi
 }
 

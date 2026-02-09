@@ -545,7 +545,7 @@ extract_images_from_env_cue() {
         # Fallback to seed placeholder if extraction failed (first run before any CI/CD build)
         if [[ -z "$EXAMPLE_APP_IMAGE" ]]; then
             log_warn "Could not extract exampleApp image from $env, using does-not-exist placeholder"
-            EXAMPLE_APP_IMAGE="${DOCKER_REGISTRY_HOST:?DOCKER_REGISTRY_HOST not set}/${CONTAINER_REGISTRY_PATH_PREFIX:?CONTAINER_REGISTRY_PATH_PREFIX not set}/example-app:does-not-exist"
+            EXAMPLE_APP_IMAGE="${CONTAINER_REGISTRY_HOST:?CONTAINER_REGISTRY_HOST not set}/${CONTAINER_REGISTRY_PATH_PREFIX:?CONTAINER_REGISTRY_PATH_PREFIX not set}/example-app:does-not-exist"
         fi
 
         log_info "  exampleApp image: $EXAMPLE_APP_IMAGE"

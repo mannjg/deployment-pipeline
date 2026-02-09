@@ -102,7 +102,7 @@ validate_config() {
         "PROD_NAMESPACE"
         "GITLAB_HOST_EXTERNAL"
         "JENKINS_HOST_EXTERNAL"
-        "NEXUS_HOST_EXTERNAL"
+        "MAVEN_REPO_HOST_EXTERNAL"
         "ARGOCD_HOST_EXTERNAL"
         "STORAGE_CLASS"
     )
@@ -227,14 +227,14 @@ ensure_cluster_ca() {
 
     # Verify Docker trust is configured for the container registry
     # The external registry has its own CA (not the cluster CA)
-    local docker_cert_dir="/etc/docker/certs.d/${DOCKER_REGISTRY_HOST}"
+    local docker_cert_dir="/etc/docker/certs.d/${CONTAINER_REGISTRY_HOST}"
     if [[ ! -f "${docker_cert_dir}/ca.crt" ]]; then
         log_warn "Docker trust not found for registry: ${docker_cert_dir}/ca.crt"
         log_warn "Image push from this machine may fail. Ensure registry trust is configured."
     fi
 
     log_info "  CA cert: $CA_CERT"
-    log_info "  Registry: ${DOCKER_REGISTRY_HOST}"
+    log_info "  Registry: ${CONTAINER_REGISTRY_HOST}"
 }
 
 export_config_for_envsubst() {
@@ -243,8 +243,8 @@ export_config_for_envsubst() {
     export CLUSTER_NAME
     export GITLAB_NAMESPACE JENKINS_NAMESPACE NEXUS_NAMESPACE ARGOCD_NAMESPACE
     export DEV_NAMESPACE STAGE_NAMESPACE PROD_NAMESPACE
-    export GITLAB_HOST_EXTERNAL JENKINS_HOST_EXTERNAL NEXUS_HOST_EXTERNAL ARGOCD_HOST_EXTERNAL
-    export DOCKER_REGISTRY_HOST
+    export GITLAB_HOST_EXTERNAL JENKINS_HOST_EXTERNAL MAVEN_REPO_HOST_EXTERNAL ARGOCD_HOST_EXTERNAL
+    export CONTAINER_REGISTRY_HOST
     export STORAGE_CLASS
     export GITLAB_URL_EXTERNAL GITLAB_URL_INTERNAL
     export GITLAB_GROUP APP_REPO_NAME DEPLOYMENTS_REPO_NAME
@@ -254,9 +254,9 @@ export_config_for_envsubst() {
     # Manifests use ${GITLAB_HOST} but config defines GITLAB_HOST_EXTERNAL
     export GITLAB_HOST="${GITLAB_HOST_EXTERNAL}"
     export JENKINS_HOST="${JENKINS_HOST_EXTERNAL}"
-    export NEXUS_HOST="${NEXUS_HOST_EXTERNAL}"
+    export MAVEN_REPO_HOST="${MAVEN_REPO_HOST_EXTERNAL}"
     export ARGOCD_HOST="${ARGOCD_HOST_EXTERNAL}"
-    export DOCKER_REGISTRY="${DOCKER_REGISTRY_HOST}"
+    export CONTAINER_REGISTRY="${CONTAINER_REGISTRY_HOST}"
     export CONTAINER_REGISTRY_PATH_PREFIX="${CONTAINER_REGISTRY_PATH_PREFIX:-}"
     export CA_ISSUER="${CA_ISSUER_NAME}"
 
@@ -626,7 +626,7 @@ prompt_registry_credentials() {
     # Prompt for container registry credentials (used for Docker push)
     # Credentials are passed via env vars to child scripts
     log_info "Container registry credentials needed for image push"
-    log_info "Registry: ${DOCKER_REGISTRY_HOST}"
+    log_info "Registry: ${CONTAINER_REGISTRY_HOST}"
     echo -n "  Username: "
     read -r CONTAINER_REGISTRY_USER
     echo -n "  Password: "
@@ -810,7 +810,7 @@ print_summary() {
     echo "Add the following to /etc/hosts:"
     echo "=============================================="
     echo ""
-    echo "  $cluster_ip $GITLAB_HOST_EXTERNAL $JENKINS_HOST_EXTERNAL $NEXUS_HOST_EXTERNAL $ARGOCD_HOST_EXTERNAL ${DOCKER_REGISTRY_HOST:-}"
+    echo "  $cluster_ip $GITLAB_HOST_EXTERNAL $JENKINS_HOST_EXTERNAL $MAVEN_REPO_HOST_EXTERNAL $ARGOCD_HOST_EXTERNAL ${CONTAINER_REGISTRY_HOST:-}"
     echo ""
     echo "=============================================="
     echo "Verify cluster health:"
@@ -834,7 +834,7 @@ print_summary() {
     echo ""
     echo "  GitLab:  https://${GITLAB_HOST_EXTERNAL}"
     echo "  Jenkins: https://${JENKINS_HOST_EXTERNAL}"
-    echo "  Nexus:   https://${NEXUS_HOST_EXTERNAL}"
+    echo "  Nexus:   https://${MAVEN_REPO_HOST_EXTERNAL}"
     echo "  ArgoCD:  https://${ARGOCD_HOST_EXTERNAL}"
     echo ""
 }

@@ -18,7 +18,7 @@ k8s-deployments requires specific environment variables to be configured. These 
 | `GITLAB_URL_INTERNAL` | GitLab API URL (cluster-internal) | `http://gitlab.gitlab.svc.cluster.local` |
 | `GITLAB_GROUP` | GitLab group/namespace for repositories | `p2c` |
 | `DEPLOYMENTS_REPO_URL` | Full Git URL for k8s-deployments repo | `http://gitlab.gitlab.svc.cluster.local/p2c/k8s-deployments.git` |
-| `DOCKER_REGISTRY_EXTERNAL` | External Docker registry URL (what kubelet pulls from) | `docker.jmann.local` |
+| `CONTAINER_REGISTRY_EXTERNAL` | Container registry URL (what kubelet pulls from) | `docker.jmann.local` |
 | `JENKINS_AGENT_IMAGE` | Custom Jenkins agent image | `localhost:30500/jenkins-agent-custom:latest` |
 
 ## Required Credentials (Jenkins)
@@ -58,7 +58,7 @@ data:
   GITLAB_URL_INTERNAL: "http://gitlab.gitlab.svc.cluster.local"
   GITLAB_GROUP: "p2c"
   DEPLOYMENTS_REPO_URL: "http://gitlab.gitlab.svc.cluster.local/p2c/k8s-deployments.git"
-  DOCKER_REGISTRY_EXTERNAL: "docker.jmann.local"
+  CONTAINER_REGISTRY_EXTERNAL: "docker.jmann.local"
   JENKINS_AGENT_IMAGE: "localhost:30500/jenkins-agent-custom:latest"
 ```
 
@@ -106,7 +106,7 @@ If migrating from older variable names:
 | Old Name (deprecated) | New Name (use this) |
 |-----------------------|---------------------|
 | `GITLAB_INTERNAL_URL` | `GITLAB_URL_INTERNAL` |
-| `DOCKER_REGISTRY` | `DOCKER_REGISTRY_EXTERNAL` |
+| `DOCKER_REGISTRY` | `CONTAINER_REGISTRY_EXTERNAL` |
 | `DEPLOYMENT_REPO` | `DEPLOYMENTS_REPO_URL` |
 
 ## Configuration Schema

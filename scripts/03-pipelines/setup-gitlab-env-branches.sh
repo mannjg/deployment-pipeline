@@ -144,7 +144,7 @@ preflight_checks
 : "${DEV_NAMESPACE:?DEV_NAMESPACE must be set in cluster config}"
 : "${STAGE_NAMESPACE:?STAGE_NAMESPACE must be set in cluster config}"
 : "${PROD_NAMESPACE:?PROD_NAMESPACE must be set in cluster config}"
-: "${DOCKER_REGISTRY_HOST:?DOCKER_REGISTRY_HOST must be set in cluster config}"
+: "${CONTAINER_REGISTRY_HOST:?CONTAINER_REGISTRY_HOST must be set in cluster config}"
 
 # Environment-specific configurations
 declare -A ENV_REPLICAS=( ["dev"]="1" ["stage"]="2" ["prod"]="3" )
@@ -164,7 +164,7 @@ declare -A ENV_NAMESPACE=(
 )
 
 # Docker registry URL for images (external registry via HTTPS, no port needed)
-DOCKER_REGISTRY="${DOCKER_REGISTRY_HOST}"
+CONTAINER_REGISTRY="${CONTAINER_REGISTRY_HOST}"
 
 # Initial placeholder image tag - deliberately non-existent to signal that CI/CD
 # hasn't built a real image yet. The Jenkinsfile detects this tag and skips ArgoCD
@@ -237,7 +237,7 @@ transform_env_config() {
         -e "s|// Example environment configuration|// ${env^} environment configuration|g" \
         -e "s|// Example:|// ${env^}:|g" \
         -e "s|log-level\":     \"debug\"|log-level\":     \"${ENV_LOG_LEVEL[$env],,}\"|g" \
-        -e "s|REGISTRY_URL_NOT_SET|${DOCKER_REGISTRY}|g" \
+        -e "s|REGISTRY_URL_NOT_SET|${CONTAINER_REGISTRY}|g" \
         -e "s|IMAGE_TAG_NOT_SET|${SEED_IMAGE_TAG}|g" \
         "$source_file" > "$target_file"
 

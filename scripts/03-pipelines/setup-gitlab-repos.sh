@@ -130,7 +130,7 @@ setup_k8s_deployments
 
 echo -e "\n${GREEN}=== All repositories pushed successfully! ===${NC}\n"
 echo -e "${YELLOW}Next steps:${NC}"
-echo "1. Configure Jenkins credentials (gitlab-credentials, nexus-credentials, docker-registry-credentials)"
+echo "1. Configure Jenkins credentials (gitlab-credentials, maven-repo-credentials, container-registry-credentials)"
 echo "2. Create Jenkins pipeline job 'example-app-ci' pointing to GitLab"
 echo "3. Configure ArgoCD to watch k8s-deployments repository"
 echo "4. Trigger a build to test the end-to-end flow"

@@ -4,8 +4,8 @@
 #
 # Variables (use envsubst before applying):
 #   ${NEXUS_NAMESPACE} - Kubernetes namespace for Nexus
-#   ${NEXUS_HOST} - Nexus hostname (e.g., nexus.jmann.local)
-#   ${DOCKER_REGISTRY} - Docker registry hostname (e.g., docker.jmann.local)
+#   ${MAVEN_REPO_HOST} - Maven repository hostname (e.g., nexus.jmann.local)
+#   ${CONTAINER_REGISTRY} - Container registry hostname (e.g., docker.jmann.local)
 #   ${STORAGE_CLASS} - StorageClass for PVCs
 #   ${CA_ISSUER} - ClusterIssuer name (e.g., alpha-ca-issuer)
 
@@ -19,9 +19,9 @@ spec:
   issuerRef:
     name: ${CA_ISSUER}
     kind: ClusterIssuer
-  commonName: ${NEXUS_HOST}
+  commonName: ${MAVEN_REPO_HOST}
   dnsNames:
-    - ${NEXUS_HOST}
+    - ${MAVEN_REPO_HOST}
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -33,9 +33,9 @@ spec:
   issuerRef:
     name: ${CA_ISSUER}
     kind: ClusterIssuer
-  commonName: ${DOCKER_REGISTRY}
+  commonName: ${CONTAINER_REGISTRY}
   dnsNames:
-    - ${DOCKER_REGISTRY}
+    - ${CONTAINER_REGISTRY}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -148,10 +148,10 @@ spec:
   ingressClassName: public
   tls:
   - hosts:
-    - ${NEXUS_HOST}
+    - ${MAVEN_REPO_HOST}
     secretName: nexus-tls
   rules:
-  - host: ${NEXUS_HOST}
+  - host: ${MAVEN_REPO_HOST}
     http:
       paths:
       - path: /
@@ -176,10 +176,10 @@ spec:
   ingressClassName: public
   tls:
   - hosts:
-    - ${DOCKER_REGISTRY}
+    - ${CONTAINER_REGISTRY}
     secretName: docker-tls
   rules:
-  - host: ${DOCKER_REGISTRY}
+  - host: ${CONTAINER_REGISTRY}
     http:
       paths:
       - path: /

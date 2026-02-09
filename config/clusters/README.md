@@ -77,9 +77,9 @@ Each `.env` file defines a complete cluster configuration including:
 |----------|-------------|
 | `GITLAB_HOST_EXTERNAL` | GitLab ingress hostname |
 | `JENKINS_HOST_EXTERNAL` | Jenkins ingress hostname |
-| `NEXUS_HOST_EXTERNAL` | Nexus ingress hostname |
+| `MAVEN_REPO_HOST_EXTERNAL` | Maven repository ingress hostname |
 | `ARGOCD_HOST_EXTERNAL` | ArgoCD ingress hostname |
-| `DOCKER_REGISTRY_HOST` | Docker registry hostname (via Nexus) |
+| `CONTAINER_REGISTRY_HOST` | Container registry hostname |
 
 ### Storage
 | Variable | Description |

@@ -128,7 +128,7 @@ spec:
         DEPLOYMENT_REPO = "${env.DEPLOYMENTS_REPO_URL ?: ''}"
 
         // External registry for deployment manifests (what kubelet uses to pull)
-        DEPLOY_REGISTRY = "${env.DOCKER_REGISTRY_EXTERNAL ?: ''}"
+        DEPLOY_REGISTRY = "${env.CONTAINER_REGISTRY_EXTERNAL ?: ''}"
 
         // Container registry path prefix (e.g., 'p2c' for registry/p2c/example-app)
         APP_GROUP = "${env.CONTAINER_REGISTRY_PATH_PREFIX ?: ''}"
@@ -146,7 +146,7 @@ spec:
                         echo "=== Validate Promotion Parameters ==="
 
                         // Validate required environment variables
-                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'DOCKER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
+                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
                         // Validate promotion path
                         def validPromotions = [

@@ -15,7 +15,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Source infrastructure config
 source "$PROJECT_ROOT/scripts/lib/infra.sh" "${1:-${CLUSTER_CONFIG:-}}"
 
-NEXUS_URL="${NEXUS_URL_EXTERNAL:?NEXUS_URL_EXTERNAL not set}"
+NEXUS_URL="${MAVEN_REPO_URL_EXTERNAL:?MAVEN_REPO_URL_EXTERNAL not set}"
 ADMIN_USER="admin"
 
 # Output helpers
@@ -321,7 +321,7 @@ main() {
     log_pass "Nexus configuration complete"
     echo "=========================================="
     echo ""
-    echo "Docker Registry: ${DOCKER_REGISTRY_HOST}:5000"
+    echo "Docker Registry: ${CONTAINER_REGISTRY_HOST}:5000"
     echo "Maven Releases:  ${NEXUS_URL}/repository/maven-releases/"
     echo "Maven Snapshots: ${NEXUS_URL}/repository/maven-snapshots/"
     echo ""

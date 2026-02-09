@@ -279,10 +279,10 @@ spec:
         APP_GROUP = "${env.CONTAINER_REGISTRY_PATH_PREFIX ?: ''}"
 
         // Container registry - use external URL (nodes trust it, no CA changes needed)
-        CONTAINER_REGISTRY = "${env.DOCKER_REGISTRY_EXTERNAL ?: ''}"
+        CONTAINER_REGISTRY = "${env.CONTAINER_REGISTRY_EXTERNAL ?: ''}"
 
         // Maven repository (internal Nexus for artifacts, torn down with demo)
-        MAVEN_REPO_URL = "${env.NEXUS_URL_INTERNAL ?: ''}"
+        MAVEN_REPO_URL = "${env.MAVEN_REPO_URL_INTERNAL ?: ''}"
 
         // Git repositories (from pipeline-config ConfigMap)
         GITLAB_URL = "${env.GITLAB_URL_INTERNAL ?: ''}"
@@ -290,8 +290,8 @@ spec:
         DEPLOYMENT_REPO = "${env.DEPLOYMENTS_REPO_URL ?: ''}"
 
         // Credentials
-        NEXUS_CREDENTIALS = credentials('nexus-credentials')
-        DOCKER_CREDENTIALS = credentials('docker-registry-credentials')
+        MAVEN_REPO_CREDENTIALS = credentials('maven-repo-credentials')
+        CONTAINER_REGISTRY_CREDENTIALS = credentials('container-registry-credentials')
         GITLAB_CREDENTIALS = credentials('gitlab-credentials')
         GITLAB_API_TOKEN = credentials('gitlab-api-token-secret')
 
@@ -308,7 +308,7 @@ spec:
                         echo "=== Checkout & Setup ==="
 
                         // Validate required environment variables from ConfigMap
-                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'DOCKER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
+                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
                         // Extract version from pom.xml
                         env.APP_VERSION = sh(
@@ -417,8 +417,8 @@ spec:
   <servers>
     <server>
       <id>nexus</id>
-      <username>\${NEXUS_CREDENTIALS_USR}</username>
-      <password>\${NEXUS_CREDENTIALS_PSW}</password>
+      <username>\${MAVEN_REPO_CREDENTIALS_USR}</username>
+      <password>\${MAVEN_REPO_CREDENTIALS_PSW}</password>
     </server>
   </servers>
 </settings>
@@ -440,8 +440,8 @@ SETTINGS_EOF
                                     -Dquarkus.container-image.name=${APP_NAME} \
                                     -Dquarkus.container-image.tag=${IMAGE_TAG} \
                                     -Dquarkus.container-image.insecure=true \
-                                    -Dquarkus.container-image.username=${DOCKER_CREDENTIALS_USR} \
-                                    -Dquarkus.container-image.password=${DOCKER_CREDENTIALS_PSW} \
+                                    -Dquarkus.container-image.username=${CONTAINER_REGISTRY_CREDENTIALS_USR} \
+                                    -Dquarkus.container-image.password=${CONTAINER_REGISTRY_CREDENTIALS_PSW} \
                                     -DsendCredentialsOverHttp=true
                             '''
                             echo "✓ Published container image: ${FULL_IMAGE}"

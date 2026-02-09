@@ -86,23 +86,23 @@ IMPORTANT: Jenkins is running WITHOUT authentication (local dev only!)
       - ID: gitlab-credentials
       - Description: GitLab Username/Password
 
-   C. Nexus Credentials:
+   C. Maven Repository Credentials:
       - Click "Add Credentials"
       - Kind: Username with password
       - Scope: Global
       - Username: admin
       - Password: admin123
-      - ID: nexus-credentials
-      - Description: Nexus Repository Credentials
+      - ID: maven-repo-credentials
+      - Description: Maven Repository Credentials
 
-   D. Docker Registry Credentials (Nexus):
+   D. Container Registry Credentials:
       - Click "Add Credentials"
       - Kind: Username with password
       - Scope: Global
       - Username: admin
       - Password: admin123
-      - ID: docker-registry-credentials
-      - Description: Docker Registry (Nexus) Credentials
+      - ID: container-registry-credentials
+      - Description: Container Registry Credentials
 
 4. Configure Kubernetes Plugin:
    Go to: Manage Jenkins → Clouds → New cloud
@@ -241,7 +241,6 @@ Check "Environment variables"
 
 Add these for convenience:
 - NEXUS_URL: http://nexus.local
-- NEXUS_DOCKER_REGISTRY: nexus.local:5000
 - GITLAB_URL: ${GITLAB_URL_EXTERNAL}
 - ARGOCD_SERVER: argocd.local
 - K8S_NAMESPACE_DEV: dev

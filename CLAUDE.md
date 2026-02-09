@@ -9,7 +9,7 @@ Local GitOps CI/CD pipeline demonstration using Jenkins, GitLab, ArgoCD, and Nex
 **Components:**
 - **GitLab** - Source control and webhooks (airgap-compatible)
 - **Jenkins** - CI/CD builds and artifact publishing
-- **Nexus** - Maven artifacts and Docker registry
+- **Nexus** - Maven artifacts
 - **ArgoCD** - GitOps deployment to Kubernetes
 - **Kubernetes** - Local cluster
 
@@ -140,9 +140,9 @@ deployment-pipeline/
 |---------|-----|---------|
 | GitLab | http://gitlab.jmann.local | Source control, webhooks |
 | Jenkins | http://jenkins.local | CI/CD builds |
-| Nexus | http://nexus.local | Maven artifacts, Docker registry |
+| Nexus | http://nexus.local | Maven artifacts |
 | ArgoCD | http://argocd.local | GitOps deployment |
-| Docker Registry | https://docker.local:5000 | Container images (via Nexus) |
+| Container Registry | https://registry.local | Container images |
 
 **Credentials:** Stored in Jenkins credentials store and Kubernetes secrets. Do not hardcode.
 

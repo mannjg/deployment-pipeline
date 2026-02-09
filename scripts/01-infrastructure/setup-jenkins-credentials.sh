@@ -171,8 +171,8 @@ setup_gitlab_credentials() {
     fi
 }
 
-setup_nexus_credentials() {
-    log_info "Setting up Nexus credentials..."
+setup_maven_repo_credentials() {
+    log_info "Setting up Maven repository credentials..."
 
     local nexus_user nexus_pass
     nexus_user=$(kubectl get secret "$NEXUS_ADMIN_SECRET" -n "$NEXUS_NAMESPACE" \
@@ -182,12 +182,12 @@ setup_nexus_credentials() {
 
     if [[ -n "$nexus_user" && -n "$nexus_pass" ]]; then
         create_username_password_credential \
-            "nexus-credentials" \
+            "maven-repo-credentials" \
             "$nexus_user" \
             "$nexus_pass" \
-            "Nexus Repository Manager credentials for artifact deployment"
+            "Maven repository credentials for artifact deployment"
     else
-        log_warn "  nexus-credentials: K8s secrets not found (skipping)"
+        log_warn "  maven-repo-credentials: K8s secrets not found (skipping)"
     fi
 }
 
@@ -210,8 +210,8 @@ setup_argocd_credentials() {
     fi
 }
 
-setup_docker_registry_credentials() {
-    log_info "Setting up Docker registry credentials..."
+setup_container_registry_credentials() {
+    log_info "Setting up container registry credentials..."
 
     # External container registry credentials (for pushing app images)
     # These are passed as env vars by bootstrap.sh after prompt_registry_credentials()
@@ -220,12 +220,12 @@ setup_docker_registry_credentials() {
 
     if [[ -n "$reg_user" && -n "$reg_pass" ]]; then
         create_username_password_credential \
-            "docker-registry-credentials" \
+            "container-registry-credentials" \
             "$reg_user" \
             "$reg_pass" \
-            "Docker Registry credentials for image push (${DOCKER_REGISTRY_HOST:-external registry})"
+            "Container registry credentials for image push (${CONTAINER_REGISTRY_HOST:-external registry})"
     else
-        log_warn "  docker-registry-credentials: CONTAINER_REGISTRY_USER/PASS not set (skipping)"
+        log_warn "  container-registry-credentials: CONTAINER_REGISTRY_USER/PASS not set (skipping)"
         log_warn "  Set these env vars or re-run bootstrap to configure"
     fi
 }
@@ -242,9 +242,9 @@ main() {
     get_crumb
 
     setup_gitlab_credentials
-    setup_nexus_credentials
+    setup_maven_repo_credentials
     setup_argocd_credentials
-    setup_docker_registry_credentials
+    setup_container_registry_credentials
 
     echo ""
     log_info "=== Credential setup complete ==="

@@ -84,14 +84,13 @@ def jenkins = Jenkins.instance
 // These are loaded into the Jenkins controller via envFrom ConfigMap
 def envVarsToExpose = [
     "JENKINS_AGENT_IMAGE",
-    "DOCKER_REGISTRY_EXTERNAL",
-    "DOCKER_REGISTRY_INTERNAL",
+    "CONTAINER_REGISTRY_EXTERNAL",
     "CONTAINER_REGISTRY_PATH_PREFIX",
     "GITLAB_URL_EXTERNAL",
     "GITLAB_URL_INTERNAL",
     "GITLAB_GROUP",
-    "NEXUS_URL_EXTERNAL",
-    "NEXUS_URL_INTERNAL",
+    "MAVEN_REPO_URL_EXTERNAL",
+    "MAVEN_REPO_URL_INTERNAL",
     "ARGOCD_URL_EXTERNAL",
     "ARGOCD_URL_INTERNAL",
     "ARGOCD_SERVER",
@@ -180,7 +179,7 @@ main() {
     echo ""
     echo "Pipelines now have access to:"
     echo "  - env.JENKINS_AGENT_IMAGE (for kubernetes pod templates)"
-    echo "  - env.DOCKER_REGISTRY_* (for image pushing)"
+    echo "  - env.CONTAINER_REGISTRY_* (for image pushing)"
     echo "  - env.GITLAB_URL_* (for API calls)"
     echo "  - env.ARGOCD_* (for deployments)"
     echo "  - And more from pipeline-config ConfigMap"

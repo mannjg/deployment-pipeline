@@ -445,7 +445,7 @@ for env in dev stage prod; do
         -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
 
     # Just verify it still has a valid CI/CD image (wasn't corrupted)
-    if echo "$ea_image" | grep -qE "${DOCKER_REGISTRY_EXTERNAL}/p2c/example-app:"; then
+    if echo "$ea_image" | grep -qE "${CONTAINER_REGISTRY_EXTERNAL}/p2c/example-app:"; then
         demo_verify "example-app in $env: $ea_image (unchanged)"
     else
         demo_fail "example-app in $env has unexpected image: $ea_image"

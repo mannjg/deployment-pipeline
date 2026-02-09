@@ -17,8 +17,8 @@ required:
     description: "Full Git URL for k8s-deployments repo"
     example: "http://gitlab.gitlab.svc.cluster.local/p2c/k8s-deployments.git"
 
-  DOCKER_REGISTRY_EXTERNAL:
-    description: "External Docker registry URL (what kubelet pulls from)"
+  CONTAINER_REGISTRY_EXTERNAL:
+    description: "Container registry URL (what kubelet pulls from)"
     example: "docker.jmann.local"
 
   JENKINS_AGENT_IMAGE:

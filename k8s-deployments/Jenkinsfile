@@ -370,8 +370,8 @@ def promoteArtifacts(String sourceEnv, String targetEnv, String gitHash) {
         script: """
             export NEXUS_USER="\${NEXUS_USER}"
             export NEXUS_PASSWORD="\${NEXUS_PASSWORD}"
-            export NEXUS_URL_INTERNAL="${env.NEXUS_URL_INTERNAL}"
-            export DOCKER_REGISTRY_EXTERNAL="${env.DOCKER_REGISTRY_EXTERNAL}"
+            export MAVEN_REPO_URL_INTERNAL="${env.MAVEN_REPO_URL_INTERNAL}"
+            export CONTAINER_REGISTRY_EXTERNAL="${env.CONTAINER_REGISTRY_EXTERNAL}"
             export CONTAINER_REGISTRY_PATH_PREFIX="${env.CONTAINER_REGISTRY_PATH_PREFIX}"
             export GITLAB_URL_INTERNAL="${env.GITLAB_URL_INTERNAL}"
             export GITLAB_GROUP="${env.GITLAB_GROUP}"
@@ -427,7 +427,7 @@ def createPromotionBranchAndMR(String sourceEnv, String targetEnv, String imageT
         NEW_IMAGE_TAG="${newImageTag}"
         IMAGE_OVERRIDE_FLAG=""
         if [ -n "\${NEW_IMAGE_TAG}" ]; then
-            REGISTRY="\${DOCKER_REGISTRY_EXTERNAL}"
+            REGISTRY="\${CONTAINER_REGISTRY_EXTERNAL}"
             PATH_PREFIX="\${CONTAINER_REGISTRY_PATH_PREFIX}"
             NEW_IMAGE="\${REGISTRY}/\${PATH_PREFIX}/example-app:\${NEW_IMAGE_TAG}"
             IMAGE_OVERRIDE_FLAG="--image-override example-app=\${NEW_IMAGE}"
@@ -515,7 +515,7 @@ def createPromotionMR(String sourceEnv) {
                                 usernameVariable: 'GIT_USERNAME',
                                 passwordVariable: 'GIT_PASSWORD'),
                 string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN'),
-                usernamePassword(credentialsId: 'nexus-credentials',
+                usernamePassword(credentialsId: 'maven-repo-credentials',
                                 usernameVariable: 'NEXUS_USER',
                                 passwordVariable: 'NEXUS_PASSWORD')
             ]) {
@@ -595,7 +595,7 @@ spec:
     - name: DOCKER_TLS_CERTDIR
       value: ""
     args:
-    - --insecure-registry=${env.DOCKER_REGISTRY_EXTERNAL?.replaceAll('^https?://', '')}
+    - --insecure-registry=${env.CONTAINER_REGISTRY_EXTERNAL?.replaceAll('^https?://', '')}
     resources:
       requests:
         memory: "512Mi"
@@ -620,12 +620,12 @@ spec:
         GITLAB_URL = "${env.GITLAB_URL_INTERNAL ?: ''}"
         GITLAB_GROUP = "${env.GITLAB_GROUP ?: ''}"
         DEPLOYMENTS_REPO = "${env.DEPLOYMENTS_REPO_URL ?: ''}"
-        // External Docker registry (HTTPS) for Docker daemon operations
-        DOCKER_REGISTRY_EXTERNAL = "${env.DOCKER_REGISTRY_EXTERNAL ?: ''}"
+        // External container registry (HTTPS) for image operations
+        CONTAINER_REGISTRY_EXTERNAL = "${env.CONTAINER_REGISTRY_EXTERNAL ?: ''}"
         // Container registry path prefix (e.g., 'p2c' for registry-dso.jmann.local/p2c/...)
         CONTAINER_REGISTRY_PATH_PREFIX = "${env.CONTAINER_REGISTRY_PATH_PREFIX ?: ''}"
-        // Nexus URL for Maven artifact promotion
-        NEXUS_URL_INTERNAL = "${env.NEXUS_URL_INTERNAL ?: ''}"
+        // Maven repository URL for artifact promotion
+        MAVEN_REPO_URL_INTERNAL = "${env.MAVEN_REPO_URL_INTERNAL ?: ''}"
         ARGOCD_SERVER = "${env.ARGOCD_SERVER ?: ''}"
         ARGOCD_OPTS = "${env.ARGOCD_OPTS ?: ''}"
     }
@@ -644,7 +644,7 @@ Build: ${env.BUILD_URL}
 =======================================================
 """
                         // Validate required environment variables from ConfigMap
-                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DOCKER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
+                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
                         env.ORIGINAL_COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                         echo "Commit SHA: ${env.ORIGINAL_COMMIT_SHA}"
