@@ -256,7 +256,7 @@ mw_wait_for_mr_pipeline() {
                     return 1
                 fi
                 case "$result" in
-                    SUCCESS) return 0 ;;
+                    SUCCESS|NOT_BUILT) return 0 ;;
                     *) return 1 ;;
                 esac
             fi
