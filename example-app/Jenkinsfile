@@ -218,26 +218,6 @@ Image: ${FULL_IMAGE}"
     }
 }
 
-/**
- * Creates Maven settings.xml with Nexus credentials
- */
-def createMavenSettings() {
-    sh """
-        cat > /tmp/maven-settings.xml <<'MAVEN_SETTINGS'
-<?xml version="1.0" encoding="UTF-8"?>
-<settings>
-  <servers>
-    <server>
-      <id>nexus</id>
-      <username>\${NEXUS_CREDENTIALS_USR}</username>
-      <password>\${NEXUS_CREDENTIALS_PSW}</password>
-    </server>
-  </servers>
-</settings>
-MAVEN_SETTINGS
-    """
-}
-
 // ============================================================================
 // PIPELINE DEFINITION
 // ============================================================================
@@ -414,7 +394,6 @@ spec:
                             // Deploy Maven artifact first — fails fast on duplicate
                             // release before pushing a Docker image (JENKINS-26)
                             echo "Publishing Maven artifacts to Nexus..."
-                            createMavenSettings()
 
                             // Determine repository based on version type
                             def repoPath
@@ -426,9 +405,26 @@ spec:
                                 echo "Deploying release version to maven-releases repository"
                             }
 
+                            // Generate scoped Maven settings and deploy in a single shell
+                            // block. mktemp + trap ensures cleanup on success, failure,
+                            // or abort — no shared /tmp path needed (JENKINS-28).
                             sh """
-                                mvn clean deploy -DskipTests \
-                                    -s /tmp/maven-settings.xml \
+                                SETTINGS=\$(mktemp --suffix=-maven-settings.xml)
+                                trap 'rm -f "\$SETTINGS"' EXIT
+                                cat > "\$SETTINGS" <<SETTINGS_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+  <servers>
+    <server>
+      <id>nexus</id>
+      <username>\${NEXUS_CREDENTIALS_USR}</username>
+      <password>\${NEXUS_CREDENTIALS_PSW}</password>
+    </server>
+  </servers>
+</settings>
+SETTINGS_EOF
+                                mvn clean deploy -DskipTests \\
+                                    -s "\$SETTINGS" \\
                                     -DaltDeploymentRepository=nexus::default::${MAVEN_REPO_URL}/repository/${repoPath}/
                             """
                             echo "✓ Published Maven artifact: ${APP_NAME}-${APP_VERSION}"
