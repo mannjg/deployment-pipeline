@@ -24,32 +24,6 @@ The k8s-deployments pipeline correctly uses a DinD sidecar instead.
 
 ---
 
-## JENKINS-25: Replace grep-based JSON parsing with jq
-
-**Files:** `k8s-deployments/scripts/create-gitlab-mr.sh`, `k8s-deployments/Jenkinsfile` (`createPromotionMR`)
-
-**Problem:** JSON responses are parsed with `grep -o '"iid":[0-9]*' | cut -d':' -f2` (create-gitlab-mr.sh lines 88-89) and similar patterns. The agent image includes `jq`. Using grep for JSON is fragile (breaks on whitespace variations, nested objects, or field ordering changes).
-
-**Fix:** Replace all grep/sed/cut JSON parsing with `jq`:
-```bash
-# Before
-MR_IID=$(echo "$RESPONSE_BODY" | grep -o '"iid":[0-9]*' | head -1 | cut -d':' -f2)
-MR_WEB_URL=$(echo "$RESPONSE_BODY" | grep -o '"web_url":"[^"]*"' | head -1 | cut -d'"' -f4)
-
-# After
-MR_IID=$(echo "$RESPONSE_BODY" | jq -r '.iid')
-MR_WEB_URL=$(echo "$RESPONSE_BODY" | jq -r '.web_url')
-```
-
-Also replace `escape_json` (create-gitlab-mr.sh lines 60-63) with `jq -Rs '.'` which handles all control characters correctly.
-
-**Acceptance criteria:**
-- No `grep -o` on JSON responses in any script or Jenkinsfile
-- `escape_json` function is replaced with `jq -Rs`
-- MR descriptions containing tabs, carriage returns, or unicode don't break JSON payloads
-
----
-
 ## JENKINS-26: Handle Maven release artifact duplicate on re-run
 
 **Files:** `example-app/Jenkinsfile`
