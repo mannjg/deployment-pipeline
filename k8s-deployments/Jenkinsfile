@@ -320,7 +320,7 @@ def closeStalePromotionMRs(String encodedProject, String targetEnv) {
                         >/dev/null 2>&1 || echo "Warning: Could not close MR !${MR_IID}"
 
                     # Delete the stale source branch
-                    ENCODED_BRANCH=$(echo "${MR_BRANCH}" | sed 's/\//%2F/g')
+                    ENCODED_BRANCH=$(echo "${MR_BRANCH}" | sed 's|/|%2F|g')
                     curl -sf -X DELETE \
                         -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
                         "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/repository/branches/${ENCODED_BRANCH}" \
