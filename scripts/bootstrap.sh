@@ -612,6 +612,11 @@ configure_jenkins_global_env() {
     run_script_if_exists "$SCRIPT_DIR/02-configure/configure-jenkins-global-env.sh" "Jenkins global environment" "true"
 }
 
+configure_jenkins_root_url() {
+    log_info "Configuring Jenkins root URL..."
+    run_script_if_exists "$SCRIPT_DIR/02-configure/configure-jenkins-root-url.sh" "Jenkins root URL" "true"
+}
+
 configure_jenkins_script_security() {
     log_info "Configuring Jenkins script security..."
     run_script_if_exists "$SCRIPT_DIR/02-configure/configure-jenkins-script-security.sh" "Jenkins script security" "true"
@@ -777,16 +782,19 @@ configure_services() {
     # 5o. Configure Jenkins global environment variables (needed for pipeline env.VAR access)
     configure_jenkins_global_env
 
-    # 5p. Configure Jenkins script security (approve required signatures)
+    # 5p. Configure Jenkins root URL (needed for BUILD_URL)
+    configure_jenkins_root_url
+
+    # 5q. Configure Jenkins script security (approve required signatures)
     configure_jenkins_script_security
 
-    # 5q. Setup Jenkins pipeline credentials (gitlab-api-token-secret, nexus, argocd)
+    # 5r. Setup Jenkins pipeline credentials (gitlab-api-token-secret, nexus, argocd)
     setup_jenkins_pipeline_credentials
 
-    # 5r. Setup Jenkins pipelines and webhooks
+    # 5s. Setup Jenkins pipelines and webhooks
     setup_jenkins_pipelines
 
-    # 5s. Configure merge requirements (optional)
+    # 5t. Configure merge requirements (optional)
     run_script_if_exists "$SCRIPT_DIR/03-pipelines/configure-merge-requirements.sh" "Merge requirements" || true
 
     log_info "Service configuration completed successfully"

@@ -6,7 +6,7 @@ if [[ $# -ne 0 ]]; then
     exit 1
 fi
 
-: "${BUILD_URL:?BUILD_URL is required}"
+BUILD_URL="${BUILD_URL:-unknown}"
 : "${GIT_BRANCH:?GIT_BRANCH is required}"
 
 git add manifests/ 2>/dev/null || true
