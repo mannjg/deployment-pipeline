@@ -2,6 +2,7 @@ import groovy.transform.Field
 
 @Field static final String UPDATE_BRANCH_PREFIX = 'update-'
 @Field static final String PROMOTE_BRANCH_PREFIX = 'promote-'
+@Field static final String GITLAB_STATUS_CONTEXT = 'jenkins/k8s-deployments'
 @Field static final List<String> ENV_BRANCHES = ['dev', 'stage', 'prod']
 @Field static final List<String> PROMOTE_BRANCHES = ['dev', 'stage']
 
@@ -14,74 +15,7 @@ import groovy.transform.Field
 // Key principle: Manifests are generated ONLY in feature branches (pre-merge).
 // Environment branches receive manifests via merge - no regeneration needed.
 
-/**
- * Configures git credentials and identity, executes body, then cleans up.
- * Uses local git config when repoDir is provided (preferred), falls back to --global.
- * @param repoDir Optional directory for local git config scope. If null/empty, uses --global.
- * @param body Closure to execute with credentials configured
- */
-def withGitCredentials(String repoDir = null, Closure body) {
-    def gitCmd = 'git config --global'
-    if (repoDir?.trim()) {
-        if (!fileExists(repoDir)) {
-            error "withGitCredentials: repoDir '${repoDir}' does not exist"
-        }
-        gitCmd = "git -C ${repoDir} config"
-    }
-    try {
-        sh """
-            ${gitCmd} user.name 'Jenkins CI'
-            ${gitCmd} user.email 'jenkins@local'
-            ${gitCmd} credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "\${GIT_USERNAME}" "\${GIT_PASSWORD}"; }; f'
-        """
-        body()
-    } finally {
-        // No cleanup needed: Jenkins agents are ephemeral Kubernetes pods
-        // destroyed after each build. Credentials die with the pod.
-    }
-}
-
-/**
- * Validates that all listed environment variables are set.
- * Fails the build with a clear message listing all missing variables.
- * @param vars List of environment variable names to check
- */
-def validateRequiredEnvVars(List<String> vars) {
-    def missing = vars.findAll { !env."${it}" }
-    if (missing) {
-        error "Missing required pipeline environment variables: ${missing.join(', ')}. Check pipeline-config ConfigMap in Jenkins namespace."
-    }
-}
-
-/**
- * Reports commit status to GitLab. Non-fatal on failure.
- * @param state GitLab commit status state (pending, success, failed)
- * @param context Status context name (e.g., "jenkins/k8s-deployments")
- * @param commitSha Full git commit SHA to report status for
- * @param projectPath GitLab project path (e.g., "p2c/k8s-deployments")
- */
-def reportGitLabStatus(String state, String context, String commitSha, String projectPath) {
-    def descriptions = [
-        'pending': 'Pipeline running',
-        'success': 'Pipeline passed',
-        'failed' : 'Pipeline failed',
-    ]
-    def description = descriptions[state] ?: state
-    def encodedProject = projectPath.replace('/', '%2F')
-
-    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
-        sh """
-            JSON_PAYLOAD=\$(jq -n --arg state "${state}" --arg desc "${description}" --arg ctx "${context}" \
-                '{state: \$state, description: \$desc, context: \$ctx}')
-            curl -s -X POST \
-                -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                -H "Content-Type: application/json" \
-                -d "\${JSON_PAYLOAD}" \
-                "${env.GITLAB_URL}/api/v4/projects/${encodedProject}/statuses/${commitSha}" \
-                || echo "Could not update commit status (non-fatal)"
-        """
-    }
-}
+def helpers = load 'Jenkinsfile.helpers.groovy'
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -153,7 +87,7 @@ def getMRTargetEnvironment(String branchName, String projectPath) {
         ]) {
             sh(
                 script: '''
-                    curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                    ./scripts/gitlab-api.sh GET \
                         "${GITLAB_URL}/api/v4/projects/${MR_QUERY_PROJECT}/merge_requests?state=opened&source_branch=${MR_QUERY_BRANCH}" \
                         2>/dev/null | jq -r '.[0].target_branch // empty'
                 ''',
@@ -291,7 +225,7 @@ def closeStalePromotionMRs(String encodedProject, String targetEnv) {
         "PROMO_PREFIX=${PROMOTE_BRANCH_PREFIX}"
     ]) {
         sh '''
-            STALE_MRS=$(curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+            STALE_MRS=$(./scripts/gitlab-api.sh GET \
                 "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/merge_requests?state=opened&target_branch=${PROMO_TARGET}" \
                 2>/dev/null | jq -r --arg prefix "${PROMO_PREFIX}${PROMO_TARGET}-" \
                 '[.[] | select(.source_branch | startswith($prefix))] | .[] | "\\(.iid) \\(.source_branch)"')
@@ -304,25 +238,20 @@ def closeStalePromotionMRs(String encodedProject, String targetEnv) {
                     echo "Closing stale promotion MR !${MR_IID} (branch: ${MR_BRANCH})"
 
                     # Add comment explaining supersession
-                    curl -sf -X POST \
-                        -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-                        -H "Content-Type: application/json" \
-                        -d "{\"body\":\"Superseded by promotion from build ${BUILD_URL}\"}" \
+                    ./scripts/gitlab-api.sh POST \
                         "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/merge_requests/${MR_IID}/notes" \
+                        --data "{\"body\":\"Superseded by promotion from build ${BUILD_URL}\"}" \
                         >/dev/null 2>&1 || echo "Warning: Could not add comment to MR !${MR_IID}"
 
                     # Close the MR
-                    curl -sf -X PUT \
-                        -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-                        -H "Content-Type: application/json" \
-                        -d '{"state_event":"close"}' \
+                    ./scripts/gitlab-api.sh PUT \
                         "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/merge_requests/${MR_IID}" \
+                        --data '{"state_event":"close"}' \
                         >/dev/null 2>&1 || echo "Warning: Could not close MR !${MR_IID}"
 
                     # Delete the stale source branch
                     ENCODED_BRANCH=$(echo "${MR_BRANCH}" | sed 's|/|%2F|g')
-                    curl -sf -X DELETE \
-                        -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                    ./scripts/gitlab-api.sh DELETE \
                         "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/repository/branches/${ENCODED_BRANCH}" \
                         >/dev/null 2>&1 || echo "Warning: Could not delete branch ${MR_BRANCH}"
                 done
@@ -345,7 +274,7 @@ def extractSourceImageTag(String encodedProject, String sourceEnv) {
     ]) {
         sh(
             script: '''
-                curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                ./scripts/gitlab-api.sh GET \
                     "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/repository/files/env.cue?ref=${PROMO_SOURCE}" \
                     2>/dev/null | jq -r '.content' | base64 -d | grep 'image:' | sed -E 's/.*image:\\s*"([^"]+)".*/\\1/' | head -1
             ''',
@@ -407,10 +336,8 @@ def promoteArtifacts(String sourceEnv, String targetEnv, String gitHash) {
  * @param newImageTag Promoted image tag (from promoteArtifacts), or empty string to skip image override
  */
 def createPromotionBranchAndMR(String sourceEnv, String targetEnv, String imageTag, String newImageTag) {
+    helpers.cleanupWorkspaceFiles(['promoted-image-tag', 'promote.log'])
     sh """
-        # Clean up promote temp files from workspace before git operations
-        rm -f promoted-image-tag promote.log
-
         # Fetch both branches
         git fetch origin ${sourceEnv} ${targetEnv}
 
@@ -550,7 +477,7 @@ def createPromotionMR(String sourceEnv) {
                     error "Cannot create promotion MR: no image tag found in ${sourceEnv} env.cue"
                 }
 
-                withGitCredentials('.') {
+                helpers.withGitCredentials('.') {
                     createPromotionBranchAndMR(sourceEnv, targetEnv, imageTag, newImageTag)
                 }
             }
@@ -565,49 +492,12 @@ def createPromotionMR(String sourceEnv) {
 // Agent image from system environment (set via ConfigMap envFrom).
 // System.getenv() is required here because this runs at Groovy parse time,
 // before the pipeline environment block is evaluated.
-def agentImage = System.getenv('JENKINS_AGENT_IMAGE')
-if (!agentImage) { error "JENKINS_AGENT_IMAGE not set - check pipeline-config ConfigMap" }
+def agentImage = helpers.getAgentImageOrFail()
 
 pipeline {
     agent {
         kubernetes {
-            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: pipeline
-    image: ${agentImage}
-    command:
-    - cat
-    tty: true
-    env:
-    - name: DOCKER_HOST
-      value: tcp://localhost:2375
-    resources:
-      requests:
-        memory: "512Mi"
-        cpu: "250m"
-      limits:
-        memory: "1Gi"
-        cpu: "1000m"
-  - name: dind
-    image: docker:dind
-    securityContext:
-      privileged: true
-    env:
-    - name: DOCKER_TLS_CERTDIR
-      value: ""
-    args:
-    - --insecure-registry=${env.CONTAINER_REGISTRY_EXTERNAL?.replaceAll('^https?://', '')}
-    resources:
-      requests:
-        memory: "512Mi"
-        cpu: "250m"
-      limits:
-        memory: "2Gi"
-        cpu: "1000m"
-"""
+            yaml helpers.podTemplateYaml(agentImage)
         }
     }
 
@@ -648,7 +538,7 @@ Build: ${env.BUILD_URL}
 =======================================================
 """
                         // Validate required environment variables from ConfigMap
-                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
+                        helpers.validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
                         env.ORIGINAL_COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                         echo "Commit SHA: ${env.ORIGINAL_COMMIT_SHA}"
@@ -747,7 +637,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                                             usernameVariable: 'GIT_USERNAME',
                                             passwordVariable: 'GIT_PASSWORD')
                         ]) {
-                            withGitCredentials('.') {
+                            helpers.withGitCredentials('.') {
                                 if (!mergeTargetBranchForPreview(env.MR_TARGET_ENV, isPromoteBranch)) {
                                     error "Could not merge ${env.MR_TARGET_ENV} - cannot proceed"
                                 }
@@ -814,7 +704,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                                             usernameVariable: 'GIT_USERNAME',
                                             passwordVariable: 'GIT_PASSWORD')
                         ]) {
-                            withGitCredentials('.') {
+                            helpers.withGitCredentials('.') {
                                 sh """
                                     git add manifests/ 2>/dev/null || true
 
@@ -964,7 +854,7 @@ Build: ${env.BUILD_URL}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
                 container('pipeline') {
-                    reportGitLabStatus('success', 'jenkins/k8s-deployments',
+                    helpers.reportGitLabStatus('success', GITLAB_STATUS_CONTEXT,
                         env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA,
                         "${env.GITLAB_GROUP}/k8s-deployments")
                 }
@@ -982,7 +872,7 @@ Check logs above for error details.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
                 container('pipeline') {
-                    reportGitLabStatus('failed', 'jenkins/k8s-deployments',
+                    helpers.reportGitLabStatus('failed', GITLAB_STATUS_CONTEXT,
                         env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA,
                         "${env.GITLAB_GROUP}/k8s-deployments")
                 }

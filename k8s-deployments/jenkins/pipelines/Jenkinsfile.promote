@@ -19,52 +19,12 @@ import groovy.transform.Field
  * ensuring that fixes made during dev MR review propagate correctly to stage/prod.
  */
 
-/**
- * Configures git credentials and identity, executes body, then cleans up.
- * Uses local git config when repoDir is provided (preferred), falls back to --global.
- * @param repoDir Optional directory for local git config scope. If null/empty, uses --global.
- * @param body Closure to execute with credentials configured
- */
-def withGitCredentials(String repoDir = null, Closure body) {
-    def gitCmd = 'git config --global'
-    if (repoDir?.trim()) {
-        if (!fileExists(repoDir)) {
-            error "withGitCredentials: repoDir '${repoDir}' does not exist"
-        }
-        gitCmd = "git -C ${repoDir} config"
-    }
-    try {
-        sh """
-            ${gitCmd} user.name 'Jenkins CI'
-            ${gitCmd} user.email 'jenkins@local'
-            ${gitCmd} credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "\${GIT_USERNAME}" "\${GIT_PASSWORD}"; }; f'
-        """
-        body()
-    } finally {
-        // No cleanup needed: Jenkins agents are ephemeral Kubernetes pods
-        // destroyed after each build. Credentials die with the pod.
-    }
-}
-
-/**
- * Validates that all listed environment variables are set.
- * Fails the build with a clear message listing all missing variables.
- * @param vars List of environment variable names to check
- */
-def validateRequiredEnvVars(List<String> vars) {
-    def missing = vars.findAll { !env."${it}" }
-    if (missing) {
-        error "Missing required pipeline environment variables: ${missing.join(', ')}. Check pipeline-config ConfigMap in Jenkins namespace."
-    }
-}
+def helpers = load 'Jenkinsfile.helpers.groovy'
 
 // Agent image from system environment (set via ConfigMap envFrom).
 // System.getenv() is required here because this runs at Groovy parse time,
 // before the pipeline environment block is evaluated.
-def agentImage = System.getenv('JENKINS_AGENT_IMAGE')
-if (!agentImage) {
-    error "JENKINS_AGENT_IMAGE environment variable is required but not set. Configure it in the pipeline-config ConfigMap."
-}
+def agentImage = helpers.getAgentImageOrFail()
 
 pipeline {
     agent {
@@ -133,9 +93,6 @@ spec:
         // Container registry path prefix (e.g., 'p2c' for registry/p2c/example-app)
         APP_GROUP = "${env.CONTAINER_REGISTRY_PATH_PREFIX ?: ''}"
 
-        // Credentials
-        GITLAB_CREDENTIALS = credentials('gitlab-credentials')
-        GITLAB_API_TOKEN = credentials('gitlab-api-token-secret')
     }
 
     stages {
@@ -146,7 +103,7 @@ spec:
                         echo "=== Validate Promotion Parameters ==="
 
                         // Validate required environment variables
-                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
+                        helpers.validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
                         // Validate promotion path
                         def validPromotions = [
@@ -230,18 +187,21 @@ Check: kubectl get deployment ${params.APP_NAME} -n ${namespace}"""
                     script {
                         echo "=== Create Promotion MR: ${params.SOURCE_ENV} -> ${params.TARGET_ENV} ==="
 
-                        withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
-                                                          usernameVariable: 'GIT_USERNAME',
-                                                          passwordVariable: 'GIT_PASSWORD')]) {
+                        withCredentials([
+                            usernamePassword(credentialsId: 'gitlab-credentials',
+                                              usernameVariable: 'GIT_USERNAME',
+                                              passwordVariable: 'GIT_PASSWORD'),
+                            string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')
+                        ]) {
                             // Phase 1: Clone requires global credential helper (repo doesn't exist yet)
-                            withGitCredentials {
+                            helpers.withGitCredentials {
                                 sh """
                                     rm -rf k8s-deployments
                                     git clone ${DEPLOYMENT_REPO} k8s-deployments
                                 """
                             }
                             // Phase 2: All subsequent operations use repo-scoped config
-                            withGitCredentials('k8s-deployments') {
+                            helpers.withGitCredentials('k8s-deployments') {
                                 sh """
                                     cd k8s-deployments
 
@@ -321,7 +281,8 @@ ${params.TARGET_ENV == 'prod' ? '> **Production Deployment** - Please review car
 *Generated by Jenkins Promote Pipeline*"""
 
                                 // Write MR description to temp file (multi-line content can break withEnv)
-                                writeFile file: "${env.WORKSPACE}/.mr-description-${env.BUILD_NUMBER}.txt", text: mrDescription
+                                def mrDescriptionFile = helpers.tempFilePath('mr-description', '.txt')
+                                writeFile file: mrDescriptionFile, text: mrDescription
 
                                 // Scope Groovy local as env var for sh ''' block (not global env.*)
                                 withEnv(["PROMOTE_PREFIX=${PROMOTE_BRANCH_PREFIX}"]) {
@@ -334,7 +295,7 @@ ${params.TARGET_ENV == 'prod' ? '> **Production Deployment** - Please review car
                                         git push -u origin "${FEATURE_BRANCH}"
 
                                         # Create MR using GitLab API
-                                        export GITLAB_TOKEN="${GITLAB_API_TOKEN}"
+                                        export GITLAB_TOKEN="${GITLAB_TOKEN}"
                                         export GITLAB_URL_INTERNAL="${GITLAB_URL}"
 
                                         ./scripts/create-gitlab-mr.sh \
@@ -397,6 +358,7 @@ Check logs above for error details
                         rm -rf k8s-deployments || true
                         echo "Cleanup completed"
                     '''
+                    helpers.cleanupWorkspaceFiles(['.mr-description-*'])
                 }
             }
         }

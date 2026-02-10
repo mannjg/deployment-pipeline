@@ -1,74 +1,8 @@
 // Production-Ready Jenkinsfile for example-app CI/CD pipeline
 // Refactored for maintainability, reliability, and production best practices
 
-/**
- * Configures git credentials and identity, executes body, then cleans up.
- * Uses local git config when repoDir is provided (preferred), falls back to --global.
- * @param repoDir Optional directory for local git config scope. If null/empty, uses --global.
- * @param body Closure to execute with credentials configured
- */
-def withGitCredentials(String repoDir = null, Closure body) {
-    def gitCmd = 'git config --global'
-    if (repoDir?.trim()) {
-        if (!fileExists(repoDir)) {
-            error "withGitCredentials: repoDir '${repoDir}' does not exist"
-        }
-        gitCmd = "git -C ${repoDir} config"
-    }
-    try {
-        sh """
-            ${gitCmd} user.name 'Jenkins CI'
-            ${gitCmd} user.email 'jenkins@local'
-            ${gitCmd} credential.helper '!f() { printf "username=%s\\npassword=%s\\n" "\${GIT_USERNAME}" "\${GIT_PASSWORD}"; }; f'
-        """
-        body()
-    } finally {
-        // No cleanup needed: Jenkins agents are ephemeral Kubernetes pods
-        // destroyed after each build. Credentials die with the pod.
-    }
-}
-
-/**
- * Validates that all listed environment variables are set.
- * Fails the build with a clear message listing all missing variables.
- * @param vars List of environment variable names to check
- */
-def validateRequiredEnvVars(List<String> vars) {
-    def missing = vars.findAll { !env."${it}" }
-    if (missing) {
-        error "Missing required pipeline environment variables: ${missing.join(', ')}. Check pipeline-config ConfigMap in Jenkins namespace."
-    }
-}
-
-/**
- * Reports commit status to GitLab. Non-fatal on failure.
- * @param state GitLab commit status state (pending, success, failed)
- * @param context Status context name (e.g., "jenkins/example-app")
- * @param commitSha Full git commit SHA to report status for
- * @param projectPath GitLab project path (e.g., "p2c/example-app")
- */
-def reportGitLabStatus(String state, String context, String commitSha, String projectPath) {
-    def descriptions = [
-        'pending': 'Pipeline running',
-        'success': 'Pipeline passed',
-        'failed' : 'Pipeline failed',
-    ]
-    def description = descriptions[state] ?: state
-    def encodedProject = projectPath.replace('/', '%2F')
-
-    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
-        sh """
-            JSON_PAYLOAD=\$(jq -n --arg state "${state}" --arg desc "${description}" --arg ctx "${context}" \
-                '{state: \$state, description: \$desc, context: \$ctx}')
-            curl -s -X POST \
-                -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                -H "Content-Type: application/json" \
-                -d "\${JSON_PAYLOAD}" \
-                "${env.GITLAB_URL}/api/v4/projects/${encodedProject}/statuses/${commitSha}" \
-                || echo "Could not update commit status (non-fatal)"
-        """
-    }
-}
+def helpers = load 'Jenkinsfile.helpers.groovy'
+def gitlabStatusContext = 'jenkins/example-app'
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -88,7 +22,8 @@ def deployToEnvironment(String environment, String branchPrefix, String mrTitle,
             echo "[${environment.toUpperCase()}] Creating environment update and MR..."
 
             // Write MR description to temp file (multi-line content can break withEnv)
-            writeFile file: "${env.WORKSPACE}/.mr-description-${env.BUILD_NUMBER}.txt", text: mrDescription
+            def mrDescriptionFile = helpers.tempFilePath('mr-description', '.txt')
+            writeFile file: mrDescriptionFile, text: mrDescription
 
             // Scope Groovy function params as env vars for sh ''' blocks (not global env.*)
             withEnv([
@@ -96,18 +31,21 @@ def deployToEnvironment(String environment, String branchPrefix, String mrTitle,
                 "DEPLOY_BRANCH_PREFIX=${branchPrefix}",
                 "DEPLOY_MR_TITLE=${mrTitle}"
             ]) {
-                withCredentials([usernamePassword(credentialsId: 'gitlab-credentials',
-                                                  usernameVariable: 'GIT_USERNAME',
-                                                  passwordVariable: 'GIT_PASSWORD')]) {
+                withCredentials([
+                    usernamePassword(credentialsId: 'gitlab-credentials',
+                                      usernameVariable: 'GIT_USERNAME',
+                                      passwordVariable: 'GIT_PASSWORD'),
+                    string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')
+                ]) {
                     // Phase 1: Clone requires global credential helper (repo doesn't exist yet)
-                    withGitCredentials {
+                    helpers.withGitCredentials {
                         sh '''
                             rm -rf k8s-deployments
                             git clone "${DEPLOYMENT_REPO}" k8s-deployments
                         '''
                     }
                     // Phase 2: All subsequent operations use repo-scoped config
-                    withGitCredentials('k8s-deployments') {
+                    helpers.withGitCredentials('k8s-deployments') {
                         sh '''
                             cd k8s-deployments
 
@@ -189,7 +127,7 @@ Image: ${FULL_IMAGE}"
                             git push -u origin "${FEATURE_BRANCH}"
 
                             # GitLab API credentials for MR operations
-                            export GITLAB_TOKEN="${GITLAB_API_TOKEN}"
+                            export GITLAB_TOKEN="${GITLAB_TOKEN}"
                             export GITLAB_URL_INTERNAL="${GITLAB_URL}"
 
                             # Close any open MRs superseded by this build (JENKINS-27)
@@ -206,7 +144,7 @@ Image: ${FULL_IMAGE}"
                                 "$(cat "${WORKSPACE}/.mr-description-${BUILD_NUMBER}.txt")"
                         '''
 
-                        if (fileExists("${env.WORKSPACE}/.no-changes-${env.BUILD_NUMBER}")) {
+                        if (fileExists(helpers.tempFilePath('no-changes'))) {
                             echo "[${environment.toUpperCase()}] No changes detected - MR creation skipped (image tag already current)"
                         } else {
                             echo "[${environment.toUpperCase()}] ✓ MR created successfully: ${branchPrefix}-${env.IMAGE_TAG} → ${environment}"
@@ -223,49 +161,12 @@ Image: ${FULL_IMAGE}"
 // ============================================================================
 
 // Get agent image from system environment (set via ConfigMap envFrom)
-def agentImage = System.getenv('JENKINS_AGENT_IMAGE')
-if (!agentImage) { error "JENKINS_AGENT_IMAGE not set - check pipeline-config ConfigMap" }
+def agentImage = helpers.getAgentImageOrFail()
 
 pipeline {
     agent {
         kubernetes {
-            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: pipeline
-    image: ${agentImage}
-    command:
-    - cat
-    tty: true
-    env:
-    - name: DOCKER_HOST
-      value: tcp://localhost:2375
-    resources:
-      requests:
-        memory: "1Gi"
-        cpu: "500m"
-      limits:
-        memory: "2Gi"
-        cpu: "2000m"
-  - name: dind
-    image: docker:dind
-    securityContext:
-      privileged: true
-    env:
-    - name: DOCKER_TLS_CERTDIR
-      value: ""
-    args:
-    - --insecure-registry=${env.CONTAINER_REGISTRY_EXTERNAL?.replaceAll('^https?://', '')}
-    resources:
-      requests:
-        memory: "512Mi"
-        cpu: "250m"
-      limits:
-        memory: "2Gi"
-        cpu: "1000m"
-"""
+            yaml helpers.podTemplateYaml(agentImage)
         }
     }
 
@@ -301,12 +202,6 @@ spec:
         GITLAB_GROUP = "${env.GITLAB_GROUP ?: ''}"
         DEPLOYMENT_REPO = "${env.DEPLOYMENTS_REPO_URL ?: ''}"
 
-        // Credentials
-        MAVEN_REPO_CREDENTIALS = credentials('maven-repo-credentials')
-        CONTAINER_REGISTRY_CREDENTIALS = credentials('container-registry-credentials')
-        GITLAB_CREDENTIALS = credentials('gitlab-credentials')
-        GITLAB_API_TOKEN = credentials('gitlab-api-token-secret')
-
         // Computed image reference
         IMAGE_NAME = "${CONTAINER_REGISTRY}/${APP_GROUP}/${APP_NAME}"
     }
@@ -320,7 +215,7 @@ spec:
                         echo "=== Checkout & Setup ==="
 
                         // Validate required environment variables from ConfigMap
-                        validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
+                        helpers.validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
                         // Extract version from pom.xml
                         env.APP_VERSION = sh(
@@ -355,7 +250,7 @@ spec:
                         echo "✓ Deploy target: ${env.FULL_IMAGE}"
 
                         // Report "pending" status to GitLab so MR shows pipeline is running
-                        reportGitLabStatus('pending', 'jenkins/example-app', env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP}/example-app")
+                        helpers.reportGitLabStatus('pending', gitlabStatusContext, env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP}/example-app")
                     }
                 }
             }
@@ -403,9 +298,17 @@ spec:
                         timeout(time: 30, unit: 'MINUTES') {
                             echo "=== Building and Publishing Artifacts ==="
 
-                            // Deploy Maven artifact first — fails fast on duplicate
-                            // release before pushing a Docker image (JENKINS-26)
-                            echo "Publishing Maven artifacts to Nexus..."
+                            withCredentials([
+                                usernamePassword(credentialsId: 'maven-repo-credentials',
+                                                usernameVariable: 'MAVEN_REPO_CREDENTIALS_USR',
+                                                passwordVariable: 'MAVEN_REPO_CREDENTIALS_PSW'),
+                                usernamePassword(credentialsId: 'container-registry-credentials',
+                                                usernameVariable: 'CONTAINER_REGISTRY_CREDENTIALS_USR',
+                                                passwordVariable: 'CONTAINER_REGISTRY_CREDENTIALS_PSW')
+                            ]) {
+                                // Deploy Maven artifact first — fails fast on duplicate
+                                // release before pushing a Docker image (JENKINS-26)
+                                echo "Publishing Maven artifacts to Nexus..."
 
                             // Determine repository based on version type
                             def repoPath
@@ -439,24 +342,25 @@ SETTINGS_EOF
                                     -s "\$SETTINGS" \\
                                     -DaltDeploymentRepository=nexus::default::${MAVEN_REPO_URL}/repository/${repoPath}/
                             """
-                            echo "✓ Published Maven artifact: ${APP_NAME}-${APP_VERSION}"
+                                echo "✓ Published Maven artifact: ${APP_NAME}-${APP_VERSION}"
 
-                            // Build and push Docker image with Jib (reuses build output)
-                            echo "Building and pushing container image..."
-                            sh '''
-                                mvn package \
-                                    -Dquarkus.container-image.build=true \
-                                    -Dquarkus.container-image.push=true \
-                                    -Dquarkus.container-image.registry=${CONTAINER_REGISTRY} \
-                                    -Dquarkus.container-image.group=${APP_GROUP} \
-                                    -Dquarkus.container-image.name=${APP_NAME} \
-                                    -Dquarkus.container-image.tag=${IMAGE_TAG} \
-                                    -Dquarkus.container-image.insecure=true \
-                                    -Dquarkus.container-image.username=${CONTAINER_REGISTRY_CREDENTIALS_USR} \
-                                    -Dquarkus.container-image.password=${CONTAINER_REGISTRY_CREDENTIALS_PSW} \
-                                    -DsendCredentialsOverHttp=true
-                            '''
-                            echo "✓ Published container image: ${FULL_IMAGE}"
+                                // Build and push Docker image with Jib (reuses build output)
+                                echo "Building and pushing container image..."
+                                sh '''
+                                    mvn package \
+                                        -Dquarkus.container-image.build=true \
+                                        -Dquarkus.container-image.push=true \
+                                        -Dquarkus.container-image.registry=${CONTAINER_REGISTRY} \
+                                        -Dquarkus.container-image.group=${APP_GROUP} \
+                                        -Dquarkus.container-image.name=${APP_NAME} \
+                                        -Dquarkus.container-image.tag=${IMAGE_TAG} \
+                                        -Dquarkus.container-image.insecure=true \
+                                        -Dquarkus.container-image.username=${CONTAINER_REGISTRY_CREDENTIALS_USR} \
+                                        -Dquarkus.container-image.password=${CONTAINER_REGISTRY_CREDENTIALS_PSW} \
+                                        -DsendCredentialsOverHttp=true
+                                '''
+                                echo "✓ Published container image: ${FULL_IMAGE}"
+                            }
                         }
                     }
                 }
@@ -520,7 +424,7 @@ Build URL: ${env.BUILD_URL}
 """
                 // Report success status to GitLab
                 container('pipeline') {
-                    reportGitLabStatus('success', 'jenkins/example-app', env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP}/example-app")
+                    helpers.reportGitLabStatus('success', gitlabStatusContext, env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP}/example-app")
                 }
             }
         }
@@ -537,7 +441,7 @@ Check logs above for error details
 """
                 // Report failure status to GitLab
                 container('pipeline') {
-                    reportGitLabStatus('failed', 'jenkins/example-app', env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP}/example-app")
+                    helpers.reportGitLabStatus('failed', gitlabStatusContext, env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP}/example-app")
                 }
             }
         }
@@ -548,9 +452,9 @@ Check logs above for error details
                     sh '''
                         echo "Performing cleanup..."
                         rm -rf k8s-deployments || true
-                        rm -f "${WORKSPACE}"/.no-changes-* || true
                         echo "Cleanup completed"
                     '''
+                    helpers.cleanupWorkspaceFiles(['.no-changes-*', '.mr-description-*'])
                 }
             }
         }
