@@ -2,34 +2,28 @@ import groovy.transform.Field
 
 @Field static final String PROMOTE_BRANCH_PREFIX = 'promote-'
 
-/**
- * Jenkins Pipeline: Promote Environment
- *
- * Purpose: Promote an application from one environment to the next by:
- * 1. Auto-detecting the image from source environment deployment (or using provided IMAGE_TAG)
- * 2. Updating the image in target environment's env.cue
- * 3. Regenerating Kubernetes manifests
- * 4. Creating a GitLab MR targeting the target environment branch
- *
- * Valid promotion paths:
- *   dev -> stage
- *   stage -> prod
- *
- * This pipeline replaces the inline promotion logic that was previously in the CI pipeline,
- * ensuring that fixes made during dev MR review propagate correctly to stage/prod.
- */
+def helpers = null
 
-def helpers = load 'Jenkinsfile.helpers.groovy'
+def loadHelpers() {
+    if (helpers == null) {
+        helpers = load 'Jenkinsfile.helpers.groovy'
+    }
+    return helpers
+}
 
 // Agent image from system environment (set via ConfigMap envFrom).
 // System.getenv() is required here because this runs at Groovy parse time,
 // before the pipeline environment block is evaluated.
-def agentImage = helpers.getAgentImageOrFail()
+def getAgentImageOrFail(String envVarName = 'JENKINS_AGENT_IMAGE') {
+    def agentImage = System.getenv(envVarName)
+    if (!agentImage) {
+        error "${envVarName} environment variable is required but not set. Configure it in the pipeline-config ConfigMap."
+    }
+    return agentImage
+}
 
-pipeline {
-    agent {
-        kubernetes {
-            yaml """
+def podTemplateYaml(String agentImage) {
+    return """
 apiVersion: v1
 kind: Pod
 spec:
@@ -47,6 +41,34 @@ spec:
         memory: "1Gi"
         cpu: "1000m"
 """
+}
+
+/**
+ * Jenkins Pipeline: Promote Environment
+ *
+ * Purpose: Promote an application from one environment to the next by:
+ * 1. Auto-detecting the image from source environment deployment (or using provided IMAGE_TAG)
+ * 2. Updating the image in target environment's env.cue
+ * 3. Regenerating Kubernetes manifests
+ * 4. Creating a GitLab MR targeting the target environment branch
+ *
+ * Valid promotion paths:
+ *   dev -> stage
+ *   stage -> prod
+ *
+ * This pipeline replaces the inline promotion logic that was previously in the CI pipeline,
+ * ensuring that fixes made during dev MR review propagate correctly to stage/prod.
+ */
+
+// Agent image from system environment (set via ConfigMap envFrom).
+// System.getenv() is required here because this runs at Groovy parse time,
+// before the pipeline environment block is evaluated.
+def agentImage = getAgentImageOrFail()
+
+pipeline {
+    agent {
+        kubernetes {
+            yaml podTemplateYaml(agentImage)
         }
     }
 
@@ -103,7 +125,7 @@ spec:
                         echo "=== Validate Promotion Parameters ==="
 
                         // Validate required environment variables
-                        helpers.validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
+                        loadHelpers().validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
                         // Validate promotion path
                         def validPromotions = [
@@ -194,14 +216,14 @@ Check: kubectl get deployment ${params.APP_NAME} -n ${namespace}"""
                             string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')
                         ]) {
                             // Phase 1: Clone requires global credential helper (repo doesn't exist yet)
-                            helpers.withGitCredentials {
+                            loadHelpers().withGitCredentials {
                                 sh """
                                     rm -rf k8s-deployments
                                     git clone ${DEPLOYMENT_REPO} k8s-deployments
                                 """
                             }
                             // Phase 2: All subsequent operations use repo-scoped config
-                            helpers.withGitCredentials('k8s-deployments') {
+                            loadHelpers().withGitCredentials('k8s-deployments') {
                                 sh """
                                     cd k8s-deployments
 
@@ -358,7 +380,7 @@ Check logs above for error details
                         rm -rf k8s-deployments || true
                         echo "Cleanup completed"
                     '''
-                    helpers.cleanupWorkspaceFiles(['.mr-description-*'])
+                    loadHelpers().cleanupWorkspaceFiles(['.mr-description-*'])
                 }
             }
         }

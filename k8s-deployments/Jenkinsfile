@@ -6,6 +6,66 @@ import groovy.transform.Field
 @Field static final List<String> ENV_BRANCHES = ['dev', 'stage', 'prod']
 @Field static final List<String> PROMOTE_BRANCHES = ['dev', 'stage']
 
+def helpers = null
+
+def loadHelpers() {
+    if (helpers == null) {
+        helpers = load 'Jenkinsfile.helpers.groovy'
+    }
+    return helpers
+}
+
+// Agent image from system environment (set via ConfigMap envFrom).
+// System.getenv() is required here because this runs at Groovy parse time,
+// before the pipeline environment block is evaluated.
+def getAgentImageOrFail(String envVarName = 'JENKINS_AGENT_IMAGE') {
+    def agentImage = System.getenv(envVarName)
+    if (!agentImage) {
+        error "${envVarName} not set - check pipeline-config ConfigMap"
+    }
+    return agentImage
+}
+
+def podTemplateYaml(String agentImage) {
+    return """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: pipeline
+    image: ${agentImage}
+    command:
+    - cat
+    tty: true
+    env:
+    - name: DOCKER_HOST
+      value: tcp://localhost:2375
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+  - name: dind
+    image: docker:dind
+    securityContext:
+      privileged: true
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""
+    args:
+    - --insecure-registry=${env.CONTAINER_REGISTRY_EXTERNAL?.replaceAll('^https?://', '')}
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "2Gi"
+        cpu: "1000m"
+"""
+}
+
 // k8s-deployments Pipeline
 //
 // Two distinct workflows:
@@ -14,8 +74,6 @@ import groovy.transform.Field
 //
 // Key principle: Manifests are generated ONLY in feature branches (pre-merge).
 // Environment branches receive manifests via merge - no regeneration needed.
-
-def helpers = load 'Jenkinsfile.helpers.groovy'
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -336,7 +394,8 @@ def promoteArtifacts(String sourceEnv, String targetEnv, String gitHash) {
  * @param newImageTag Promoted image tag (from promoteArtifacts), or empty string to skip image override
  */
 def createPromotionBranchAndMR(String sourceEnv, String targetEnv, String imageTag, String newImageTag) {
-    helpers.cleanupWorkspaceFiles(['promoted-image-tag', 'promote.log'])
+    def h = loadHelpers()
+    h.cleanupWorkspaceFiles(['promoted-image-tag', 'promote.log'])
     sh """
         # Fetch both branches
         git fetch origin ${sourceEnv} ${targetEnv}
@@ -492,12 +551,12 @@ def createPromotionMR(String sourceEnv) {
 // Agent image from system environment (set via ConfigMap envFrom).
 // System.getenv() is required here because this runs at Groovy parse time,
 // before the pipeline environment block is evaluated.
-def agentImage = helpers.getAgentImageOrFail()
+def agentImage = getAgentImageOrFail()
 
 pipeline {
     agent {
         kubernetes {
-            yaml helpers.podTemplateYaml(agentImage)
+            yaml podTemplateYaml(agentImage)
         }
     }
 
@@ -538,7 +597,7 @@ Build: ${env.BUILD_URL}
 =======================================================
 """
                         // Validate required environment variables from ConfigMap
-                        helpers.validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
+                        loadHelpers().validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
                         env.ORIGINAL_COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                         echo "Commit SHA: ${env.ORIGINAL_COMMIT_SHA}"
@@ -637,7 +696,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                                             usernameVariable: 'GIT_USERNAME',
                                             passwordVariable: 'GIT_PASSWORD')
                         ]) {
-                            helpers.withGitCredentials('.') {
+                            loadHelpers().withGitCredentials('.') {
                                 if (!mergeTargetBranchForPreview(env.MR_TARGET_ENV, isPromoteBranch)) {
                                     error "Could not merge ${env.MR_TARGET_ENV} - cannot proceed"
                                 }
@@ -704,7 +763,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                                             usernameVariable: 'GIT_USERNAME',
                                             passwordVariable: 'GIT_PASSWORD')
                         ]) {
-                            helpers.withGitCredentials('.') {
+                            loadHelpers().withGitCredentials('.') {
                                 sh """
                                     git add manifests/ 2>/dev/null || true
 
@@ -854,7 +913,7 @@ Build: ${env.BUILD_URL}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
                 container('pipeline') {
-                    helpers.reportGitLabStatus('success', GITLAB_STATUS_CONTEXT,
+                    loadHelpers().reportGitLabStatus('success', GITLAB_STATUS_CONTEXT,
                         env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA,
                         "${env.GITLAB_GROUP}/k8s-deployments")
                 }
@@ -872,7 +931,7 @@ Check logs above for error details.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
                 container('pipeline') {
-                    helpers.reportGitLabStatus('failed', GITLAB_STATUS_CONTEXT,
+                    loadHelpers().reportGitLabStatus('failed', GITLAB_STATUS_CONTEXT,
                         env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA,
                         "${env.GITLAB_GROUP}/k8s-deployments")
                 }
