@@ -224,56 +224,6 @@ Check: kubectl get deployment ${params.APP_NAME} -n ${namespace}"""
                             }
                             // Phase 2: All subsequent operations use repo-scoped config
                             loadHelpers().withGitCredentials('k8s-deployments') {
-                                sh """
-                                    cd k8s-deployments
-
-                                    # Fetch target environment branch
-                                    git fetch origin ${params.TARGET_ENV}
-                                    git checkout ${params.TARGET_ENV}
-                                    git pull origin ${params.TARGET_ENV}
-
-                                    # Create feature branch for this promotion
-                                    FEATURE_BRANCH="${PROMOTE_BRANCH_PREFIX}${params.TARGET_ENV}-${PROMOTE_IMAGE_TAG}"
-                                    git checkout -b "\${FEATURE_BRANCH}"
-
-                                    echo "============================================"
-                                    echo "Promoting ${params.APP_NAME} from ${params.SOURCE_ENV} to ${params.TARGET_ENV}"
-                                    echo "============================================"
-                                    echo "Image: ${PROMOTE_FULL_IMAGE}"
-                                    echo "Feature branch: \${FEATURE_BRANCH}"
-                                    echo ""
-                                """
-
-                                // Update image and generate manifests
-                                sh """
-                                    cd k8s-deployments
-
-                                    # Update the image in target environment's env.cue
-                                    ./scripts/update-app-image.sh ${params.TARGET_ENV} ${params.APP_NAME} "${PROMOTE_FULL_IMAGE}"
-                                    echo "[${params.TARGET_ENV.toUpperCase()}] Updated ${params.APP_NAME} image in env.cue"
-
-                                    # Regenerate Kubernetes manifests for target environment
-                                    ./scripts/generate-manifests.sh ${params.TARGET_ENV}
-
-                                    # Stage all changes
-                                    git add env.cue manifests/
-
-                                    # Commit with promotion metadata
-                                    git commit -m "Promote ${params.APP_NAME} to ${params.TARGET_ENV}: ${PROMOTE_IMAGE_TAG}
-
-Automated promotion from ${params.SOURCE_ENV} environment.
-
-Changes:
-- Updated ${params.TARGET_ENV} environment image to ${PROMOTE_IMAGE_TAG}
-- Regenerated Kubernetes manifests
-
-Build: ${env.BUILD_URL}
-Image: ${PROMOTE_FULL_IMAGE}
-Source environment: ${params.SOURCE_ENV}
-
-Generated manifests from CUE configuration." || echo "No changes to commit"
-                                """
-
                                 // Push feature branch and create merge request
                                 def mrDescription = """## Promotion from ${params.SOURCE_ENV.capitalize()}
 
@@ -306,27 +256,7 @@ ${params.TARGET_ENV == 'prod' ? '> **Production Deployment** - Please review car
                                 def mrDescriptionFile = helpers.tempFilePath('mr-description', '.txt')
                                 writeFile file: mrDescriptionFile, text: mrDescription
 
-                                // Scope Groovy local as env var for sh ''' block (not global env.*)
-                                withEnv(["PROMOTE_PREFIX=${PROMOTE_BRANCH_PREFIX}"]) {
-                                    sh '''
-                                        cd k8s-deployments
-                                        FEATURE_BRANCH="${PROMOTE_PREFIX}${TARGET_ENV}-${PROMOTE_IMAGE_TAG}"
-
-                                        # Delete remote branch if it exists, then push fresh
-                                        git push origin --delete "${FEATURE_BRANCH}" 2>/dev/null || echo "Branch does not exist remotely"
-                                        git push -u origin "${FEATURE_BRANCH}"
-
-                                        # Create MR using GitLab API
-                                        export GITLAB_TOKEN="${GITLAB_TOKEN}"
-                                        export GITLAB_URL_INTERNAL="${GITLAB_URL}"
-
-                                        ./scripts/create-gitlab-mr.sh \
-                                            "${FEATURE_BRANCH}" \
-                                            "${TARGET_ENV}" \
-                                            "Promote ${APP_NAME} to ${TARGET_ENV}: ${PROMOTE_IMAGE_TAG}" \
-                                            "$(cat "${WORKSPACE}/.mr-description-${BUILD_NUMBER}.txt")"
-                                    '''
-                                }
+                                sh "./scripts/promote-env.sh ${params.TARGET_ENV} ${params.SOURCE_ENV} ${params.APP_NAME} ${env.PROMOTE_IMAGE_TAG} ${env.PROMOTE_FULL_IMAGE} ${mrDescriptionFile}"
 
                                 echo "[${params.TARGET_ENV.toUpperCase()}] Promotion MR created successfully: ${PROMOTE_BRANCH_PREFIX}${params.TARGET_ENV}-${env.PROMOTE_IMAGE_TAG} → ${params.TARGET_ENV}"
                             }
