@@ -49,8 +49,8 @@ validate_config() {
 
     [[ -z "${GITLAB_NAMESPACE:-}" ]] && missing+=("GITLAB_NAMESPACE")
     [[ -z "${GITLAB_URL_EXTERNAL:-}" ]] && missing+=("GITLAB_URL_EXTERNAL")
-    [[ -z "${GITLAB_API_TOKEN_SECRET:-}" ]] && missing+=("GITLAB_API_TOKEN_SECRET")
-    [[ -z "${GITLAB_API_TOKEN_KEY:-}" ]] && missing+=("GITLAB_API_TOKEN_KEY")
+    [[ -z "${GITLAB_TOKEN_SECRET:-}" ]] && missing+=("GITLAB_TOKEN_SECRET")
+    [[ -z "${GITLAB_TOKEN_KEY:-}" ]] && missing+=("GITLAB_TOKEN_KEY")
     [[ -z "${JENKINS_URL_INTERNAL:-}" ]] && missing+=("JENKINS_URL_INTERNAL")
 
     if [[ ${#missing[@]} -gt 0 ]]; then
@@ -75,14 +75,14 @@ log_info()  { echo "    $*"; }
 # -----------------------------------------------------------------------------
 load_gitlab_token() {
     if [[ -z "${GITLAB_TOKEN:-}" ]]; then
-        GITLAB_TOKEN=$(kubectl get secret "$GITLAB_API_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
-            -o jsonpath="{.data.${GITLAB_API_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
+        GITLAB_TOKEN=$(kubectl get secret "$GITLAB_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
+            -o jsonpath="{.data.${GITLAB_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
     fi
 
     if [[ -z "${GITLAB_TOKEN:-}" ]]; then
         log_fail "Could not load GitLab token"
-        log_info "Secret: $GITLAB_API_TOKEN_SECRET (namespace: $GITLAB_NAMESPACE)"
-        log_info "Key: $GITLAB_API_TOKEN_KEY"
+        log_info "Secret: $GITLAB_TOKEN_SECRET (namespace: $GITLAB_NAMESPACE)"
+        log_info "Key: $GITLAB_TOKEN_KEY"
         exit 1
     fi
 }

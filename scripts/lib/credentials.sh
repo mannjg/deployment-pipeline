@@ -16,7 +16,7 @@ if ! declare -f log_error &>/dev/null; then
 fi
 
 # Ensure infra.sh is loaded (we need secret names from infra.env)
-if [[ -z "${GITLAB_API_TOKEN_SECRET:-}" ]]; then
+if [[ -z "${GITLAB_TOKEN_SECRET:-}" ]]; then
     source "$_CRED_LIB_DIR/infra.sh"
 fi
 
@@ -31,8 +31,8 @@ require_gitlab_token() {
 
     # Try K8s secret
     local token
-    token=$(kubectl get secret "$GITLAB_API_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
-        -o jsonpath="{.data.${GITLAB_API_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
+    token=$(kubectl get secret "$GITLAB_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
+        -o jsonpath="{.data.${GITLAB_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
 
     if [[ -n "$token" ]]; then
         echo "$token"
@@ -44,7 +44,7 @@ require_gitlab_token() {
     echo "" >&2
     echo "Provide token via one of:" >&2
     echo "  1. Environment: export GITLAB_TOKEN=glpat-..." >&2
-    echo "  2. K8s secret:  kubectl get secret $GITLAB_API_TOKEN_SECRET -n $GITLAB_NAMESPACE" >&2
+    echo "  2. K8s secret:  kubectl get secret $GITLAB_TOKEN_SECRET -n $GITLAB_NAMESPACE" >&2
     exit 1
 }
 

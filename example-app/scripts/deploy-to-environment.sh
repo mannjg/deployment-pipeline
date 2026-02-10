@@ -29,7 +29,7 @@ fi
 : "${BUILD_NUMBER:?BUILD_NUMBER is required}"
 : "${GIT_SHORT_HASH:?GIT_SHORT_HASH is required}"
 BUILD_URL="${BUILD_URL:-unknown}"
-: "${GITLAB_API_TOKEN:?GITLAB_API_TOKEN is required}"
+: "${GITLAB_TOKEN:?GITLAB_TOKEN is required}"
 : "${GITLAB_URL:?GITLAB_URL is required}"
 
 cd "$REPO_DIR"
@@ -95,7 +95,6 @@ git push origin --delete "${FEATURE_BRANCH}" 2>/dev/null || echo "Branch does no
 git push -u origin "${FEATURE_BRANCH}"
 
 # GitLab API credentials for MR operations
-export GITLAB_TOKEN="${GITLAB_API_TOKEN}"
 export GITLAB_URL_INTERNAL="${GITLAB_URL}"
 
 # Close any open MRs superseded by this build (JENKINS-27)

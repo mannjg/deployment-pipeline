@@ -14,7 +14,7 @@
 # Prerequisites:
 # 1. GitLab k8s-deployments repo exists with main branch
 # 2. main branch has example-env.cue template
-# 3. GITLAB_TOKEN env var set, or gitlab-api-token K8s secret exists
+# 3. GITLAB_TOKEN env var set, or gitlab-token K8s secret exists
 #
 # Usage:
 #   ./scripts/03-pipelines/setup-gitlab-env-branches.sh <config-file>
@@ -70,13 +70,13 @@ preflight_checks() {
         failed=1
     fi
 
-    if [[ -z "${GITLAB_API_TOKEN_SECRET:-}" ]]; then
-        log_error "GITLAB_API_TOKEN_SECRET not set in cluster config"
+    if [[ -z "${GITLAB_TOKEN_SECRET:-}" ]]; then
+        log_error "GITLAB_TOKEN_SECRET not set in cluster config"
         failed=1
     fi
 
-    if [[ -z "${GITLAB_API_TOKEN_KEY:-}" ]]; then
-        log_error "GITLAB_API_TOKEN_KEY not set in cluster config"
+    if [[ -z "${GITLAB_TOKEN_KEY:-}" ]]; then
+        log_error "GITLAB_TOKEN_KEY not set in cluster config"
         failed=1
     fi
 
@@ -106,13 +106,13 @@ preflight_checks() {
     # Get GITLAB_TOKEN (env var or K8s secret)
     GITLAB_TOKEN="${GITLAB_TOKEN:-}"
     if [[ -z "$GITLAB_TOKEN" ]]; then
-        GITLAB_TOKEN=$(kubectl get secret "${GITLAB_API_TOKEN_SECRET}" -n "${GITLAB_NAMESPACE}" -o jsonpath="{.data.${GITLAB_API_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
+        GITLAB_TOKEN=$(kubectl get secret "${GITLAB_TOKEN_SECRET}" -n "${GITLAB_NAMESPACE}" -o jsonpath="{.data.${GITLAB_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
     fi
 
     if [[ -z "$GITLAB_TOKEN" ]]; then
-        log_error "GITLAB_TOKEN not set and could not retrieve from K8s secret '${GITLAB_API_TOKEN_SECRET}'"
+        log_error "GITLAB_TOKEN not set and could not retrieve from K8s secret '${GITLAB_TOKEN_SECRET}'"
         echo "  Set it with: export GITLAB_TOKEN='your-token'"
-        echo "  Or ensure K8s secret exists: kubectl get secret ${GITLAB_API_TOKEN_SECRET} -n ${GITLAB_NAMESPACE}"
+        echo "  Or ensure K8s secret exists: kubectl get secret ${GITLAB_TOKEN_SECRET} -n ${GITLAB_NAMESPACE}"
         failed=1
     fi
 

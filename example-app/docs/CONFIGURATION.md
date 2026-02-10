@@ -25,7 +25,7 @@ The example-app Jenkins pipeline requires specific environment variables to be c
 | `maven-repo-credentials` | Username/Password | Maven repository credentials for artifacts |
 | `container-registry-credentials` | Username/Password | Container registry credentials for image push |
 | `gitlab-credentials` | Username/Password | GitLab credentials for git operations |
-| `gitlab-api-token-secret` | Secret Text | GitLab API token for MR creation |
+| `gitlab-token-secret` | Secret Text | GitLab API token for MR creation |
 
 ## Pipeline Behavior
 

@@ -251,8 +251,8 @@ setup_gitlab_credentials() {
 
     # Get GitLab token
     local gitlab_token
-    gitlab_token=$(kubectl get secret "$GITLAB_API_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
-        -o jsonpath="{.data.${GITLAB_API_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
+    gitlab_token=$(kubectl get secret "$GITLAB_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
+        -o jsonpath="{.data.${GITLAB_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
 
     if [[ -z "$gitlab_token" ]]; then
         log_fail "Could not get GitLab token" >&2

@@ -26,7 +26,7 @@ k8s-deployments requires specific environment variables to be configured. These 
 | Credential ID | Type | Description |
 |---------------|------|-------------|
 | `gitlab-credentials` | Username/Password | GitLab username/password for git operations |
-| `gitlab-api-token-secret` | Secret Text | GitLab API token for MR creation |
+| `gitlab-token-secret` | Secret Text | GitLab API token for MR creation |
 | `argocd-credentials` | Username/Password | ArgoCD admin credentials |
 
 ## Local Development Setup

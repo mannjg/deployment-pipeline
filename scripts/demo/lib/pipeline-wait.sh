@@ -35,8 +35,8 @@ ARGOCD_SYNC_TIMEOUT="${ARGOCD_SYNC_TIMEOUT:-120}"
 # Load credentials from K8s secrets if not already set
 load_pipeline_credentials() {
     if [[ -z "${GITLAB_TOKEN:-}" ]]; then
-        GITLAB_TOKEN=$(kubectl get secret "$GITLAB_API_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
-            -o jsonpath="{.data.${GITLAB_API_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
+        GITLAB_TOKEN=$(kubectl get secret "$GITLAB_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
+            -o jsonpath="{.data.${GITLAB_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
     fi
 
     if [[ -z "${JENKINS_USER:-}" ]]; then

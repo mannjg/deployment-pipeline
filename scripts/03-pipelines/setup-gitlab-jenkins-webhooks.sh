@@ -41,7 +41,7 @@ gitlab_api() {
 load_credentials() {
     log_step "Loading GitLab credentials from K8s secrets..."
 
-    GITLAB_TOKEN=$(kubectl get secret "$GITLAB_API_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
+    GITLAB_TOKEN=$(kubectl get secret "$GITLAB_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
         -o jsonpath='{.data.token}' 2>/dev/null | base64 -d) || true
 
     if [[ -z "$GITLAB_TOKEN" ]]; then

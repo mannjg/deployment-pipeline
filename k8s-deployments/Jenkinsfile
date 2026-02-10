@@ -331,7 +331,7 @@ def createPromotionMR(String sourceEnv) {
                 usernamePassword(credentialsId: 'gitlab-credentials',
                                 usernameVariable: 'GIT_USERNAME',
                                 passwordVariable: 'GIT_PASSWORD'),
-                string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN'),
+                string(credentialsId: 'gitlab-token-secret', variable: 'GITLAB_TOKEN'),
                 usernamePassword(credentialsId: 'maven-repo-credentials',
                                 usernameVariable: 'NEXUS_USER',
                                 passwordVariable: 'NEXUS_PASSWORD')
@@ -475,7 +475,7 @@ Build: ${env.BUILD_URL}
                         env.HAS_OPEN_MR = 'false'
                         env.MR_TARGET_ENV = ''
 
-                        withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+                        withCredentials([string(credentialsId: 'gitlab-token-secret', variable: 'GITLAB_TOKEN')]) {
                             def projectPath = "${env.GITLAB_GROUP}/k8s-deployments"
                             def mrTarget = getMRTargetEnvironment(env.BRANCH_NAME, projectPath)
                             if (mrTarget) {

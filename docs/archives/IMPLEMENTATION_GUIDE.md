@@ -237,7 +237,7 @@ The complete guide was generated at:
    **A. GitLab API Token**
    - Kind: `GitLab API token`
    - API token: `<paste your token from GitLab>`
-   - ID: `gitlab-api-token`
+   - ID: `gitlab-token`
    - Description: `GitLab API Token for Jenkins`
 
    **B. GitLab Username/Password**
@@ -280,7 +280,7 @@ The complete guide was generated at:
 
    - Connection name: `gitlab`
    - GitLab host URL: `http://gitlab.gitlab.svc.cluster.local`
-   - Credentials: Select `gitlab-api-token`
+   - Credentials: Select `gitlab-token`
    - Click "Test Connection" (should succeed)
 
    ⚠️ **Important**: Use the internal Kubernetes DNS name, not `http://gitlab.local`

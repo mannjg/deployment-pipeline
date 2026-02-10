@@ -58,7 +58,7 @@ def reportGitLabStatus(String state, String context, String commitSha, String pr
         context: context
     ])
 
-    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+    withCredentials([string(credentialsId: 'gitlab-token-secret', variable: 'GITLAB_TOKEN')]) {
         try {
             gitlabApiRequest('POST',
                 "${env.GITLAB_URL}/api/v4/projects/${encodedProject}/statuses/${commitSha}",

@@ -44,12 +44,12 @@ Description: GitLab credentials for git operations
 
 ### 1.2 GitLab API Token (Secret Text)
 
-Create credential with ID: `gitlab-api-token-secret`
+Create credential with ID: `gitlab-token-secret`
 
 ```
 Kind: Secret text
-ID: gitlab-api-token-secret
-Secret: <gitlab-api-token>
+ID: gitlab-token-secret
+Secret: <gitlab-token>
 Description: GitLab API token for MR operations
 Scope: Global
 ```

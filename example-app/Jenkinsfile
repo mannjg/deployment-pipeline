@@ -97,7 +97,7 @@ def deployToEnvironment(String environment, String branchPrefix, String mrTitle,
                     usernamePassword(credentialsId: 'gitlab-credentials',
                                       usernameVariable: 'GIT_USERNAME',
                                       passwordVariable: 'GIT_PASSWORD'),
-                    string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')
+                    string(credentialsId: 'gitlab-token-secret', variable: 'GITLAB_TOKEN')
                 ]) {
                     // Phase 1: Clone requires global credential helper (repo doesn't exist yet)
                     h.withGitCredentials {

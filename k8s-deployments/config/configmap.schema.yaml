@@ -30,7 +30,7 @@ credentials:
     type: "usernamePassword"
     description: "GitLab username/password for git operations"
 
-  gitlab-api-token-secret:
+  gitlab-token-secret:
     type: "secretText"
     description: "GitLab API token for MR creation"
 

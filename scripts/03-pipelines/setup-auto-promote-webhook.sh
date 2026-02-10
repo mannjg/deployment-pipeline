@@ -48,7 +48,7 @@ validate_config() {
     [[ -z "${JENKINS_URL_INTERNAL:-}" ]] && missing+=("JENKINS_URL_INTERNAL")
     [[ -z "${PROJECT_PATH:-}" ]] && missing+=("DEPLOYMENTS_REPO_PATH")
     [[ -z "${GITLAB_NAMESPACE:-}" ]] && missing+=("GITLAB_NAMESPACE")
-    [[ -z "${GITLAB_API_TOKEN_SECRET:-}" ]] && missing+=("GITLAB_API_TOKEN_SECRET")
+    [[ -z "${GITLAB_TOKEN_SECRET:-}" ]] && missing+=("GITLAB_TOKEN_SECRET")
 
     if [[ ${#missing[@]} -gt 0 ]]; then
         log_fail "Missing required configuration: ${missing[*]}"
@@ -72,8 +72,8 @@ load_gitlab_token() {
     log_step "Loading GitLab credentials from K8s secrets..."
 
     if [[ -z "${GITLAB_TOKEN:-}" ]]; then
-        GITLAB_TOKEN=$(kubectl get secret "$GITLAB_API_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
-            -o jsonpath="{.data.${GITLAB_API_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
+        GITLAB_TOKEN=$(kubectl get secret "$GITLAB_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
+            -o jsonpath="{.data.${GITLAB_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
     fi
 
     if [[ -z "${GITLAB_TOKEN:-}" ]]; then

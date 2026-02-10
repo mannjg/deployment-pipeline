@@ -51,8 +51,8 @@ load_credentials_from_secrets() {
 
     # GitLab credentials
     if [[ -z "${GITLAB_TOKEN:-}" ]]; then
-        GITLAB_TOKEN=$(kubectl get secret "$GITLAB_API_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
-            -o jsonpath="{.data.${GITLAB_API_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
+        GITLAB_TOKEN=$(kubectl get secret "$GITLAB_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
+            -o jsonpath="{.data.${GITLAB_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
     fi
 }
 
@@ -135,7 +135,7 @@ preflight_checks() {
 
     # Verify GitLab credentials work
     if [[ -z "${GITLAB_TOKEN:-}" ]]; then
-        log_fail "GitLab: GITLAB_TOKEN not set (check gitlab-api-token secret in gitlab namespace)"
+        log_fail "GitLab: GITLAB_TOKEN not set (check gitlab-token secret in gitlab namespace)"
         failed=1
     else
         local gitlab_user

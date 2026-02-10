@@ -147,8 +147,8 @@ setup_gitlab_credentials() {
     local gitlab_user gitlab_token
     gitlab_user=$(kubectl get secret "$GITLAB_USER_SECRET" -n "$GITLAB_NAMESPACE" \
         -o jsonpath="{.data.${GITLAB_USER_KEY}}" 2>/dev/null | base64 -d) || true
-    gitlab_token=$(kubectl get secret "$GITLAB_API_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
-        -o jsonpath="{.data.${GITLAB_API_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
+    gitlab_token=$(kubectl get secret "$GITLAB_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
+        -o jsonpath="{.data.${GITLAB_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
 
     if [[ -n "$gitlab_user" && -n "$gitlab_token" ]]; then
         create_username_password_credential \
@@ -160,14 +160,14 @@ setup_gitlab_credentials() {
         log_warn "  gitlab-credentials: K8s secrets not found (skipping)"
     fi
 
-    # gitlab-api-token-secret (secret text for API calls)
+    # gitlab-token-secret (secret text for API calls)
     if [[ -n "$gitlab_token" ]]; then
         create_secret_text_credential \
-            "gitlab-api-token-secret" \
+            "gitlab-token-secret" \
             "$gitlab_token" \
             "GitLab API token for REST API calls"
     else
-        log_warn "  gitlab-api-token-secret: K8s secret not found (skipping)"
+        log_warn "  gitlab-token-secret: K8s secret not found (skipping)"
     fi
 }
 

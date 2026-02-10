@@ -37,7 +37,7 @@ IMPORTANT: Jenkins is running WITHOUT authentication (local dev only!)
       - Kind: GitLab API token
       - Scope: Global
       - API token: <paste token from GitLab>
-      - ID: gitlab-api-token
+      - ID: gitlab-token
       - Description: GitLab API Token for Jenkins
 
    B. GitLab Username/Password (for git clone):
@@ -100,7 +100,7 @@ IMPORTANT: Jenkins is running WITHOUT authentication (local dev only!)
    Scroll to "GitLab" section:
    - Connection name: gitlab
    - GitLab host URL: http://gitlab.local
-   - Credentials: Select "gitlab-api-token"
+   - Credentials: Select "gitlab-token"
    - Test Connection (should show success)
 
 6. Configure Maven:

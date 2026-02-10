@@ -1,8 +1,8 @@
 #!/bin/bash
-# Create GitLab API Token
+# Create GitLab Token
 # Creates a personal access token via gitlab-rails and stores it in K8s secret
 #
-# Usage: ./scripts/02-configure/create-gitlab-api-token.sh <config-file>
+# Usage: ./scripts/02-configure/create-gitlab-token.sh <config-file>
 #
 # This script is idempotent - if the secret already exists with a valid token,
 # it will skip creation.
@@ -31,8 +31,8 @@ source "$SCRIPT_DIR/../lib/logging.sh"
 
 TOKEN_NAME="api-automation-token"
 TOKEN_SCOPES="api read_user read_repository write_repository"
-SECRET_NAME="${GITLAB_API_TOKEN_SECRET:-gitlab-api-token}"
-SECRET_KEY="${GITLAB_API_TOKEN_KEY:-token}"
+SECRET_NAME="${GITLAB_TOKEN_SECRET:-gitlab-token}"
+SECRET_KEY="${GITLAB_TOKEN_KEY:-token}"
 
 # =============================================================================
 # Functions

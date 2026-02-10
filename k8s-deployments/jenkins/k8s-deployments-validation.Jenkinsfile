@@ -324,7 +324,7 @@ Safe to merge this change.
 """
                 // Update GitLab commit status via API
                 container('validator') {
-                    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+                    withCredentials([string(credentialsId: 'gitlab-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
                             JSON_PAYLOAD=\$(jq -n \
                                 --arg state "success" \
@@ -357,7 +357,7 @@ Build URL: ${env.BUILD_URL}
 """
                 // Update GitLab commit status via API
                 container('validator') {
-                    withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
+                    withCredentials([string(credentialsId: 'gitlab-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
                             JSON_PAYLOAD=\$(jq -n \
                                 --arg state "failed" \

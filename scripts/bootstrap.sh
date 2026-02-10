@@ -471,8 +471,8 @@ run_script_if_exists() {
 }
 
 configure_gitlab_api_token() {
-    log_info "Creating GitLab API token..."
-    run_script_if_exists "$SCRIPT_DIR/02-configure/create-gitlab-api-token.sh" "GitLab API token" "true"
+    log_info "Creating GitLab token..."
+    run_script_if_exists "$SCRIPT_DIR/02-configure/create-gitlab-token.sh" "GitLab token" "true"
 
     # Also create the gitlab-admin-credentials K8s secret (stores username)
     # This is needed by setup-jenkins-credentials.sh to create Jenkins git credentials
@@ -503,8 +503,8 @@ setup_git_remotes() {
 
     # Get GitLab API token for authentication
     local gitlab_token
-    gitlab_token=$(kubectl get secret "$GITLAB_API_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
-        -o jsonpath="{.data.${GITLAB_API_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
+    gitlab_token=$(kubectl get secret "$GITLAB_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
+        -o jsonpath="{.data.${GITLAB_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
 
     if [[ -z "$gitlab_token" ]]; then
         log_error "Could not get GitLab API token for git remote setup"
@@ -698,7 +698,7 @@ configure_argocd_dns() {
     # Configure repository credentials so ArgoCD can clone from GitLab
     log_info "  Configuring ArgoCD repository credentials for GitLab..."
     local gitlab_token
-    gitlab_token=$(kubectl get secret gitlab-api-token -n "$GITLAB_NAMESPACE" \
+    gitlab_token=$(kubectl get secret gitlab-token -n "$GITLAB_NAMESPACE" \
         -o jsonpath='{.data.token}' | base64 -d)
     if [[ -n "$gitlab_token" ]]; then
         kubectl apply -n "$ARGOCD_NAMESPACE" -f - <<REPO_CREDS_EOF
@@ -788,7 +788,7 @@ configure_services() {
     # 5q. Configure Jenkins script security (approve required signatures)
     configure_jenkins_script_security
 
-    # 5r. Setup Jenkins pipeline credentials (gitlab-api-token-secret, nexus, argocd)
+    # 5r. Setup Jenkins pipeline credentials (gitlab-token-secret, nexus, argocd)
     setup_jenkins_pipeline_credentials
 
     # 5s. Setup Jenkins pipelines and webhooks
