@@ -17,6 +17,7 @@ set -euo pipefail
 #   Preflight failures (missing config) are fatal by design.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GITLAB_API="${SCRIPT_DIR}/gitlab-api.sh"
 
 # Load preflight library and local config
 source "${SCRIPT_DIR}/lib/preflight.sh"
@@ -55,8 +56,7 @@ PROJECT_PATH="${GITLAB_GROUP}/k8s-deployments"
 PROJECT_PATH_ENCODED=$(echo "$PROJECT_PATH" | sed 's/\//%2F/g')
 
 # Query open MRs targeting the specified branch
-RESPONSE=$(curl -sf \
-    -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+RESPONSE=$("$GITLAB_API" GET \
     "${GITLAB_URL}/api/v4/projects/${PROJECT_PATH_ENCODED}/merge_requests?state=opened&target_branch=${TARGET_BRANCH}&per_page=100" \
     2>/dev/null) || {
     log_warn "Could not query open MRs (non-fatal)"
@@ -83,25 +83,20 @@ echo "${STALE_MRS}" | while read -r MR_IID MR_BRANCH; do
 
     # Add comment explaining supersession
     JSON_PAYLOAD=$(jq -n --arg body "Superseded by \`${NEW_BRANCH}\`" '{body: $body}')
-    curl -sf -X POST \
-        -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d "$JSON_PAYLOAD" \
+    "$GITLAB_API" POST \
         "${GITLAB_URL}/api/v4/projects/${PROJECT_PATH_ENCODED}/merge_requests/${MR_IID}/notes" \
+        --data "$JSON_PAYLOAD" \
         >/dev/null 2>&1 || log_warn "Could not add comment to MR !${MR_IID}"
 
     # Close the MR
-    curl -sf -X PUT \
-        -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d '{"state_event":"close"}' \
+    "$GITLAB_API" PUT \
         "${GITLAB_URL}/api/v4/projects/${PROJECT_PATH_ENCODED}/merge_requests/${MR_IID}" \
+        --data '{"state_event":"close"}' \
         >/dev/null 2>&1 || log_warn "Could not close MR !${MR_IID}"
 
     # Delete the stale source branch (GitLab only auto-deletes on merge, not close)
     ENCODED_BRANCH=$(echo "${MR_BRANCH}" | sed 's/\//%2F/g')
-    curl -sf -X DELETE \
-        -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+    "$GITLAB_API" DELETE \
         "${GITLAB_URL}/api/v4/projects/${PROJECT_PATH_ENCODED}/repository/branches/${ENCODED_BRANCH}" \
         >/dev/null 2>&1 || log_warn "Could not delete branch ${MR_BRANCH}"
 done

@@ -326,13 +326,16 @@ Safe to merge this change.
                 container('validator') {
                     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
-                            curl -X POST "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP}%2Fk8s-deployments/statuses/${env.GIT_COMMIT}" \
-                              -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                              -d "state=success" \
-                              -d "name=k8s-deployments-validation" \
-                              -d "target_url=${env.BUILD_URL}" \
-                              -d "description=All validation checks passed" \
-                              || echo "⚠ Could not update GitLab status (non-blocking)"
+                            JSON_PAYLOAD=\$(jq -n \
+                                --arg state "success" \
+                                --arg name "k8s-deployments-validation" \
+                                --arg target_url "${env.BUILD_URL}" \
+                                --arg description "All validation checks passed" \
+                                '{state: \$state, name: \$name, target_url: \$target_url, description: \$description}')
+                            ./scripts/gitlab-api.sh POST \
+                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP}%2Fk8s-deployments/statuses/${env.GIT_COMMIT}" \
+                                --data "\${JSON_PAYLOAD}" \
+                                || echo "⚠ Could not update GitLab status (non-blocking)"
                         """
                     }
                 }
@@ -356,13 +359,16 @@ Build URL: ${env.BUILD_URL}
                 container('validator') {
                     withCredentials([string(credentialsId: 'gitlab-api-token-secret', variable: 'GITLAB_TOKEN')]) {
                         sh """
-                            curl -X POST "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP}%2Fk8s-deployments/statuses/${env.GIT_COMMIT}" \
-                              -H "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                              -d "state=failed" \
-                              -d "name=k8s-deployments-validation" \
-                              -d "target_url=${env.BUILD_URL}" \
-                              -d "description=Validation checks failed - see Jenkins logs" \
-                              || echo "⚠ Could not update GitLab status (non-blocking)"
+                            JSON_PAYLOAD=\$(jq -n \
+                                --arg state "failed" \
+                                --arg name "k8s-deployments-validation" \
+                                --arg target_url "${env.BUILD_URL}" \
+                                --arg description "Validation checks failed - see Jenkins logs" \
+                                '{state: \$state, name: \$name, target_url: \$target_url, description: \$description}')
+                            ./scripts/gitlab-api.sh POST \
+                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP}%2Fk8s-deployments/statuses/${env.GIT_COMMIT}" \
+                                --data "\${JSON_PAYLOAD}" \
+                                || echo "⚠ Could not update GitLab status (non-blocking)"
                         """
                     }
                 }

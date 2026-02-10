@@ -289,13 +289,15 @@ get_current_image_tag() {
     log_debug "Fetching env.cue from: $api_url"
 
     local http_response
-    http_response=$(curl -sf -w "%{http_code}" -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "$api_url" 2>/dev/null) || {
+    http_response=$(./scripts/gitlab-api.sh GET "$api_url" --with-status 2>/dev/null) || {
         log_error "Failed to fetch env.cue from GitLab for branch: $env (curl error)"
         return 1
     }
 
-    local http_code="${http_response: -3}"
-    local response_body="${http_response:0:-3}"
+    local http_code
+    http_code=$(echo "$http_response" | tail -n1)
+    local response_body
+    response_body=$(echo "$http_response" | sed '$d')
 
     if [[ "$http_code" != "200" ]]; then
         log_error "Failed to fetch env.cue from GitLab for branch: $env (HTTP $http_code)"

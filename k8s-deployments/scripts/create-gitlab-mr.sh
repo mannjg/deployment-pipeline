@@ -6,6 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+GITLAB_API="${SCRIPT_DIR}/gitlab-api.sh"
 
 # Load preflight library and local config
 source "${SCRIPT_DIR}/lib/preflight.sh"
@@ -63,12 +64,10 @@ JSON_PAYLOAD=$(jq -n \
     --arg desc "$DESCRIPTION" \
     '{source_branch: $src, target_branch: $tgt, title: $title, description: $desc, remove_source_branch: true, squash: false}')
 
-MR_RESPONSE=$(curl -s -w "\n%{http_code}" \
-    --request POST \
-    --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-    --header "Content-Type: application/json" \
+MR_RESPONSE=$("$GITLAB_API" POST \
+    "${GITLAB_URL}/api/v4/projects/${PROJECT_PATH_ENCODED}/merge_requests" \
     --data "$JSON_PAYLOAD" \
-    "${GITLAB_URL}/api/v4/projects/${PROJECT_PATH_ENCODED}/merge_requests")
+    --with-status)
 
 # Split response and HTTP code
 HTTP_CODE=$(echo "$MR_RESPONSE" | tail -n1)
@@ -101,8 +100,7 @@ elif [ "$HTTP_CODE" -eq 409 ]; then
     log_warn "Merge request already exists for $SOURCE_BRANCH → $TARGET_BRANCH"
 
     # Try to find the existing MR
-    EXISTING_MR=$(curl -s \
-        --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+    EXISTING_MR=$("$GITLAB_API" GET \
         "${GITLAB_URL}/api/v4/projects/${PROJECT_PATH_ENCODED}/merge_requests?source_branch=${SOURCE_BRANCH}&target_branch=${TARGET_BRANCH}&state=opened")
 
     MR_IID=$(echo "$EXISTING_MR" | jq -r '.[0].iid // empty')

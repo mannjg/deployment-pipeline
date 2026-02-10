@@ -12,9 +12,14 @@ shift 2
 
 DATA=""
 DATA_FILE=""
+WITH_STATUS="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --with-status)
+      WITH_STATUS="true"
+      shift 1
+      ;;
     --data)
       DATA="${2:-}"
       shift 2
@@ -43,4 +48,8 @@ elif [[ -n "$DATA_FILE" ]]; then
   curl_args+=(-H "Content-Type: application/json" -d "@${DATA_FILE}")
 fi
 
-curl "${curl_args[@]}" "$URL"
+if [[ "$WITH_STATUS" == "true" ]]; then
+  curl "${curl_args[@]}" -w "\n%{http_code}" "$URL"
+else
+  curl "${curl_args[@]}" "$URL"
+fi
