@@ -201,14 +201,14 @@ def validateManifests(String targetEnv) {
 
             // Static validation (YAML syntax, required fields, security checks)
             echo "Running static manifest validation..."
-            sh "./scripts/validate-manifests.sh ${targetEnv}"
+            sh "./scripts/pipeline validate-manifests-static ${targetEnv}"
             echo "Static validation passed"
 
             // Server-side dry-run validation against the cluster
             // Note: Manifests are organized by app name (manifests/exampleApp/, manifests/postgres/),
             // not by environment. The environment is baked into the manifest content via CUE.
             echo "Running server-side dry-run validation..."
-            sh "./scripts/validate-manifests-dry-run.sh"
+            sh "./scripts/pipeline validate-manifests-dry-run"
         }
     }
 }
@@ -223,7 +223,7 @@ def waitForArgoCDSync(String appName, int timeoutSeconds = 300) {
         script {
             echo "Waiting for ${appName} to sync and become healthy..."
 
-            sh "./scripts/argocd-wait.sh ${appName} ${timeoutSeconds}"
+            sh "./scripts/pipeline argocd-wait ${appName} ${timeoutSeconds}"
         }
     }
 }
@@ -241,7 +241,7 @@ def closeStalePromotionMRs(String encodedProject, String targetEnv) {
         "PROMO_TARGET=${targetEnv}",
         "PROMO_PREFIX=${PROMOTE_BRANCH_PREFIX}"
     ]) {
-        sh './scripts/close-stale-promotion-mrs.sh'
+        sh './scripts/pipeline close-stale-promotion-mrs'
     }
 }
 
@@ -279,7 +279,7 @@ def extractSourceImageTag(String encodedProject, String sourceEnv) {
  */
 def promoteArtifacts(String sourceEnv, String targetEnv, String gitHash) {
     def promoteRc = sh(
-        script: "./scripts/promote-artifacts-wrapper.sh ${sourceEnv} ${targetEnv} ${gitHash}",
+        script: "./scripts/pipeline promote-artifacts ${sourceEnv} ${targetEnv} ${gitHash}",
         returnStatus: true
     )
 
@@ -305,7 +305,7 @@ def promoteArtifacts(String sourceEnv, String targetEnv, String gitHash) {
 def createPromotionBranchAndMR(String sourceEnv, String targetEnv, String imageTag, String newImageTag) {
     def h = loadHelpers()
     h.cleanupWorkspaceFiles(['promoted-image-tag', 'promote.log'])
-    sh "./scripts/create-promotion-branch-mr.sh ${sourceEnv} ${targetEnv} ${imageTag} ${newImageTag}"
+    sh "./scripts/pipeline create-promotion-branch-mr ${sourceEnv} ${targetEnv} ${imageTag} ${newImageTag}"
 }
 
 /**
@@ -543,7 +543,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                     script {
                         // Pure validation - no side effects
                         echo "Validating CUE configuration..."
-                        sh './scripts/validate-cue.sh'
+                        sh './scripts/pipeline validate-cue'
                     }
                 }
             }
@@ -578,7 +578,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                                             passwordVariable: 'GIT_PASSWORD')
                         ]) {
                             loadHelpers().withGitCredentials('.') {
-                                sh "./scripts/commit-generated-manifests.sh"
+                                sh "./scripts/pipeline commit-generated-manifests"
                             }
                         }
 

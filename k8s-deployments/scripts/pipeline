@@ -1,0 +1,66 @@
+#!/bin/bash
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+Usage: ./scripts/pipeline <command> [args]
+
+Commands:
+  validate-cue
+  validate-manifests-static <env>
+  validate-manifests-dry-run
+  commit-generated-manifests
+  close-stale-promotion-mrs
+  promote-artifacts <source-env> <target-env> <git-hash>
+  create-promotion-branch-mr <source-env> <target-env> <image-tag> <new-image-tag>
+  promote-env <target-env> <source-env> <app-name> <tag> <image> <mr-file>
+  argocd-wait <app-name> <timeout-seconds>
+  help
+EOF
+}
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+    validate-cue)
+        exec ./scripts/validate-cue.sh
+        ;;
+    validate-manifests-static)
+        if [[ $# -ne 1 ]]; then usage; exit 1; fi
+        exec ./scripts/validate-manifests.sh "$1"
+        ;;
+    validate-manifests-dry-run)
+        exec ./scripts/validate-manifests-dry-run.sh
+        ;;
+    commit-generated-manifests)
+        exec ./scripts/commit-generated-manifests.sh
+        ;;
+    close-stale-promotion-mrs)
+        exec ./scripts/close-stale-promotion-mrs.sh
+        ;;
+    promote-artifacts)
+        if [[ $# -ne 3 ]]; then usage; exit 1; fi
+        exec ./scripts/promote-artifacts-wrapper.sh "$1" "$2" "$3"
+        ;;
+    create-promotion-branch-mr)
+        if [[ $# -ne 4 ]]; then usage; exit 1; fi
+        exec ./scripts/create-promotion-branch-mr.sh "$1" "$2" "$3" "$4"
+        ;;
+    promote-env)
+        if [[ $# -ne 6 ]]; then usage; exit 1; fi
+        exec ./scripts/promote-env.sh "$1" "$2" "$3" "$4" "$5" "$6"
+        ;;
+    argocd-wait)
+        if [[ $# -ne 2 ]]; then usage; exit 1; fi
+        exec ./scripts/argocd-wait.sh "$1" "$2"
+        ;;
+    help|-h|--help)
+        usage
+        ;;
+    *)
+        echo "Unknown command: $cmd" >&2
+        usage
+        exit 1
+        ;;
+esac

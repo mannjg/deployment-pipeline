@@ -256,7 +256,7 @@ ${params.TARGET_ENV == 'prod' ? '> **Production Deployment** - Please review car
                                 def mrDescriptionFile = helpers.tempFilePath('mr-description', '.txt')
                                 writeFile file: mrDescriptionFile, text: mrDescription
 
-                                sh "./scripts/promote-env.sh ${params.TARGET_ENV} ${params.SOURCE_ENV} ${params.APP_NAME} ${env.PROMOTE_IMAGE_TAG} ${env.PROMOTE_FULL_IMAGE} ${mrDescriptionFile}"
+                                sh "./scripts/pipeline promote-env ${params.TARGET_ENV} ${params.SOURCE_ENV} ${params.APP_NAME} ${env.PROMOTE_IMAGE_TAG} ${env.PROMOTE_FULL_IMAGE} ${mrDescriptionFile}"
 
                                 echo "[${params.TARGET_ENV.toUpperCase()}] Promotion MR created successfully: ${PROMOTE_BRANCH_PREFIX}${params.TARGET_ENV}-${env.PROMOTE_IMAGE_TAG} → ${params.TARGET_ENV}"
                             }

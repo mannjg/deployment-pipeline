@@ -1,0 +1,41 @@
+#!/bin/bash
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+Usage: ./scripts/pipeline <command> [args]
+
+Commands:
+  build-publish <repo-path>           Build and publish Maven + container image
+  deploy-to-environment <repo> <mr>   Update env and create MR
+  help                                Show this help
+EOF
+}
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+    build-publish)
+        if [[ $# -ne 1 ]]; then
+            usage
+            exit 1
+        fi
+        exec ./scripts/build-publish.sh "$1"
+        ;;
+    deploy-to-environment)
+        if [[ $# -ne 2 ]]; then
+            usage
+            exit 1
+        fi
+        exec ./scripts/deploy-to-environment.sh "$1" "$2"
+        ;;
+    help|-h|--help)
+        usage
+        ;;
+    *)
+        echo "Unknown command: $cmd" >&2
+        usage
+        exit 1
+        ;;
+esac

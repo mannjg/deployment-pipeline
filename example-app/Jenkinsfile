@@ -108,7 +108,7 @@ def deployToEnvironment(String environment, String branchPrefix, String mrTitle,
                     }
                     // Phase 2: All subsequent operations use repo-scoped config
                     h.withGitCredentials('k8s-deployments') {
-                        sh "./scripts/deploy-to-environment.sh k8s-deployments ${mrDescriptionFile}"
+                        sh "./scripts/pipeline deploy-to-environment k8s-deployments ${mrDescriptionFile}"
 
                         if (fileExists(h.tempFilePath('no-changes'))) {
                             echo "[${environment.toUpperCase()}] No changes detected - MR creation skipped (image tag already current)"
@@ -289,7 +289,7 @@ pipeline {
                             // Generate scoped Maven settings and deploy in a single script.
                             // mktemp + trap ensures cleanup on success, failure, or abort.
                             echo "Building and pushing container image..."
-                            sh "./scripts/build-publish.sh ${repoPath}"
+                            sh "./scripts/pipeline build-publish ${repoPath}"
                             echo "✓ Published Maven artifact: ${APP_NAME}-${APP_VERSION}"
 
                                 // Build and push Docker image with Jib (reuses build output)
