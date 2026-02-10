@@ -212,33 +212,8 @@ def validateManifests(String targetEnv) {
             // Server-side dry-run validation against the cluster
             // Note: Manifests are organized by app name (manifests/exampleApp/, manifests/postgres/),
             // not by environment. The environment is baked into the manifest content via CUE.
-            sh """
-                echo "Running server-side dry-run validation..."
-
-                # Find all manifest files (organized by app name, not environment)
-                MANIFEST_DIR="manifests"
-                if [ ! -d "\$MANIFEST_DIR" ]; then
-                    echo "ERROR: Manifest directory not found: \$MANIFEST_DIR"
-                    exit 1
-                fi
-
-                # Validate each manifest with kubectl dry-run
-                FAILED=0
-                for manifest in \$(find "\$MANIFEST_DIR" -name "*.yaml" -o -name "*.yml"); do
-                    echo "  Validating: \$manifest"
-                    if ! kubectl apply --dry-run=server -f "\$manifest" 2>&1; then
-                        echo "  ERROR: Dry-run failed for \$manifest"
-                        FAILED=1
-                    fi
-                done
-
-                if [ \$FAILED -ne 0 ]; then
-                    echo "ERROR: Server-side dry-run validation failed"
-                    exit 1
-                fi
-
-                echo "Server-side dry-run validation passed"
-            """
+            echo "Running server-side dry-run validation..."
+            sh "./scripts/validate-manifests-dry-run.sh"
         }
     }
 }

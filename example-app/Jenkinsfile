@@ -382,45 +382,13 @@ pipeline {
                                 echo "Deploying release version to maven-releases repository"
                             }
 
-                            // Generate scoped Maven settings and deploy in a single shell
-                            // block. mktemp + trap ensures cleanup on success, failure,
-                            // or abort — no shared /tmp path needed (JENKINS-28).
-                            sh """
-                                SETTINGS=\$(mktemp --suffix=-maven-settings.xml)
-                                trap 'rm -f "\$SETTINGS"' EXIT
-                                cat > "\$SETTINGS" <<SETTINGS_EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<settings>
-  <servers>
-    <server>
-      <id>nexus</id>
-      <username>\${MAVEN_REPO_CREDENTIALS_USR}</username>
-      <password>\${MAVEN_REPO_CREDENTIALS_PSW}</password>
-    </server>
-  </servers>
-</settings>
-SETTINGS_EOF
-                                mvn clean deploy -DskipTests \\
-                                    -s "\$SETTINGS" \\
-                                    -DaltDeploymentRepository=nexus::default::${MAVEN_REPO_URL}/repository/${repoPath}/
-                            """
-                                echo "✓ Published Maven artifact: ${APP_NAME}-${APP_VERSION}"
+                            // Generate scoped Maven settings and deploy in a single script.
+                            // mktemp + trap ensures cleanup on success, failure, or abort.
+                            echo "Building and pushing container image..."
+                            sh "./scripts/build-publish.sh ${repoPath}"
+                            echo "✓ Published Maven artifact: ${APP_NAME}-${APP_VERSION}"
 
                                 // Build and push Docker image with Jib (reuses build output)
-                                echo "Building and pushing container image..."
-                                sh '''
-                                    mvn package \
-                                        -Dquarkus.container-image.build=true \
-                                        -Dquarkus.container-image.push=true \
-                                        -Dquarkus.container-image.registry=${CONTAINER_REGISTRY} \
-                                        -Dquarkus.container-image.group=${APP_GROUP} \
-                                        -Dquarkus.container-image.name=${APP_NAME} \
-                                        -Dquarkus.container-image.tag=${IMAGE_TAG} \
-                                        -Dquarkus.container-image.insecure=true \
-                                        -Dquarkus.container-image.username=${CONTAINER_REGISTRY_CREDENTIALS_USR} \
-                                        -Dquarkus.container-image.password=${CONTAINER_REGISTRY_CREDENTIALS_PSW} \
-                                        -DsendCredentialsOverHttp=true
-                                '''
                                 echo "✓ Published container image: ${FULL_IMAGE}"
                             }
                         }
