@@ -237,9 +237,9 @@ def waitForArgoCDSync(String appName, int timeoutSeconds = 300) {
  */
 def closeStalePromotionMRs(String encodedProject, String targetEnv) {
     withEnv([
-        "PROMO_ENCODED_PROJECT=${encodedProject}",
-        "PROMO_TARGET=${targetEnv}",
-        "PROMO_PREFIX=${PROMOTE_BRANCH_PREFIX}"
+        "PROMOTE_ENCODED_PROJECT=${encodedProject}",
+        "PROMOTE_TARGET=${targetEnv}",
+        "PROMOTE_BRANCH_PREFIX=${PROMOTE_BRANCH_PREFIX}"
     ]) {
         sh './scripts/pipeline close-stale-promotion-mrs'
     }
@@ -254,13 +254,13 @@ def closeStalePromotionMRs(String encodedProject, String targetEnv) {
  */
 def extractSourceImageTag(String encodedProject, String sourceEnv) {
     return withEnv([
-        "PROMO_ENCODED_PROJECT=${encodedProject}",
-        "PROMO_SOURCE=${sourceEnv}"
+        "PROMOTE_ENCODED_PROJECT=${encodedProject}",
+        "PROMOTE_SOURCE=${sourceEnv}"
     ]) {
         sh(
             script: '''
                 ./scripts/gitlab-api.sh GET \
-                    "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/repository/files/env.cue?ref=${PROMO_SOURCE}" \
+                    "${GITLAB_URL}/api/v4/projects/${PROMOTE_ENCODED_PROJECT}/repository/files/env.cue?ref=${PROMOTE_SOURCE}" \
                     2>/dev/null | jq -r '.content' | base64 -d | grep 'image:' | sed -E 's/.*image:\\s*"([^"]+)".*/\\1/' | head -1
             ''',
             returnStdout: true
@@ -305,7 +305,11 @@ def promoteArtifacts(String sourceEnv, String targetEnv, String gitHash) {
 def createPromotionBranchAndMR(String sourceEnv, String targetEnv, String imageTag, String newImageTag) {
     def h = loadHelpers()
     h.cleanupWorkspaceFiles(['promoted-image-tag', 'promote.log'])
-    sh "./scripts/pipeline create-promotion-branch-mr ${sourceEnv} ${targetEnv} ${imageTag} ${newImageTag}"
+    withEnv([
+        "PROMOTE_BRANCH_PREFIX=${PROMOTE_BRANCH_PREFIX}"
+    ]) {
+        sh "./scripts/pipeline create-promotion-branch-mr ${sourceEnv} ${targetEnv} ${imageTag} ${newImageTag}"
+    }
 }
 
 /**
