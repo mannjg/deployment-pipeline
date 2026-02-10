@@ -200,14 +200,9 @@ def validateManifests(String targetEnv) {
             echo "=== Validating Manifests for ${targetEnv} ==="
 
             // Static validation (YAML syntax, required fields, security checks)
-            sh """
-                echo "Running static manifest validation..."
-                ./scripts/validate-manifests.sh ${targetEnv} || {
-                    echo "ERROR: Static manifest validation failed"
-                    exit 1
-                }
-                echo "Static validation passed"
-            """
+            echo "Running static manifest validation..."
+            sh "./scripts/validate-manifests.sh ${targetEnv}"
+            echo "Static validation passed"
 
             // Server-side dry-run validation against the cluster
             // Note: Manifests are organized by app name (manifests/exampleApp/, manifests/postgres/),
@@ -228,18 +223,7 @@ def waitForArgoCDSync(String appName, int timeoutSeconds = 300) {
         script {
             echo "Waiting for ${appName} to sync and become healthy..."
 
-            sh """
-                argocd app wait ${appName} \
-                    --timeout ${timeoutSeconds} \
-                    --health \
-                    --sync || {
-                    echo "ERROR: ${appName} failed to sync or become healthy"
-                    argocd app get ${appName}
-                    exit 1
-                }
-
-                echo "${appName} synced and healthy"
-            """
+            sh "./scripts/argocd-wait.sh ${appName} ${timeoutSeconds}"
         }
     }
 }
@@ -559,20 +543,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                     script {
                         // Pure validation - no side effects
                         echo "Validating CUE configuration..."
-                        sh '''
-                            if [ -x "./scripts/validate-cue-config.sh" ]; then
-                                ./scripts/validate-cue-config.sh || {
-                                    echo "CUE validation failed"
-                                    exit 1
-                                }
-                            else
-                                cue vet ./env.cue || {
-                                    echo "CUE validation failed"
-                                    exit 1
-                                }
-                            fi
-                            echo "CUE configuration is valid"
-                        '''
+                        sh './scripts/validate-cue.sh'
                     }
                 }
             }
