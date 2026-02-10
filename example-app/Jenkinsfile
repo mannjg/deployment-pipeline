@@ -1,7 +1,9 @@
+import groovy.transform.Field
+
 // Production-Ready Jenkinsfile for example-app CI/CD pipeline
 // Refactored for maintainability, reliability, and production best practices
 
-def helpers = null
+@Field def helpers = null
 
 def loadHelpers() {
     if (helpers == null) {

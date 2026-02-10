@@ -2,7 +2,7 @@ import groovy.transform.Field
 
 @Field static final String PROMOTE_BRANCH_PREFIX = 'promote-'
 
-def helpers = null
+@Field def helpers = null
 
 def loadHelpers() {
     if (helpers == null) {

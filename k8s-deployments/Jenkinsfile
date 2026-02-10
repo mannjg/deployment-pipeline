@@ -6,7 +6,7 @@ import groovy.transform.Field
 @Field static final List<String> ENV_BRANCHES = ['dev', 'stage', 'prod']
 @Field static final List<String> PROMOTE_BRANCHES = ['dev', 'stage']
 
-def helpers = null
+@Field def helpers = null
 
 def loadHelpers() {
     if (helpers == null) {
