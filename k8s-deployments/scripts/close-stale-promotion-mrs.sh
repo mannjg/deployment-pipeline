@@ -5,7 +5,7 @@ set -euo pipefail
 : "${PROMO_TARGET:?PROMO_TARGET is required}"
 : "${PROMO_PREFIX:?PROMO_PREFIX is required}"
 : "${GITLAB_URL:?GITLAB_URL is required}"
-: "${BUILD_URL:?BUILD_URL is required}"
+BUILD_URL="${BUILD_URL:-unknown}"
 
 STALE_MRS=$(./scripts/gitlab-api.sh GET \
     "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/merge_requests?state=opened&target_branch=${PROMO_TARGET}" \

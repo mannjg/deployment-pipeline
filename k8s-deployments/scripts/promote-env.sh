@@ -14,7 +14,7 @@ PROMOTE_FULL_IMAGE="$5"
 MR_DESCRIPTION_FILE="$6"
 
 : "${PROMOTE_BRANCH_PREFIX:?PROMOTE_BRANCH_PREFIX is required}"
-: "${BUILD_URL:?BUILD_URL is required}"
+BUILD_URL="${BUILD_URL:-unknown}"
 : "${GITLAB_TOKEN:?GITLAB_TOKEN is required}"
 : "${GITLAB_URL:?GITLAB_URL is required}"
 : "${WORKSPACE:?WORKSPACE is required}"

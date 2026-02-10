@@ -14,7 +14,7 @@ NEW_IMAGE_TAG="$4"
 : "${PROMOTE_BRANCH_PREFIX:?PROMOTE_BRANCH_PREFIX is required}"
 : "${CONTAINER_REGISTRY_EXTERNAL:?CONTAINER_REGISTRY_EXTERNAL is required}"
 : "${CONTAINER_REGISTRY_PATH_PREFIX:?CONTAINER_REGISTRY_PATH_PREFIX is required}"
-: "${BUILD_URL:?BUILD_URL is required}"
+BUILD_URL="${BUILD_URL:-unknown}"
 : "${GITLAB_URL:?GITLAB_URL is required}"
 
 # Clean up promote temp files from workspace before git operations

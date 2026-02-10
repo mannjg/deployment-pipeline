@@ -28,7 +28,7 @@ fi
 : "${WORKSPACE:?WORKSPACE is required}"
 : "${BUILD_NUMBER:?BUILD_NUMBER is required}"
 : "${GIT_SHORT_HASH:?GIT_SHORT_HASH is required}"
-: "${BUILD_URL:?BUILD_URL is required}"
+BUILD_URL="${BUILD_URL:-unknown}"
 : "${GITLAB_API_TOKEN:?GITLAB_API_TOKEN is required}"
 : "${GITLAB_URL:?GITLAB_URL is required}"
 
