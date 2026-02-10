@@ -257,39 +257,7 @@ def closeStalePromotionMRs(String encodedProject, String targetEnv) {
         "PROMO_TARGET=${targetEnv}",
         "PROMO_PREFIX=${PROMOTE_BRANCH_PREFIX}"
     ]) {
-        sh '''
-            STALE_MRS=$(./scripts/gitlab-api.sh GET \
-                "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/merge_requests?state=opened&target_branch=${PROMO_TARGET}" \
-                2>/dev/null | jq -r --arg prefix "${PROMO_PREFIX}${PROMO_TARGET}-" \
-                '[.[] | select(.source_branch | startswith($prefix))] | .[] | "\\(.iid) \\(.source_branch)"')
-
-            if [ -z "${STALE_MRS}" ]; then
-                echo "No stale promotion MRs found for ${PROMO_TARGET}"
-            else
-                echo "${STALE_MRS}" | while read -r MR_IID MR_BRANCH; do
-                    [ -z "${MR_IID}" ] && continue
-                    echo "Closing stale promotion MR !${MR_IID} (branch: ${MR_BRANCH})"
-
-                    # Add comment explaining supersession
-                    ./scripts/gitlab-api.sh POST \
-                        "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/merge_requests/${MR_IID}/notes" \
-                        --data "{\"body\":\"Superseded by promotion from build ${BUILD_URL}\"}" \
-                        >/dev/null 2>&1 || echo "Warning: Could not add comment to MR !${MR_IID}"
-
-                    # Close the MR
-                    ./scripts/gitlab-api.sh PUT \
-                        "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/merge_requests/${MR_IID}" \
-                        --data '{"state_event":"close"}' \
-                        >/dev/null 2>&1 || echo "Warning: Could not close MR !${MR_IID}"
-
-                    # Delete the stale source branch
-                    ENCODED_BRANCH=$(echo "${MR_BRANCH}" | sed 's|/|%2F|g')
-                    ./scripts/gitlab-api.sh DELETE \
-                        "${GITLAB_URL}/api/v4/projects/${PROMO_ENCODED_PROJECT}/repository/branches/${ENCODED_BRANCH}" \
-                        >/dev/null 2>&1 || echo "Warning: Could not delete branch ${MR_BRANCH}"
-                done
-            fi
-        '''
+        sh './scripts/close-stale-promotion-mrs.sh'
     }
 }
 
@@ -326,26 +294,8 @@ def extractSourceImageTag(String encodedProject, String sourceEnv) {
  * @return New image tag for the target environment
  */
 def promoteArtifacts(String sourceEnv, String targetEnv, String gitHash) {
-    // sh """ required: mixes Groovy-interpolated config (${env.*}, ${sourceEnv})
-    // with \${}-escaped credentials (NEXUS_USER, NEXUS_PASSWORD, GITLAB_TOKEN)
     def promoteRc = sh(
-        script: """
-            export NEXUS_USER="\${NEXUS_USER}"
-            export NEXUS_PASSWORD="\${NEXUS_PASSWORD}"
-            export MAVEN_REPO_URL_INTERNAL="${env.MAVEN_REPO_URL_INTERNAL}"
-            export CONTAINER_REGISTRY_EXTERNAL="${env.CONTAINER_REGISTRY_EXTERNAL}"
-            export CONTAINER_REGISTRY_PATH_PREFIX="${env.CONTAINER_REGISTRY_PATH_PREFIX}"
-            export GITLAB_URL_INTERNAL="${env.GITLAB_URL_INTERNAL}"
-            export GITLAB_GROUP="${env.GITLAB_GROUP}"
-            export GITLAB_TOKEN="\${GITLAB_TOKEN}"
-            export PROMOTED_IMAGE_TAG_FILE="\${WORKSPACE}/promoted-image-tag"
-            bash ./scripts/promote-artifact.sh \
-                --source-env ${sourceEnv} \
-                --target-env ${targetEnv} \
-                --app-name example-app \
-                --git-hash ${gitHash} \
-                2>&1 | tee \${WORKSPACE}/promote.log
-        """,
+        script: "./scripts/promote-artifacts-wrapper.sh ${sourceEnv} ${targetEnv} ${gitHash}",
         returnStatus: true
     )
 
