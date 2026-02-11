@@ -10,27 +10,27 @@ def loadHelpers() {
 }
 
 def envBranches() {
-    return loadHelpers().pipelineConfigGetList('.branches.env')
+    return env.PIPELINE_ENV_BRANCHES.split(',')
 }
 
 def promoteSourceBranches() {
-    return loadHelpers().pipelineConfigGetList('.branches.promote_sources')
+    return env.PIPELINE_PROMOTE_BRANCHES.split(',')
 }
 
 def updateBranchPrefix() {
-    return loadHelpers().pipelineConfigGet('.branches.update_prefix')
+    return env.PIPELINE_UPDATE_PREFIX
 }
 
 def promoteBranchPrefix() {
-    return loadHelpers().pipelineConfigGet('.branches.promote_prefix')
+    return env.PIPELINE_PROMOTE_PREFIX
 }
 
 def gitlabStatusContext() {
-    return loadHelpers().pipelineConfigGet('.gitlab.status_context')
+    return env.PIPELINE_GITLAB_CONTEXT
 }
 
 def gitlabProjectName() {
-    return loadHelpers().pipelineConfigGet('.gitlab.project')
+    return env.PIPELINE_GITLAB_PROJECT
 }
 
 // Agent image from system environment (set via ConfigMap envFrom).
@@ -339,14 +339,14 @@ Build: ${env.BUILD_URL}
                         loadHelpers().validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
                         // Load pipeline config and expose key values for later stages
+                        loadHelpers().pipelineConfigWriteEnv('PIPELINE_ENV_BRANCHES', '.branches.env | join(\",\")')
+                        loadHelpers().pipelineConfigWriteEnv('PIPELINE_PROMOTE_BRANCHES', '.branches.promote_sources | join(\",\")')
+                        loadHelpers().pipelineConfigWriteEnv('PIPELINE_UPDATE_PREFIX', '.branches.update_prefix')
+                        loadHelpers().pipelineConfigWriteEnv('PIPELINE_PROMOTE_PREFIX', '.branches.promote_prefix')
+                        loadHelpers().pipelineConfigWriteEnv('PIPELINE_GITLAB_CONTEXT', '.gitlab.status_context')
+                        loadHelpers().pipelineConfigWriteEnv('PIPELINE_GITLAB_PROJECT', '.gitlab.project')
+
                         def envBranchList = envBranches()
-                        def promoteBranchList = promoteSourceBranches()
-                        env.PIPELINE_ENV_BRANCHES = envBranchList.join(',')
-                        env.PIPELINE_PROMOTE_BRANCHES = promoteBranchList.join(',')
-                        env.PIPELINE_UPDATE_PREFIX = updateBranchPrefix()
-                        env.PIPELINE_PROMOTE_PREFIX = promoteBranchPrefix()
-                        env.PIPELINE_GITLAB_CONTEXT = gitlabStatusContext()
-                        env.PIPELINE_GITLAB_PROJECT = gitlabProjectName()
 
                         env.ORIGINAL_COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                         echo "Commit SHA: ${env.ORIGINAL_COMMIT_SHA}"
@@ -630,8 +630,8 @@ Build: ${env.BUILD_URL}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
                 container('pipeline') {
-                    def statusContext = env.PIPELINE_GITLAB_CONTEXT
-                    def projectPath = "${env.GITLAB_GROUP}/${env.PIPELINE_GITLAB_PROJECT}"
+                    def statusContext = gitlabStatusContext()
+                    def projectPath = "${env.GITLAB_GROUP}/${gitlabProjectName()}"
                     loadHelpers().reportGitLabStatus('success', statusContext,
                         env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA,
                         projectPath)
@@ -650,8 +650,8 @@ Check logs above for error details.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
                 container('pipeline') {
-                    def statusContext = env.PIPELINE_GITLAB_CONTEXT
-                    def projectPath = "${env.GITLAB_GROUP}/${env.PIPELINE_GITLAB_PROJECT}"
+                    def statusContext = gitlabStatusContext()
+                    def projectPath = "${env.GITLAB_GROUP}/${gitlabProjectName()}"
                     loadHelpers().reportGitLabStatus('failed', statusContext,
                         env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA,
                         projectPath)

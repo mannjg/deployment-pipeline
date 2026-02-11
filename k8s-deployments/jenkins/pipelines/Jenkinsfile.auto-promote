@@ -10,7 +10,7 @@ def loadHelpers() {
 }
 
 def envBranches() {
-    return loadHelpers().pipelineConfigGetList('.branches.env')
+    return env.PIPELINE_ENV_BRANCHES.split(',')
 }
 
 /**
@@ -54,6 +54,7 @@ pipeline {
         stage('Trigger Branch Build') {
             steps {
                 script {
+                    loadHelpers().pipelineConfigWriteEnv('PIPELINE_ENV_BRANCHES', '.branches.env | join(\",\")')
                     // Use parameter from webhook, or fall back to GitLab plugin env vars
                     def branch = params.BRANCH ?: env.gitlabBranch ?: env.gitlabTargetBranch ?: ''
 

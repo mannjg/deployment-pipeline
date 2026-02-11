@@ -10,11 +10,11 @@ def loadHelpers() {
 }
 
 def envBranches() {
-    return loadHelpers().pipelineConfigGetList('.branches.env')
+    return env.PIPELINE_ENV_BRANCHES.split(',')
 }
 
 def gitlabProjectName() {
-    return loadHelpers().pipelineConfigGet('.gitlab.project')
+    return env.PIPELINE_GITLAB_PROJECT
 }
 
 // Validation Pipeline for k8s-deployments Repository
@@ -120,6 +120,9 @@ spec:
                 container('validator') {
                     script {
                         echo "=== Preflight Checks ==="
+
+                        loadHelpers().pipelineConfigWriteEnv('PIPELINE_ENV_BRANCHES', '.branches.env | join(\",\")')
+                        loadHelpers().pipelineConfigWriteEnv('PIPELINE_GITLAB_PROJECT', '.gitlab.project')
 
                         def missing = []
                         if (!env.GITLAB_URL) missing.add('GITLAB_URL_INTERNAL')

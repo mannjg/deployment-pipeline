@@ -42,23 +42,18 @@ def validateRequiredEnvVars(List<String> vars) {
  * @param path Path to pipeline config file
  * @return Map of pipeline configuration
  */
-def pipelineConfigGet(String jqExpr, String path = 'config/pipeline.json') {
+def pipelineConfigWriteEnv(String envVar, String jqExpr, String path = 'config/pipeline.json') {
     if (!fileExists(path)) {
         error "Pipeline config not found: ${path}"
     }
-    def outFile = tempFilePath('pipeline-config', '.txt')
+    def outFile = tempFilePath("pipeline-config-${envVar}", '.txt')
     sh "jq -er '${jqExpr}' ${path} > ${outFile}"
     def value = readFile(outFile).trim()
     sh "rm -f ${outFile} || true"
     if (!value) {
         error "Missing required pipeline config: ${jqExpr}"
     }
-    return value
-}
-
-def pipelineConfigGetList(String jqExpr, String path = 'config/pipeline.json') {
-    def csv = pipelineConfigGet("${jqExpr} | join(\",\")", path)
-    return csv.split(',')
+    env."${envVar}" = value
 }
 
 /**

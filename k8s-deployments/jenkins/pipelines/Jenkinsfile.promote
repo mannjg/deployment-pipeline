@@ -10,7 +10,7 @@ def loadHelpers() {
 }
 
 def promoteBranchPrefix() {
-    return loadHelpers().pipelineConfigGet('.branches.promote_prefix')
+    return env.PIPELINE_PROMOTE_PREFIX
 }
 
 // Agent image from system environment (set via ConfigMap envFrom).
@@ -128,6 +128,7 @@ pipeline {
 
                         // Validate required environment variables
                         loadHelpers().validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
+                        loadHelpers().pipelineConfigWriteEnv('PIPELINE_PROMOTE_PREFIX', '.branches.promote_prefix')
 
                         // Validate promotion path
                         def validPromotions = [

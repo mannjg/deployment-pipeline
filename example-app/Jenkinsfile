@@ -182,10 +182,10 @@ pipeline {
                         loadHelpers().validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
                         // Load pipeline config and apply defaults
-                        env.APP_NAME = loadHelpers().pipelineConfigGet('.app.name')
-                        env.DEPLOY_BRANCH_PREFIX = loadHelpers().pipelineConfigGet('.deploy.branch_prefix')
-                        env.PIPELINE_GITLAB_CONTEXT = loadHelpers().pipelineConfigGet('.gitlab.status_context')
-                        env.PIPELINE_GITLAB_PROJECT = loadHelpers().pipelineConfigGet('.gitlab.project')
+                        loadHelpers().pipelineConfigWriteEnv('APP_NAME', '.app.name')
+                        loadHelpers().pipelineConfigWriteEnv('DEPLOY_BRANCH_PREFIX', '.deploy.branch_prefix')
+                        loadHelpers().pipelineConfigWriteEnv('PIPELINE_GITLAB_CONTEXT', '.gitlab.status_context')
+                        loadHelpers().pipelineConfigWriteEnv('PIPELINE_GITLAB_PROJECT', '.gitlab.project')
                         env.IMAGE_NAME = "${env.CONTAINER_REGISTRY}/${env.APP_GROUP}/${env.APP_NAME}"
 
                         // Extract version from pom.xml
