@@ -165,7 +165,6 @@ pipeline {
         GITLAB_GROUP = "${env.GITLAB_GROUP ?: ''}"
         DEPLOYMENT_REPO = "${env.DEPLOYMENTS_REPO_URL ?: ''}"
 
-        // Computed image reference (set during Checkout & Setup)
     }
 
     stages {
