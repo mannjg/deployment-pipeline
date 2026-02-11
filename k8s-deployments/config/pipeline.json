@@ -1,0 +1,15 @@
+{
+  "branches": {
+    "env": ["dev", "stage", "prod"],
+    "promote_sources": ["dev", "stage"],
+    "update_prefix": "update-",
+    "promote_prefix": "promote-"
+  },
+  "gitlab": {
+    "status_context": "jenkins/k8s-deployments",
+    "project": "k8s-deployments"
+  },
+  "apps": {
+    "default": "example-app"
+  }
+}

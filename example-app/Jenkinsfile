@@ -4,12 +4,20 @@ import groovy.transform.Field
 // Refactored for maintainability, reliability, and production best practices
 
 @Field def helpers = null
+@Field def pipelineConfig = null
 
 def loadHelpers() {
     if (helpers == null) {
         helpers = load 'Jenkinsfile.helpers.groovy'
     }
     return helpers
+}
+
+def loadPipelineConfig() {
+    if (pipelineConfig == null) {
+        pipelineConfig = loadHelpers().loadPipelineConfig()
+    }
+    return pipelineConfig
 }
 
 // Agent image from system environment (set via ConfigMap envFrom).
@@ -62,8 +70,6 @@ spec:
         cpu: "1000m"
 """
 }
-
-def gitlabStatusContext = 'jenkins/example-app'
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -153,8 +159,8 @@ pipeline {
     }
 
     environment {
-        // Application metadata
-        APP_NAME = 'example-app'
+        // Application metadata (loaded during Checkout & Setup)
+        APP_NAME = ''
         APP_GROUP = "${env.CONTAINER_REGISTRY_PATH_PREFIX ?: ''}"
 
         // Container registry - use external URL (nodes trust it, no CA changes needed)
@@ -168,8 +174,8 @@ pipeline {
         GITLAB_GROUP = "${env.GITLAB_GROUP ?: ''}"
         DEPLOYMENT_REPO = "${env.DEPLOYMENTS_REPO_URL ?: ''}"
 
-        // Computed image reference
-        IMAGE_NAME = "${CONTAINER_REGISTRY}/${APP_GROUP}/${APP_NAME}"
+        // Computed image reference (set during Checkout & Setup)
+        IMAGE_NAME = ''
     }
 
     stages {
@@ -182,6 +188,27 @@ pipeline {
 
                         // Validate required environment variables from ConfigMap
                         loadHelpers().validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
+
+                        // Load pipeline config and apply defaults
+                        def cfg = loadPipelineConfig()
+                        if (!cfg.app?.name) {
+                            error "Missing required pipeline config: app.name"
+                        }
+                        if (!cfg.deploy?.branch_prefix) {
+                            error "Missing required pipeline config: deploy.branch_prefix"
+                        }
+                        if (!cfg.gitlab?.status_context) {
+                            error "Missing required pipeline config: gitlab.status_context"
+                        }
+                        if (!cfg.gitlab?.project) {
+                            error "Missing required pipeline config: gitlab.project"
+                        }
+
+                        env.APP_NAME = cfg.app.name as String
+                        env.DEPLOY_BRANCH_PREFIX = cfg.deploy.branch_prefix as String
+                        env.PIPELINE_GITLAB_CONTEXT = cfg.gitlab.status_context as String
+                        env.PIPELINE_GITLAB_PROJECT = cfg.gitlab.project as String
+                        env.IMAGE_NAME = "${env.CONTAINER_REGISTRY}/${env.APP_GROUP}/${env.APP_NAME}"
 
                         // Extract version from pom.xml
                         env.APP_VERSION = sh(
@@ -216,7 +243,9 @@ pipeline {
                         echo "✓ Deploy target: ${env.FULL_IMAGE}"
 
                         // Report "pending" status to GitLab so MR shows pipeline is running
-                        loadHelpers().reportGitLabStatus('pending', gitlabStatusContext, env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP}/example-app")
+                        def statusContext = env.PIPELINE_GITLAB_CONTEXT
+                        def projectPath = "${env.GITLAB_GROUP}/${env.PIPELINE_GITLAB_PROJECT}"
+                        loadHelpers().reportGitLabStatus('pending', statusContext, env.GIT_COMMIT_SHA, projectPath)
                     }
                 }
             }
@@ -310,7 +339,7 @@ pipeline {
                 script {
                     deployToEnvironment(
                         'dev',
-                        'update-dev',
+                        env.DEPLOY_BRANCH_PREFIX,
                         "Deploy ${env.APP_NAME} to dev: ${env.IMAGE_TAG}",
                         """## Automatic Deployment to Dev
 
@@ -358,7 +387,9 @@ Build URL: ${env.BUILD_URL}
 """
                 // Report success status to GitLab
                 container('pipeline') {
-                    loadHelpers().reportGitLabStatus('success', gitlabStatusContext, env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP}/example-app")
+                    def statusContext = env.PIPELINE_GITLAB_CONTEXT
+                    def projectPath = "${env.GITLAB_GROUP}/${env.PIPELINE_GITLAB_PROJECT}"
+                    loadHelpers().reportGitLabStatus('success', statusContext, env.GIT_COMMIT_SHA, projectPath)
                 }
             }
         }
@@ -375,7 +406,9 @@ Check logs above for error details
 """
                 // Report failure status to GitLab
                 container('pipeline') {
-                    loadHelpers().reportGitLabStatus('failed', gitlabStatusContext, env.GIT_COMMIT_SHA, "${env.GITLAB_GROUP}/example-app")
+                    def statusContext = env.PIPELINE_GITLAB_CONTEXT
+                    def projectPath = "${env.GITLAB_GROUP}/${env.PIPELINE_GITLAB_PROJECT}"
+                    loadHelpers().reportGitLabStatus('failed', statusContext, env.GIT_COMMIT_SHA, projectPath)
                 }
             }
         }

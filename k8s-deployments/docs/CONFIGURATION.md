@@ -83,6 +83,16 @@ The root project's `validate-pipeline.sh` requires `APP_CUE_NAME` in `config/inf
 - Maps repository name to CUE manifest name
 - Example: `APP_REPO_NAME=example-app` → `APP_CUE_NAME=exampleApp`
 
+## Pipeline Config
+
+Declarative pipeline settings live in `config/pipeline.json` and define:
+- Environment branch names and promotion sources
+- Promotion branch prefix
+- GitLab status context and project name
+- Default app name for promotions
+
+This file is read by Jenkinsfiles and scripts to avoid hardcoded rules.
+
 ## Troubleshooting
 
 ### "PREFLIGHT CHECK FAILED" Error

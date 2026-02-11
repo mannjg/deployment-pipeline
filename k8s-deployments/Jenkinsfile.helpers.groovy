@@ -38,6 +38,19 @@ def validateRequiredEnvVars(List<String> vars) {
 }
 
 /**
+ * Loads repo-local pipeline configuration from JSON.
+ * @param path Path to pipeline config file
+ * @return Map of pipeline configuration
+ */
+def loadPipelineConfig(String path = 'config/pipeline.json') {
+    if (!fileExists(path)) {
+        error "Pipeline config not found: ${path}"
+    }
+    def text = readFile(path)
+    return new groovy.json.JsonSlurper().parseText(text)
+}
+
+/**
  * Reports commit status to GitLab. Non-fatal on failure.
  * @param state GitLab commit status state (pending, success, failed)
  * @param context Status context name (e.g., "jenkins/k8s-deployments")

@@ -36,6 +36,15 @@ The example-app pipeline:
 4. Publishes Maven artifact to Nexus
 5. Creates MR to k8s-deployments dev branch
 
+## Pipeline Config
+
+Declarative pipeline settings live in `config/pipeline.json` and define:
+- App name
+- Dev promotion branch prefix
+- GitLab status context and project name
+
+This file is read by Jenkinsfiles to avoid hardcoded rules.
+
 ## Troubleshooting
 
 ### "GITLAB_URL_INTERNAL not set" Error

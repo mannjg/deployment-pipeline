@@ -1,6 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/pipeline-config.sh"
+
+convert_to_camel_case() {
+    local input="$1"
+    echo "$input" | sed -E 's/([-_])([a-z])/\U\2/g' | sed 's/^./\L&/'
+}
+
 usage() {
     cat <<'USAGE'
 Usage: ./scripts/promote-flow.sh --mode <auto|manual> --source-env <env> --target-env <env> [options]
@@ -21,7 +29,7 @@ USAGE
 MODE=""
 SOURCE_ENV=""
 TARGET_ENV=""
-APP_NAME="example-app"
+APP_NAME="$(pipeline_config_get '.apps.default')"
 IMAGE_TAG=""
 FULL_IMAGE=""
 MR_DESCRIPTION_FILE=""
@@ -83,7 +91,7 @@ if [[ "$MODE" != "auto" && "$MODE" != "manual" ]]; then
     exit 1
 fi
 
-PROMOTE_BRANCH_PREFIX="${PROMOTE_BRANCH_PREFIX:-promote-}"
+PROMOTE_BRANCH_PREFIX="${PROMOTE_BRANCH_PREFIX:-$(pipeline_config_get '.branches.promote_prefix')}"
 export PROMOTE_BRANCH_PREFIX
 
 if [[ "$MODE" == "auto" ]]; then
@@ -92,7 +100,8 @@ if [[ "$MODE" == "auto" ]]; then
     : "${GITLAB_TOKEN:?GITLAB_TOKEN is required}"
     : "${WORKSPACE:?WORKSPACE is required}"
 
-    project_path="${GITLAB_GROUP}/k8s-deployments"
+    project_name=$(pipeline_config_get '.gitlab.project')
+    project_path="${GITLAB_GROUP}/${project_name}"
     encoded_project=$(echo "$project_path" | sed 's|/|%2F|g')
 
     export PROMOTE_ENCODED_PROJECT="$encoded_project"
@@ -100,10 +109,27 @@ if [[ "$MODE" == "auto" ]]; then
 
     ./scripts/pipeline close-stale-promotion-mrs
 
-    source_image_tag=$(./scripts/gitlab-api.sh GET \
+    app_name="${APP_NAME:-$(pipeline_config_get '.apps.default')}"
+    export APP_NAME="$app_name"
+    app_cue_name="$(convert_to_camel_case "$app_name")"
+    env_file_content=$(./scripts/gitlab-api.sh GET \
         "${GITLAB_URL}/api/v4/projects/${encoded_project}/repository/files/env.cue?ref=${SOURCE_ENV}" \
-        2>/dev/null | jq -r '.content' | base64 -d | grep 'image:' | \
-        sed -E 's/.*image:\s*"([^"]+)".*/\1/' | head -1)
+        2>/dev/null | jq -r '.content' | base64 -d)
+
+    source_image_tag=$(echo "$env_file_content" | awk -v env="${SOURCE_ENV}" -v app="${app_cue_name}" '
+        BEGIN { in_block=0 }
+        $0 ~ ("^" env ":[[:space:]]*" app "([[:space:]]|:)") { in_block=1 }
+        in_block && $0 ~ ("^" env ":[[:space:]]*[A-Za-z0-9_-]+:") && $0 !~ ("^" env ":[[:space:]]*" app "([[:space:]]|:)") { exit }
+        in_block && $0 ~ /image:[[:space:]]*"/ {
+            match($0, /image:[[:space:]]*"([^"]+)"/, m)
+            if (m[1] != "") { print m[1]; exit }
+        }
+    ')
+
+    if [[ -z "$source_image_tag" ]]; then
+        source_image_tag=$(echo "$env_file_content" | grep 'image:' | \
+            sed -E 's/.*image:[[:space:]]*"([^"]+)".*/\1/' | head -1)
+    fi
 
     if [[ -z "$source_image_tag" ]]; then
         echo "ERROR: Could not extract image tag from ${SOURCE_ENV} env.cue" >&2

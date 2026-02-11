@@ -620,7 +620,15 @@ reset_env_via_mr() {
     done
     log_info "  Prepared $script_count files from scripts/"
 
-    # 2d. Generate env.cue from baseline
+    # 2d. Get config/pipeline.json from main
+    local pipeline_config_content=$(mw_get_file "$DEPLOYMENTS_REPO_PATH" "main" "config/pipeline.json")
+    if [[ -n "$pipeline_config_content" ]]; then
+        local pipeline_config_b64=$(echo "$pipeline_config_content" | base64 -w0)
+        files_to_commit+=("config/pipeline.json:base64:$pipeline_config_b64")
+        log_info "  Prepared config/pipeline.json"
+    fi
+
+    # 2e. Generate env.cue from baseline
     local baseline_file="$BASELINES_DIR/env-${env}.cue"
     if [[ -f "$baseline_file" ]]; then
         # Get cluster-specific namespace for this environment

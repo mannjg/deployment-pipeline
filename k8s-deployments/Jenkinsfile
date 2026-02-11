@@ -1,18 +1,64 @@
 import groovy.transform.Field
 
-@Field static final String UPDATE_BRANCH_PREFIX = 'update-'
-@Field static final String PROMOTE_BRANCH_PREFIX = 'promote-'
-@Field static final String GITLAB_STATUS_CONTEXT = 'jenkins/k8s-deployments'
-@Field static final List<String> ENV_BRANCHES = ['dev', 'stage', 'prod']
-@Field static final List<String> PROMOTE_BRANCHES = ['dev', 'stage']
-
 @Field def helpers = null
+@Field def pipelineConfig = null
 
 def loadHelpers() {
     if (helpers == null) {
         helpers = load 'Jenkinsfile.helpers.groovy'
     }
     return helpers
+}
+
+def loadPipelineConfig() {
+    if (pipelineConfig == null) {
+        pipelineConfig = loadHelpers().loadPipelineConfig()
+    }
+    return pipelineConfig
+}
+
+def requireStringConfig(def value, String path) {
+    if (value == null || value.toString().trim().isEmpty()) {
+        error "Missing required pipeline config: ${path}"
+    }
+    return value.toString()
+}
+
+def requireListConfig(def value, String path) {
+    if (!(value instanceof List) || value.isEmpty()) {
+        error "Missing required pipeline config: ${path}"
+    }
+    return value as List
+}
+
+def envBranches() {
+    def cfg = loadPipelineConfig()
+    return requireListConfig(cfg.branches?.env, 'branches.env')
+}
+
+def promoteSourceBranches() {
+    def cfg = loadPipelineConfig()
+    return requireListConfig(cfg.branches?.promote_sources, 'branches.promote_sources')
+}
+
+def updateBranchPrefix() {
+    def cfg = loadPipelineConfig()
+    return requireStringConfig(cfg.branches?.update_prefix, 'branches.update_prefix')
+}
+
+def promoteBranchPrefix() {
+    def cfg = loadPipelineConfig()
+    return requireStringConfig(cfg.branches?.promote_prefix, 'branches.promote_prefix')
+}
+
+def gitlabStatusContext() {
+    def cfg = loadPipelineConfig()
+    return requireStringConfig(cfg.gitlab?.status_context, 'gitlab.status_context')
+}
+
+def gitlabProjectName() {
+    def cfg = loadPipelineConfig()
+    return requireStringConfig(cfg.gitlab?.project, 'gitlab.project')
 }
 
 // Agent image from system environment (set via ConfigMap envFrom).
@@ -91,18 +137,18 @@ spec:
  */
 def getTargetEnvironment(String branchName) {
     // Direct environment branches
-    if (branchName in ENV_BRANCHES) {
+    if (branchName in envBranches()) {
         return branchName
     }
     // Feature branches targeting dev (from app CI)
-    if (branchName.startsWith("${UPDATE_BRANCH_PREFIX}dev-")) {
+    if (branchName.startsWith("${updateBranchPrefix()}dev-")) {
         return 'dev'
     }
     // Promotion branches
-    if (branchName.startsWith("${PROMOTE_BRANCH_PREFIX}stage-")) {
+    if (branchName.startsWith("${promoteBranchPrefix()}stage-")) {
         return 'stage'
     }
-    if (branchName.startsWith("${PROMOTE_BRANCH_PREFIX}prod-")) {
+    if (branchName.startsWith("${promoteBranchPrefix()}prod-")) {
         return 'prod'
     }
     // Unknown branch pattern
@@ -133,7 +179,7 @@ def getMRTargetEnvironment(String branchName, String projectPath) {
         return null
     }
 
-    def isEnvBranch = branchName in ENV_BRANCHES
+    def isEnvBranch = branchName in envBranches()
 
     try {
         def encodedProject = projectPath.replace('/', '%2F')
@@ -154,7 +200,7 @@ def getMRTargetEnvironment(String branchName, String projectPath) {
         }
 
         // Only return if target is an environment branch
-        if (targetBranch in ENV_BRANCHES) {
+        if (targetBranch in envBranches()) {
             // For env-to-env MRs, only process if target is DIFFERENT from source
             if (isEnvBranch && targetBranch == branchName) {
                 echo "Skipping self-referential MR for ${branchName}"
@@ -256,7 +302,7 @@ def createPromotionMR(String sourceEnv) {
                 def h = loadHelpers()
                 h.cleanupWorkspaceFiles(['promoted-image-tag', 'promote.log'])
                 h.withGitCredentials('.') {
-                    withEnv(["PROMOTE_BRANCH_PREFIX=${PROMOTE_BRANCH_PREFIX}"]) {
+                    withEnv(["PROMOTE_BRANCH_PREFIX=${promoteBranchPrefix()}"]) {
                         sh "./scripts/pipeline promote-flow --mode auto --source-env ${sourceEnv} --target-env ${targetEnv}"
                     }
                 }
@@ -320,13 +366,23 @@ Build: ${env.BUILD_URL}
                         // Validate required environment variables from ConfigMap
                         loadHelpers().validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
+                        // Load pipeline config and expose key values for later stages
+                        def envBranchList = envBranches()
+                        def promoteBranchList = promoteSourceBranches()
+                        env.PIPELINE_ENV_BRANCHES = envBranchList.join(',')
+                        env.PIPELINE_PROMOTE_BRANCHES = promoteBranchList.join(',')
+                        env.PIPELINE_UPDATE_PREFIX = updateBranchPrefix()
+                        env.PIPELINE_PROMOTE_PREFIX = promoteBranchPrefix()
+                        env.PIPELINE_GITLAB_CONTEXT = gitlabStatusContext()
+                        env.PIPELINE_GITLAB_PROJECT = gitlabProjectName()
+
                         env.ORIGINAL_COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                         echo "Commit SHA: ${env.ORIGINAL_COMMIT_SHA}"
 
                         // JENKINS-20: Skip redundant builds triggered by manifest push
                         // The Generate Manifests stage pushes [jenkins-ci] commits back to feature
                         // branches, which triggers the webhook again. Detect and skip these.
-                        if (env.BRANCH_NAME && !(env.BRANCH_NAME in ENV_BRANCHES)) {
+                        if (env.BRANCH_NAME && !(env.BRANCH_NAME in envBranchList)) {
                             def lastCommitMsg = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
                             if (lastCommitMsg.contains('[jenkins-ci]')) {
                                 currentBuild.result = 'NOT_BUILT'
@@ -365,12 +421,12 @@ Build: ${env.BUILD_URL}
                         }
 
                         // Determine branch type and MR status
-                        env.IS_ENV_BRANCH = (env.BRANCH_NAME in ENV_BRANCHES) ? 'true' : 'false'
+                        env.IS_ENV_BRANCH = (env.BRANCH_NAME in envBranchList) ? 'true' : 'false'
                         env.HAS_OPEN_MR = 'false'
                         env.MR_TARGET_ENV = ''
 
                         withCredentials([string(credentialsId: 'gitlab-token-secret', variable: 'GITLAB_TOKEN')]) {
-                            def projectPath = "${env.GITLAB_GROUP}/k8s-deployments"
+                            def projectPath = "${env.GITLAB_GROUP}/${env.PIPELINE_GITLAB_PROJECT}"
                             def mrTarget = getMRTargetEnvironment(env.BRANCH_NAME, projectPath)
                             if (mrTarget) {
                                 env.HAS_OPEN_MR = 'true'
@@ -407,7 +463,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                     script {
                         echo "=== Preparing MR Preview: Merging ${env.MR_TARGET_ENV} ==="
 
-                        def isPromoteBranch = env.BRANCH_NAME.startsWith(PROMOTE_BRANCH_PREFIX)
+                        def isPromoteBranch = env.BRANCH_NAME.startsWith(env.PIPELINE_PROMOTE_PREFIX)
                         if (isPromoteBranch) {
                             echo "Promote branch detected - will preserve promoted image versions"
                         }
@@ -451,7 +507,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                     // Exclude promote-* branches - they carry already-generated manifests from source env
                     // (regenerating would cause feedback loop: build -> push -> webhook -> build)
                     env.TARGET_ENV != '' && env.HAS_OPEN_MR == 'true' && env.IS_ENV_BRANCH == 'false' &&
-                    !env.BRANCH_NAME.startsWith(PROMOTE_BRANCH_PREFIX)
+                    !env.BRANCH_NAME.startsWith(env.PIPELINE_PROMOTE_PREFIX)
                 }
             }
             steps {
@@ -576,7 +632,8 @@ Build: ${env.BUILD_URL}
                 expression {
                     // Only create promotion MR for dev/stage after successful deployment
                     // Skip if commit message contains [no-promote]
-                    env.BRANCH_NAME in PROMOTE_BRANCHES &&
+                    env.BRANCH_NAME &&
+                    env.PIPELINE_PROMOTE_BRANCHES.split(',').contains(env.BRANCH_NAME) &&
                     env.IS_ENV_BRANCH == 'true' &&
                     env.NO_PROMOTE != 'true'
                 }
@@ -601,9 +658,11 @@ Build: ${env.BUILD_URL}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
                 container('pipeline') {
-                    loadHelpers().reportGitLabStatus('success', GITLAB_STATUS_CONTEXT,
+                    def statusContext = env.PIPELINE_GITLAB_CONTEXT
+                    def projectPath = "${env.GITLAB_GROUP}/${env.PIPELINE_GITLAB_PROJECT}"
+                    loadHelpers().reportGitLabStatus('success', statusContext,
                         env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA,
-                        "${env.GITLAB_GROUP}/k8s-deployments")
+                        projectPath)
                 }
             }
         }
@@ -619,9 +678,11 @@ Check logs above for error details.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
                 container('pipeline') {
-                    loadHelpers().reportGitLabStatus('failed', GITLAB_STATUS_CONTEXT,
+                    def statusContext = env.PIPELINE_GITLAB_CONTEXT
+                    def projectPath = "${env.GITLAB_GROUP}/${env.PIPELINE_GITLAB_PROJECT}"
+                    loadHelpers().reportGitLabStatus('failed', statusContext,
                         env.FINAL_COMMIT_SHA ?: env.ORIGINAL_COMMIT_SHA,
-                        "${env.GITLAB_GROUP}/k8s-deployments")
+                        projectPath)
                 }
             }
         }

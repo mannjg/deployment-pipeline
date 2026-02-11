@@ -1,0 +1,12 @@
+{
+  "app": {
+    "name": "example-app"
+  },
+  "deploy": {
+    "branch_prefix": "update-dev"
+  },
+  "gitlab": {
+    "status_context": "jenkins/example-app",
+    "project": "example-app"
+  }
+}

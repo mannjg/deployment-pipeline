@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/pipeline-config.sh"
+
 if [[ $# -ne 3 ]]; then
     echo "Usage: $0 <source-env> <target-env> <git-hash>" >&2
     exit 1
@@ -9,6 +12,7 @@ fi
 SOURCE_ENV="$1"
 TARGET_ENV="$2"
 GIT_HASH="$3"
+APP_NAME="${APP_NAME:-$(pipeline_config_get '.apps.default')}"
 
 : "${NEXUS_USER:?NEXUS_USER is required}"
 : "${NEXUS_PASSWORD:?NEXUS_PASSWORD is required}"
@@ -33,6 +37,6 @@ export PROMOTED_IMAGE_TAG_FILE="${WORKSPACE}/promoted-image-tag"
 bash ./scripts/promote-artifact.sh \
     --source-env "${SOURCE_ENV}" \
     --target-env "${TARGET_ENV}" \
-    --app-name example-app \
+    --app-name "${APP_NAME}" \
     --git-hash "${GIT_HASH}" \
     2>&1 | tee "${WORKSPACE}/promote.log"

@@ -1,6 +1,32 @@
 import groovy.transform.Field
 
-@Field static final List<String> ENV_BRANCHES = ['dev', 'stage', 'prod']
+@Field def pipelineConfig = null
+
+def loadPipelineConfig() {
+    if (pipelineConfig == null) {
+        def text = readFile('config/pipeline.json')
+        pipelineConfig = new groovy.json.JsonSlurper().parseText(text)
+    }
+    return pipelineConfig
+}
+
+def envBranches() {
+    def cfg = loadPipelineConfig()
+    def envs = cfg.branches?.env
+    if (!(envs instanceof List) || envs.isEmpty()) {
+        error "Missing required pipeline config: branches.env"
+    }
+    return envs as List
+}
+
+def gitlabProjectName() {
+    def cfg = loadPipelineConfig()
+    def project = cfg.gitlab?.project
+    if (!project) {
+        error "Missing required pipeline config: gitlab.project"
+    }
+    return project as String
+}
 
 // Validation Pipeline for k8s-deployments Repository
 // Validates CUE configuration, manifest generation, and YAML syntax
@@ -157,7 +183,7 @@ See: k8s-deployments/docs/CONFIGURATION.md"""
                     script {
                         echo "=== Generating Kubernetes Manifests ==="
 
-                        def environments = params.VALIDATE_ALL_ENVS ? ENV_BRANCHES : [params.BRANCH_NAME]
+                        def environments = params.VALIDATE_ALL_ENVS ? envBranches() : [params.BRANCH_NAME]
 
                         for (env in environments) {
                             echo "Generating manifests for: ${env}"
@@ -189,7 +215,7 @@ See: k8s-deployments/docs/CONFIGURATION.md"""
                     script {
                         echo "=== Validating Generated Manifests ==="
 
-                        def environments = params.VALIDATE_ALL_ENVS ? ENV_BRANCHES : [params.BRANCH_NAME]
+                        def environments = params.VALIDATE_ALL_ENVS ? envBranches() : [params.BRANCH_NAME]
 
                         for (env in environments) {
                             echo "Validating manifests for: ${env}"
@@ -261,7 +287,7 @@ Build: ${BUILD_URL}"
                     script {
                         echo "=== Running Integration Tests ==="
 
-                        def environments = params.VALIDATE_ALL_ENVS ? ENV_BRANCHES : [params.BRANCH_NAME]
+                        def environments = params.VALIDATE_ALL_ENVS ? envBranches() : [params.BRANCH_NAME]
 
                         sh """
                             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -300,7 +326,7 @@ Validation Summary:
   ✓ YAML validation passed
   ✓ Integration tests passed
 
-Environments Validated: ${params.VALIDATE_ALL_ENVS ? 'dev, stage, prod' : params.BRANCH_NAME}
+Environments Validated: ${params.VALIDATE_ALL_ENVS ? envBranches().join(', ') : params.BRANCH_NAME}
 
 Build URL: ${env.BUILD_URL}
 =======================================================
@@ -325,6 +351,8 @@ Safe to merge this change.
                 // Update GitLab commit status via API
                 container('validator') {
                     withCredentials([string(credentialsId: 'gitlab-token-secret', variable: 'GITLAB_TOKEN')]) {
+                        def projectName = gitlabProjectName()
+                        def encodedProject = "${env.GITLAB_GROUP}%2F${projectName}"
                         sh """
                             JSON_PAYLOAD=\$(jq -n \
                                 --arg state "success" \
@@ -333,7 +361,7 @@ Safe to merge this change.
                                 --arg description "All validation checks passed" \
                                 '{state: \$state, name: \$name, target_url: \$target_url, description: \$description}')
                             ./scripts/gitlab-api.sh POST \
-                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP}%2Fk8s-deployments/statuses/${env.GIT_COMMIT}" \
+                                "${env.GITLAB_URL}/api/v4/projects/${encodedProject}/statuses/${env.GIT_COMMIT}" \
                                 --data "\${JSON_PAYLOAD}" \
                                 || echo "⚠ Could not update GitLab status (non-blocking)"
                         """
@@ -358,6 +386,8 @@ Build URL: ${env.BUILD_URL}
                 // Update GitLab commit status via API
                 container('validator') {
                     withCredentials([string(credentialsId: 'gitlab-token-secret', variable: 'GITLAB_TOKEN')]) {
+                        def projectName = gitlabProjectName()
+                        def encodedProject = "${env.GITLAB_GROUP}%2F${projectName}"
                         sh """
                             JSON_PAYLOAD=\$(jq -n \
                                 --arg state "failed" \
@@ -366,7 +396,7 @@ Build URL: ${env.BUILD_URL}
                                 --arg description "Validation checks failed - see Jenkins logs" \
                                 '{state: \$state, name: \$name, target_url: \$target_url, description: \$description}')
                             ./scripts/gitlab-api.sh POST \
-                                "${env.GITLAB_URL}/api/v4/projects/${env.GITLAB_GROUP}%2Fk8s-deployments/statuses/${env.GIT_COMMIT}" \
+                                "${env.GITLAB_URL}/api/v4/projects/${encodedProject}/statuses/${env.GIT_COMMIT}" \
                                 --data "\${JSON_PAYLOAD}" \
                                 || echo "⚠ Could not update GitLab status (non-blocking)"
                         """

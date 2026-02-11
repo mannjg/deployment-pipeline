@@ -1,6 +1,23 @@
 import groovy.transform.Field
 
-@Field static final List<String> ENV_BRANCHES = ['dev', 'stage', 'prod']
+@Field def pipelineConfig = null
+
+def loadPipelineConfig() {
+    if (pipelineConfig == null) {
+        def text = readFile('config/pipeline.json')
+        pipelineConfig = new groovy.json.JsonSlurper().parseText(text)
+    }
+    return pipelineConfig
+}
+
+def envBranches() {
+    def cfg = loadPipelineConfig()
+    def envs = cfg.branches?.env
+    if (!(envs instanceof List) || envs.isEmpty()) {
+        error "Missing required pipeline config: branches.env"
+    }
+    return envs as List
+}
 
 /**
  * Jenkins Pipeline: Direct Branch Build Trigger
@@ -55,7 +72,7 @@ pipeline {
                     }
 
                     // Only trigger for environment branches
-                    def validBranches = ENV_BRANCHES
+                    def validBranches = envBranches()
                     if (!(branch in validBranches)) {
                         echo "Branch '${branch}' is not an environment branch. Skipping."
                         currentBuild.result = 'NOT_BUILT'

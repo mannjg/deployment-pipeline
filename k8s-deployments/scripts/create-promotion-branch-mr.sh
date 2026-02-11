@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/pipeline-config.sh"
+
 if [[ $# -ne 4 ]]; then
     echo "Usage: $0 <source-env> <target-env> <image-tag> <new-image-tag>" >&2
     exit 1
@@ -11,6 +14,7 @@ TARGET_ENV="$2"
 IMAGE_TAG="$3"
 NEW_IMAGE_TAG="$4"
 
+PROMOTE_BRANCH_PREFIX="${PROMOTE_BRANCH_PREFIX:-$(pipeline_config_get '.branches.promote_prefix' 'promote-')}"
 : "${PROMOTE_BRANCH_PREFIX:?PROMOTE_BRANCH_PREFIX is required}"
 : "${CONTAINER_REGISTRY_EXTERNAL:?CONTAINER_REGISTRY_EXTERNAL is required}"
 : "${CONTAINER_REGISTRY_PATH_PREFIX:?CONTAINER_REGISTRY_PATH_PREFIX is required}"
@@ -26,6 +30,7 @@ git fetch origin "${SOURCE_ENV}" "${TARGET_ENV}"
 # Create promotion branch from target
 # Branch convention: promote-{env}-{appVersion}-{timestamp}
 # App version extracted from image tag by stripping trailing git hash
+APP_NAME=$(pipeline_config_get '.apps.default')
 APP_VERSION=$(echo "${IMAGE_TAG}" | sed 's/-[a-f0-9]\\{6,\\}$//')
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 PROMOTION_BRANCH="${PROMOTE_BRANCH_PREFIX}${TARGET_ENV}-${APP_VERSION}-${TIMESTAMP}"
@@ -39,8 +44,8 @@ git checkout -b "${PROMOTION_BRANCH}"
 # instead of the source image (e.g., SNAPSHOT)
 IMAGE_OVERRIDE_FLAG=""
 if [[ -n "${NEW_IMAGE_TAG}" ]]; then
-    NEW_IMAGE="${CONTAINER_REGISTRY_EXTERNAL}/${CONTAINER_REGISTRY_PATH_PREFIX}/example-app:${NEW_IMAGE_TAG}"
-    IMAGE_OVERRIDE_FLAG="--image-override example-app=${NEW_IMAGE}"
+    NEW_IMAGE="${CONTAINER_REGISTRY_EXTERNAL}/${CONTAINER_REGISTRY_PATH_PREFIX}/${APP_NAME}:${NEW_IMAGE_TAG}"
+    IMAGE_OVERRIDE_FLAG="--image-override ${APP_NAME}=${NEW_IMAGE}"
     echo "Promoting with image override: ${NEW_IMAGE}"
 fi
 

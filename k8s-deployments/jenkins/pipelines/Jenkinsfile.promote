@@ -1,14 +1,29 @@
 import groovy.transform.Field
 
-@Field static final String PROMOTE_BRANCH_PREFIX = 'promote-'
-
 @Field def helpers = null
+@Field def pipelineConfig = null
 
 def loadHelpers() {
     if (helpers == null) {
         helpers = load 'Jenkinsfile.helpers.groovy'
     }
     return helpers
+}
+
+def loadPipelineConfig() {
+    if (pipelineConfig == null) {
+        pipelineConfig = loadHelpers().loadPipelineConfig()
+    }
+    return pipelineConfig
+}
+
+def promoteBranchPrefix() {
+    def cfg = loadPipelineConfig()
+    def prefix = cfg.branches?.promote_prefix
+    if (!prefix) {
+        error "Missing required pipeline config: branches.promote_prefix"
+    }
+    return prefix as String
 }
 
 // Agent image from system environment (set via ConfigMap envFrom).
@@ -256,11 +271,12 @@ ${params.TARGET_ENV == 'prod' ? '> **Production Deployment** - Please review car
                                 def mrDescriptionFile = helpers.tempFilePath('mr-description', '.txt')
                                 writeFile file: mrDescriptionFile, text: mrDescription
 
-                                withEnv(["PROMOTE_BRANCH_PREFIX=${PROMOTE_BRANCH_PREFIX}"]) {
+                                def prefix = promoteBranchPrefix()
+                                withEnv(["PROMOTE_BRANCH_PREFIX=${prefix}"]) {
                                     sh "./scripts/pipeline promote-flow --mode manual --source-env ${params.SOURCE_ENV} --target-env ${params.TARGET_ENV} --app-name ${params.APP_NAME} --image-tag ${env.PROMOTE_IMAGE_TAG} --full-image ${env.PROMOTE_FULL_IMAGE} --mr-description-file ${mrDescriptionFile}"
                                 }
 
-                                echo "[${params.TARGET_ENV.toUpperCase()}] Promotion MR created successfully: ${PROMOTE_BRANCH_PREFIX}${params.TARGET_ENV}-${env.PROMOTE_IMAGE_TAG} → ${params.TARGET_ENV}"
+                                echo "[${params.TARGET_ENV.toUpperCase()}] Promotion MR created successfully: ${prefix}${params.TARGET_ENV}-${env.PROMOTE_IMAGE_TAG} → ${params.TARGET_ENV}"
                             }
                         }
                     }
