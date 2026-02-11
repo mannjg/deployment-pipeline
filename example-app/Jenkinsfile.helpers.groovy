@@ -47,7 +47,20 @@ def loadPipelineConfig(String path = 'config/pipeline.json') {
         error "Pipeline config not found: ${path}"
     }
     def text = readFile(path)
-    return new groovy.json.JsonSlurper().parseText(text)
+    def parsed = new groovy.json.JsonSlurperClassic().parseText(text)
+    return toSerializableConfig(parsed)
+}
+
+def toSerializableConfig(def value) {
+    if (value instanceof Map) {
+        def copy = [:]
+        value.each { k, v -> copy[k] = toSerializableConfig(v) }
+        return copy
+    }
+    if (value instanceof List) {
+        return value.collect { toSerializableConfig(it) }
+    }
+    return value
 }
 
 /**

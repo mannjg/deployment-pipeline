@@ -5,9 +5,22 @@ import groovy.transform.Field
 def loadPipelineConfig() {
     if (pipelineConfig == null) {
         def text = readFile('config/pipeline.json')
-        pipelineConfig = new groovy.json.JsonSlurper().parseText(text)
+        def parsed = new groovy.json.JsonSlurperClassic().parseText(text)
+        pipelineConfig = toSerializableConfig(parsed)
     }
     return pipelineConfig
+}
+
+def toSerializableConfig(def value) {
+    if (value instanceof Map) {
+        def copy = [:]
+        value.each { k, v -> copy[k] = toSerializableConfig(v) }
+        return copy
+    }
+    if (value instanceof List) {
+        return value.collect { toSerializableConfig(it) }
+    }
+    return value
 }
 
 def envBranches() {
