@@ -152,7 +152,6 @@ pipeline {
 
     environment {
         // Application metadata (loaded during Checkout & Setup)
-        APP_NAME = ''
         APP_GROUP = "${env.CONTAINER_REGISTRY_PATH_PREFIX ?: ''}"
 
         // Container registry - use external URL (nodes trust it, no CA changes needed)
@@ -167,7 +166,6 @@ pipeline {
         DEPLOYMENT_REPO = "${env.DEPLOYMENTS_REPO_URL ?: ''}"
 
         // Computed image reference (set during Checkout & Setup)
-        IMAGE_NAME = ''
     }
 
     stages {
