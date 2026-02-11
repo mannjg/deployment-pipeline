@@ -1,7 +1,6 @@
 import groovy.transform.Field
 
 @Field def helpers = null
-@Field def pipelineConfig = null
 
 def loadHelpers() {
     if (helpers == null) {
@@ -10,20 +9,8 @@ def loadHelpers() {
     return helpers
 }
 
-def loadPipelineConfig() {
-    if (pipelineConfig == null) {
-        pipelineConfig = loadHelpers().loadPipelineConfig()
-    }
-    return pipelineConfig
-}
-
 def promoteBranchPrefix() {
-    def cfg = loadPipelineConfig()
-    def prefix = cfg.branches?.promote_prefix
-    if (!prefix) {
-        error "Missing required pipeline config: branches.promote_prefix"
-    }
-    return prefix as String
+    return loadHelpers().pipelineConfigGet('.branches.promote_prefix')
 }
 
 // Agent image from system environment (set via ConfigMap envFrom).

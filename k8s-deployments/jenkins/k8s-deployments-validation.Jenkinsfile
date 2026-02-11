@@ -1,44 +1,20 @@
 import groovy.transform.Field
 
-@Field def pipelineConfig = null
+@Field def helpers = null
 
-def loadPipelineConfig() {
-    if (pipelineConfig == null) {
-        def text = readFile('config/pipeline.json')
-        def parsed = new groovy.json.JsonSlurperClassic().parseText(text)
-        pipelineConfig = toSerializableConfig(parsed)
+def loadHelpers() {
+    if (helpers == null) {
+        helpers = load 'Jenkinsfile.helpers.groovy'
     }
-    return pipelineConfig
-}
-
-def toSerializableConfig(def value) {
-    if (value instanceof Map) {
-        def copy = [:]
-        value.each { k, v -> copy[k] = toSerializableConfig(v) }
-        return copy
-    }
-    if (value instanceof List) {
-        return value.collect { toSerializableConfig(it) }
-    }
-    return value
+    return helpers
 }
 
 def envBranches() {
-    def cfg = loadPipelineConfig()
-    def envs = cfg.branches?.env
-    if (!(envs instanceof List) || envs.isEmpty()) {
-        error "Missing required pipeline config: branches.env"
-    }
-    return envs as List
+    return loadHelpers().pipelineConfigGetList('.branches.env')
 }
 
 def gitlabProjectName() {
-    def cfg = loadPipelineConfig()
-    def project = cfg.gitlab?.project
-    if (!project) {
-        error "Missing required pipeline config: gitlab.project"
-    }
-    return project as String
+    return loadHelpers().pipelineConfigGet('.gitlab.project')
 }
 
 // Validation Pipeline for k8s-deployments Repository

@@ -1,7 +1,6 @@
 import groovy.transform.Field
 
 @Field def helpers = null
-@Field def pipelineConfig = null
 
 def loadHelpers() {
     if (helpers == null) {
@@ -10,55 +9,28 @@ def loadHelpers() {
     return helpers
 }
 
-def loadPipelineConfig() {
-    if (pipelineConfig == null) {
-        pipelineConfig = loadHelpers().loadPipelineConfig()
-    }
-    return pipelineConfig
-}
-
-def requireStringConfig(def value, String path) {
-    if (value == null || value.toString().trim().isEmpty()) {
-        error "Missing required pipeline config: ${path}"
-    }
-    return value.toString()
-}
-
-def requireListConfig(def value, String path) {
-    if (!(value instanceof List) || value.isEmpty()) {
-        error "Missing required pipeline config: ${path}"
-    }
-    return value as List
-}
-
 def envBranches() {
-    def cfg = loadPipelineConfig()
-    return requireListConfig(cfg.branches?.env, 'branches.env')
+    return loadHelpers().pipelineConfigGetList('.branches.env')
 }
 
 def promoteSourceBranches() {
-    def cfg = loadPipelineConfig()
-    return requireListConfig(cfg.branches?.promote_sources, 'branches.promote_sources')
+    return loadHelpers().pipelineConfigGetList('.branches.promote_sources')
 }
 
 def updateBranchPrefix() {
-    def cfg = loadPipelineConfig()
-    return requireStringConfig(cfg.branches?.update_prefix, 'branches.update_prefix')
+    return loadHelpers().pipelineConfigGet('.branches.update_prefix')
 }
 
 def promoteBranchPrefix() {
-    def cfg = loadPipelineConfig()
-    return requireStringConfig(cfg.branches?.promote_prefix, 'branches.promote_prefix')
+    return loadHelpers().pipelineConfigGet('.branches.promote_prefix')
 }
 
 def gitlabStatusContext() {
-    def cfg = loadPipelineConfig()
-    return requireStringConfig(cfg.gitlab?.status_context, 'gitlab.status_context')
+    return loadHelpers().pipelineConfigGet('.gitlab.status_context')
 }
 
 def gitlabProjectName() {
-    def cfg = loadPipelineConfig()
-    return requireStringConfig(cfg.gitlab?.project, 'gitlab.project')
+    return loadHelpers().pipelineConfigGet('.gitlab.project')
 }
 
 // Agent image from system environment (set via ConfigMap envFrom).

@@ -4,20 +4,12 @@ import groovy.transform.Field
 // Refactored for maintainability, reliability, and production best practices
 
 @Field def helpers = null
-@Field def pipelineConfig = null
 
 def loadHelpers() {
     if (helpers == null) {
         helpers = load 'Jenkinsfile.helpers.groovy'
     }
     return helpers
-}
-
-def loadPipelineConfig() {
-    if (pipelineConfig == null) {
-        pipelineConfig = loadHelpers().loadPipelineConfig()
-    }
-    return pipelineConfig
 }
 
 // Agent image from system environment (set via ConfigMap envFrom).
@@ -190,24 +182,10 @@ pipeline {
                         loadHelpers().validateRequiredEnvVars(['JENKINS_AGENT_IMAGE', 'GITLAB_URL_INTERNAL', 'GITLAB_GROUP', 'DEPLOYMENTS_REPO_URL', 'CONTAINER_REGISTRY_EXTERNAL', 'CONTAINER_REGISTRY_PATH_PREFIX'])
 
                         // Load pipeline config and apply defaults
-                        def cfg = loadPipelineConfig()
-                        if (!cfg.app?.name) {
-                            error "Missing required pipeline config: app.name"
-                        }
-                        if (!cfg.deploy?.branch_prefix) {
-                            error "Missing required pipeline config: deploy.branch_prefix"
-                        }
-                        if (!cfg.gitlab?.status_context) {
-                            error "Missing required pipeline config: gitlab.status_context"
-                        }
-                        if (!cfg.gitlab?.project) {
-                            error "Missing required pipeline config: gitlab.project"
-                        }
-
-                        env.APP_NAME = cfg.app.name as String
-                        env.DEPLOY_BRANCH_PREFIX = cfg.deploy.branch_prefix as String
-                        env.PIPELINE_GITLAB_CONTEXT = cfg.gitlab.status_context as String
-                        env.PIPELINE_GITLAB_PROJECT = cfg.gitlab.project as String
+                        env.APP_NAME = loadHelpers().pipelineConfigGet('.app.name')
+                        env.DEPLOY_BRANCH_PREFIX = loadHelpers().pipelineConfigGet('.deploy.branch_prefix')
+                        env.PIPELINE_GITLAB_CONTEXT = loadHelpers().pipelineConfigGet('.gitlab.status_context')
+                        env.PIPELINE_GITLAB_PROJECT = loadHelpers().pipelineConfigGet('.gitlab.project')
                         env.IMAGE_NAME = "${env.CONTAINER_REGISTRY}/${env.APP_GROUP}/${env.APP_NAME}"
 
                         // Extract version from pom.xml
