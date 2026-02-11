@@ -229,92 +229,8 @@ def waitForArgoCDSync(String appName, int timeoutSeconds = 300) {
 }
 
 /**
- * Closes stale open promotion MRs targeting the given environment.
- * New promotions always supersede old ones - prevents orphaned MR accumulation.
- * Requires GITLAB_TOKEN and GITLAB_URL from caller's withCredentials/environment scope.
- * @param encodedProject URL-encoded GitLab project path (e.g., "p2c%2Fk8s-deployments")
- * @param targetEnv Target environment branch (stage or prod)
- */
-def closeStalePromotionMRs(String encodedProject, String targetEnv) {
-    withEnv([
-        "PROMOTE_ENCODED_PROJECT=${encodedProject}",
-        "PROMOTE_TARGET=${targetEnv}",
-        "PROMOTE_BRANCH_PREFIX=${PROMOTE_BRANCH_PREFIX}"
-    ]) {
-        sh './scripts/pipeline close-stale-promotion-mrs'
-    }
-}
-
-/**
- * Extracts the current image reference from a source environment's env.cue via GitLab API.
- * Requires GITLAB_TOKEN and GITLAB_URL from caller's withCredentials/environment scope.
- * @param encodedProject URL-encoded GitLab project path
- * @param sourceEnv Source environment branch (dev or stage)
- * @return Full image reference string (e.g., "registry/group/example-app:1.0.0-SNAPSHOT-abc123")
- */
-def extractSourceImageTag(String encodedProject, String sourceEnv) {
-    return withEnv([
-        "PROMOTE_ENCODED_PROJECT=${encodedProject}",
-        "PROMOTE_SOURCE=${sourceEnv}"
-    ]) {
-        sh(
-            script: '''
-                ./scripts/gitlab-api.sh GET \
-                    "${GITLAB_URL}/api/v4/projects/${PROMOTE_ENCODED_PROJECT}/repository/files/env.cue?ref=${PROMOTE_SOURCE}" \
-                    2>/dev/null | jq -r '.content' | base64 -d | grep 'image:' | sed -E 's/.*image:\\s*"([^"]+)".*/\\1/' | head -1
-            ''',
-            returnStdout: true
-        ).trim()
-    }
-}
-
-/**
- * Promotes Maven and Docker artifacts from source to target environment.
- * Runs promote-artifact.sh and returns the new image tag.
- * Requires NEXUS_USER, NEXUS_PASSWORD, GITLAB_TOKEN from caller's withCredentials scope.
- * @param sourceEnv Source environment (dev or stage)
- * @param targetEnv Target environment (stage or prod)
- * @param gitHash Git commit hash extracted from source image tag
- * @return New image tag for the target environment
- */
-def promoteArtifacts(String sourceEnv, String targetEnv, String gitHash) {
-    def promoteRc = sh(
-        script: "./scripts/pipeline promote-artifacts ${sourceEnv} ${targetEnv} ${gitHash}",
-        returnStatus: true
-    )
-
-    if (promoteRc != 0) {
-        echo "Artifact promotion output:"
-        sh "cat \${WORKSPACE}/promote.log || true"
-        error "Artifact promotion failed - cannot create promotion MR without valid image tag. If release version already exists in Nexus, bump the version in pom.xml."
-    }
-
-    def newImageTag = readFile("${env.WORKSPACE}/promoted-image-tag").trim()
-    echo "New image tag for ${targetEnv}: ${newImageTag}"
-    return newImageTag
-}
-
-/**
- * Creates a promotion branch, promotes app config, generates manifests, and creates a GitLab MR.
- * Must be called within withGitCredentials and withCredentials (for GITLAB_TOKEN).
- * @param sourceEnv Source environment (dev or stage)
- * @param targetEnv Target environment (stage or prod)
- * @param imageTag Image tag from source environment (used for branch naming and config promotion)
- * @param newImageTag Promoted image tag (from promoteArtifacts), or empty string to skip image override
- */
-def createPromotionBranchAndMR(String sourceEnv, String targetEnv, String imageTag, String newImageTag) {
-    def h = loadHelpers()
-    h.cleanupWorkspaceFiles(['promoted-image-tag', 'promote.log'])
-    withEnv([
-        "PROMOTE_BRANCH_PREFIX=${PROMOTE_BRANCH_PREFIX}"
-    ]) {
-        sh "./scripts/pipeline create-promotion-branch-mr ${sourceEnv} ${targetEnv} ${imageTag} ${newImageTag}"
-    }
-}
-
-/**
  * Creates a promotion MR to the next environment.
- * Orchestrates: close stale MRs -> extract image -> promote artifacts -> create branch + MR.
+ * Delegates to scripts/pipeline promote-flow for promotion logic.
  * @param sourceEnv Source environment (dev or stage)
  */
 def createPromotionMR(String sourceEnv) {
@@ -328,9 +244,6 @@ def createPromotionMR(String sourceEnv) {
 
             echo "=== Creating Promotion MR: ${sourceEnv} -> ${targetEnv} ==="
 
-            def projectPath = "${env.GITLAB_GROUP}/k8s-deployments"
-            def encodedProject = projectPath.replace('/', '%2F')
-
             withCredentials([
                 usernamePassword(credentialsId: 'gitlab-credentials',
                                 usernameVariable: 'GIT_USERNAME',
@@ -340,35 +253,12 @@ def createPromotionMR(String sourceEnv) {
                                 usernameVariable: 'NEXUS_USER',
                                 passwordVariable: 'NEXUS_PASSWORD')
             ]) {
-                closeStalePromotionMRs(encodedProject, targetEnv)
-
-                def sourceImageTag = extractSourceImageTag(encodedProject, sourceEnv)
-                def imageTag = sourceImageTag.contains(':') ? sourceImageTag.split(':').last() : sourceImageTag
-
-                def gitHash = sh(
-                    script: "echo '${imageTag}' | grep -oE '[a-f0-9]{6,}\$' || echo ''",
-                    returnStdout: true
-                ).trim()
-
-                if (!gitHash) {
-                    echo "WARNING: Could not extract git hash from source image tag: ${sourceImageTag}"
-                    echo "Skipping artifact promotion - MR will use existing image version"
-                }
-
-                echo "Source image tag: ${imageTag}"
-                echo "Git hash: ${gitHash}"
-
-                def newImageTag = ''
-                if (gitHash) {
-                    newImageTag = promoteArtifacts(sourceEnv, targetEnv, gitHash)
-                }
-
-                if (!imageTag) {
-                    error "Cannot create promotion MR: no image tag found in ${sourceEnv} env.cue"
-                }
-
-                helpers.withGitCredentials('.') {
-                    createPromotionBranchAndMR(sourceEnv, targetEnv, imageTag, newImageTag)
+                def h = loadHelpers()
+                h.cleanupWorkspaceFiles(['promoted-image-tag', 'promote.log'])
+                h.withGitCredentials('.') {
+                    withEnv(["PROMOTE_BRANCH_PREFIX=${PROMOTE_BRANCH_PREFIX}"]) {
+                        sh "./scripts/pipeline promote-flow --mode auto --source-env ${sourceEnv} --target-env ${targetEnv}"
+                    }
                 }
             }
         }
