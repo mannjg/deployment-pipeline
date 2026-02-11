@@ -124,6 +124,7 @@ if [[ "$MODE" == "auto" ]]; then
             if (match($0, /image:[[:space:]]*"[^"]+"/)) {
                 val = substr($0, RSTART, RLENGTH)
                 sub(/image:[[:space:]]*"/, "", val)
+                sub(/"$/, "", val)
                 print val
                 exit
             }
