@@ -121,8 +121,12 @@ if [[ "$MODE" == "auto" ]]; then
         $0 ~ ("^" env ":[[:space:]]*" app "([[:space:]]|:)") { in_block=1 }
         in_block && $0 ~ ("^" env ":[[:space:]]*[A-Za-z0-9_-]+:") && $0 !~ ("^" env ":[[:space:]]*" app "([[:space:]]|:)") { exit }
         in_block && $0 ~ /image:[[:space:]]*"/ {
-            match($0, /image:[[:space:]]*"([^"]+)"/, m)
-            if (m[1] != "") { print m[1]; exit }
+            if (match($0, /image:[[:space:]]*"[^"]+"/)) {
+                val = substr($0, RSTART, RLENGTH)
+                sub(/image:[[:space:]]*"/, "", val)
+                print val
+                exit
+            }
         }
     ')
 
