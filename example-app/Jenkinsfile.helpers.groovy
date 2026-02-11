@@ -46,10 +46,10 @@ def pipelineConfigGet(String jqExpr, String path = 'config/pipeline.json') {
     if (!fileExists(path)) {
         error "Pipeline config not found: ${path}"
     }
-    def value = sh(
-        script: "jq -er '${jqExpr}' ${path}",
-        returnStdout: true
-    ).trim()
+    def outFile = tempFilePath('pipeline-config', '.txt')
+    sh "jq -er '${jqExpr}' ${path} > ${outFile}"
+    def value = readFile(outFile).trim()
+    sh "rm -f ${outFile} || true"
     if (!value) {
         error "Missing required pipeline config: ${jqExpr}"
     }
