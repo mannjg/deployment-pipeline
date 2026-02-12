@@ -12,6 +12,9 @@ Conventions:
 - `CLAUDE.md` | Claude adapter and pointer to `AGENTS.md` | Owner: platform | Last reviewed: 2026-02-12
 - `docs/ARCHITECTURE.md` | System design and components | Owner: platform | Last reviewed: 2026-02-12
 - `docs/INVARIANTS.md` | Non-negotiable rules and ordering | Owner: platform | Last reviewed: 2026-02-12
+- `docs/CORE_BELIEFS.md` | Design rationale and belief lifecycle | Owner: platform | Last reviewed: 2026-02-12
+- `docs/ANTI_PATTERNS.md` | Concrete negative examples and fixes | Owner: platform | Last reviewed: 2026-02-12
+- `docs/decisions/` | Decision records (ADRs) | Owner: platform | Last reviewed: 2026-02-12
 - `docs/WORKFLOWS.md` | CI/CD workflow details | Owner: platform | Last reviewed: 2026-02-12
 - `docs/GIT_REMOTE_STRATEGY.md` | Git subtree workflow | Owner: platform | Last reviewed: 2026-02-12
 - `docs/ENVIRONMENT_SETUP.md` | Environment branches and demo reset | Owner: platform | Last reviewed: 2026-02-12

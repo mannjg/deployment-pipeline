@@ -10,6 +10,9 @@ This file is the canonical agent entry point and table of contents. It is intent
 ## Core System Knowledge
 - `docs/ARCHITECTURE.md` - System design and components.
 - `docs/INVARIANTS.md` - Critical rules that must be enforced.
+- `docs/CORE_BELIEFS.md` - Design rationale and belief lifecycle.
+- `docs/ANTI_PATTERNS.md` - Concrete negative examples with approved alternatives.
+- `docs/decisions/` - Decision records explaining why choices were made.
 - `docs/WORKFLOWS.md` - CI/CD workflows, triggers, and promotion.
 - `docs/GIT_REMOTE_STRATEGY.md` - Subtree publishing and GitHub/GitLab flow.
 - `docs/ENVIRONMENT_SETUP.md` - Environment branch setup and demo reset.
