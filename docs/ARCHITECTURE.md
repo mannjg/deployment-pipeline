@@ -1,5 +1,16 @@
 # Architecture
 
+## Project Overview
+
+Local GitOps CI/CD pipeline demonstration using Jenkins, GitLab, ArgoCD, and Nexus on Kubernetes. This is a reference implementation for airgapped environments, showing how to build, test, and deploy containerized applications using GitOps principles.
+
+**Components:**
+- **GitLab** - Source control and webhooks (airgap-compatible)
+- **Jenkins** - CI/CD builds and artifact publishing
+- **Nexus** - Maven artifacts
+- **ArgoCD** - GitOps deployment to Kubernetes
+- **Kubernetes** - Local cluster
+
 ## Design Intent
 
 This is a **reference implementation** for GitOps CI/CD in airgapped environments. While the demo uses a single example application, the architecture is designed for **multiple independent applications**:

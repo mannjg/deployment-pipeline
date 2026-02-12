@@ -4,7 +4,7 @@ Local GitOps CI/CD pipeline demonstration using Jenkins, GitLab, ArgoCD, and Nex
 
 ## Quick Start
 
-**For AI agents:** Start with [CLAUDE.md](CLAUDE.md) - it contains everything you need to understand and operate this system.
+**For AI agents:** Start with [AGENTS.md](AGENTS.md) - it contains the canonical entry point and table of contents. `CLAUDE.md` points there.
 
 **For humans:** See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system design and [docs/WORKFLOWS.md](docs/WORKFLOWS.md) for CI/CD processes.
 
