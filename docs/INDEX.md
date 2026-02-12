@@ -23,8 +23,7 @@ Conventions:
 
 ## Plans
 - `docs/plans/INDEX.md` | Plan index | Owner: platform | Last reviewed: 2026-02-12
-- `docs/plans/2026-02-12-harness-engineering-application-plan.md` | Harness engineering application | Owner: platform | Last reviewed: 2026-02-12
-- `docs/plans/2026-02-12-agent-alignment-plan.md` | Agent alignment and drift prevention | Owner: platform | Last reviewed: 2026-02-12
+- `docs/plans/2026-02-12-unified-harness-engineering-plan.md` | Unified harness engineering plan (active) | Owner: platform | Last reviewed: 2026-02-12
 - `docs/plans/2026-02-10-jenkins-roadmap.md` | Jenkins quality + v2 migration roadmap | Owner: platform | Last reviewed: 2026-02-12
 - `docs/plans/2026-02-10-jenkins-v2-migration-tickets.md` | Jenkins v2 migration tickets | Owner: platform | Last reviewed: 2026-02-12
 - `docs/plans/2026-02-10-jenkinsfile-quality-tickets.md` | Jenkinsfile quality tickets | Owner: platform | Last reviewed: 2026-02-12
