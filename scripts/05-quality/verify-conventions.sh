@@ -293,12 +293,9 @@ run_tier_2() {
         lineno="${match#*:}"
         lineno="${lineno%%:*}"
         local rel_path="${file#"$PROJECT_ROOT"/}"
-        if rg -q "allow-direct-api" "$file" 2>/dev/null; then
-            continue
-        fi
         issue 2 "$rel_path:$lineno" "Direct API curl detected (use CLI wrapper)" \
             "CORE_BELIEFS.md (CLI wrappers over direct API calls)" \
-            "Use scripts/04-operations/gitlab-cli.sh or scripts/04-operations/jenkins-cli.sh. If unavoidable, document with '# allow-direct-api'."
+            "Use scripts/04-operations/gitlab-cli.sh or scripts/04-operations/jenkins-cli.sh."
     done < <(rg -n "curl .*api/v4|curl .*GITLAB_URL|curl .*JENKINS_URL|curl .*jenkins" "$PROJECT_ROOT" \
         -g '*.sh' \
         -g '!scripts/04-operations/gitlab-cli.sh' \
