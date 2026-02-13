@@ -8,7 +8,7 @@ Conventions:
 
 ## Core Docs
 - `README.md` | Overview and quick start | Owner: platform | Last reviewed: 2026-02-12
-- `AGENTS.md` | Canonical agent entry point and TOC | Owner: platform | Last reviewed: 2026-02-12
+- `AGENTS.md` | Canonical agent entry point and TOC | Owner: platform | Last reviewed: 2026-02-13
 - `CLAUDE.md` | Claude adapter and pointer to `AGENTS.md` | Owner: platform | Last reviewed: 2026-02-12
 - `docs/ARCHITECTURE.md` | System design and components | Owner: platform | Last reviewed: 2026-02-12
 - `docs/INVARIANTS.md` | Non-negotiable rules and ordering | Owner: platform | Last reviewed: 2026-02-13
@@ -22,6 +22,7 @@ Conventions:
 - `docs/USE_CASES.md` | Demo use cases | Owner: platform | Last reviewed: 2026-02-12
 - `docs/STATUS.md` | Current state and service access | Owner: platform | Last reviewed: 2026-02-13
 - `docs/REPO_LAYOUT.md` | Repository layout | Owner: platform | Last reviewed: 2026-02-12
+- `docs/sweep-protocol.md` | Sweep workflow for drift detection and doc freshness | Owner: platform | Last reviewed: 2026-02-13
 - `docs/archives/` | Historical docs (may be stale) | Owner: platform | Last reviewed: 2026-02-12
 
 ## Plans

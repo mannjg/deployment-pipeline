@@ -18,6 +18,7 @@ This file is the canonical agent entry point and table of contents. It is intent
 - `docs/ENVIRONMENT_SETUP.md` - Environment branch setup and demo reset.
 - `docs/STATUS.md` - Current state, limitations, and service access.
 - `docs/REPO_LAYOUT.md` - Repository layout and navigation.
+- `docs/sweep-protocol.md` - Sweep workflow for drift detection and doc freshness.
 
 ## Operations
 - `docs/OPERATIONS.md` - Jenkins/GitLab operations and common commands.
@@ -25,4 +26,5 @@ This file is the canonical agent entry point and table of contents. It is intent
 - `scripts/04-operations/status-summary.sh` - One-command system state snapshot for agents.
 - `scripts/05-quality/` - Convention checks and agent preflight scans.
 - `scripts/05-quality/session-preamble.sh` - Recommended start-of-session scan (Tier 1-2 warn-only + belief quick-check).
+- `scripts/05-quality/sweep-scan.sh` - Sweep scan automation (mechanical checks, consistency, beliefs, doc freshness).
 - `scripts/demo/` - End-to-end demo workflows.
