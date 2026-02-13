@@ -6,7 +6,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Colors for output
 RED='\033[0;31m'
@@ -324,7 +323,7 @@ validate_manifest_content() {
 
 validate_environment() {
     local env=$1
-    local manifest_dir="$REPO_ROOT/manifests/$env"
+    local manifest_dir="$PROJECT_ROOT/manifests/$env"
 
     echo -e "\n${GREEN}=== Validating $env environment ===${NC}"
 
@@ -387,7 +386,7 @@ main() {
         usage
     fi
 
-    cd "$REPO_ROOT"
+    cd "$PROJECT_ROOT"
 
     local environments=()
     if [ -z "$ENVIRONMENT" ]; then

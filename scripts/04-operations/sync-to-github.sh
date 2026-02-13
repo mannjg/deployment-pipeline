@@ -11,12 +11,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 echo "=== GitHub Sync Script ==="
 echo ""
 
-cd "$ROOT_DIR"
+cd "$PROJECT_ROOT"
 
 # List of subprojects with nested git repos
 SUBPROJECTS=("example-app" "k8s-deployments" "argocd")
