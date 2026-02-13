@@ -12,5 +12,5 @@
 - CUE over raw YAML enforces schemas, typed defaults, and layered overrides. If violated, drift sneaks into manifests and validation becomes manual. (Added 2026-02-12)
 - Shell scripts over Python/Go keep the tooling airgap-portable and dependency-free. If violated, demos and ops scripts fail in constrained environments. (Added 2026-02-12)
 - Prefer boring tech choices so automation is composable and agent-legible. If violated, agents misread intent and maintenance becomes expert-only. (Added 2026-02-12)
-- CLI wrappers over direct API calls centralize auth and error handling. If violated, creds and API behavior diverge across scripts. (Added 2026-02-12)
+- CLI wrappers over direct API calls centralize auth and error handling. Extend the wrappers when new endpoints are needed; only allow direct API calls with a documented exception. If violated, creds and API behavior diverge across scripts. (Added 2026-02-12)
 - Monorepo with subtree sync keeps GitHub as system of record and GitLab as execution mirror. If violated, execution repos drift and promotion flows break. (Added 2026-02-12)

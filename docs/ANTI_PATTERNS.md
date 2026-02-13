@@ -40,6 +40,9 @@ Right:
 scripts/04-operations/gitlab-cli.sh projects list
 ```
 
+Exception:
+If the CLI wrapper lacks the needed endpoint, extend the wrapper. If a direct API call is temporarily required, document the exception in the file with `# allow-direct-api` and include a short rationale.
+
 - Don't inline credential access.
 
 Wrong:
