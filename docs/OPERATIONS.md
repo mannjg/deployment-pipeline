@@ -49,6 +49,11 @@ Project notation uses path format: `p2c/example-app` (auto URL-encoded).
 ./scripts/04-operations/trigger-build.sh example-app
 ```
 
+## Status Summary (Agent-Oriented)
+```bash
+./scripts/04-operations/status-summary.sh
+```
+
 ## Check Deployment Status
 ```bash
 kubectl get applications -n argocd
