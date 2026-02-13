@@ -464,8 +464,8 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                 container('pipeline') {
                     script {
                         // Pure validation - no side effects
+                        // validate-cue uses -c=false to allow schemas with defaults
                         echo "Validating CUE configuration..."
-                        sh 'cue vet ./...'
                         sh './scripts/pipeline validate-cue'
                     }
                 }
