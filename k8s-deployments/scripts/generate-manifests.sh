@@ -48,9 +48,10 @@ case $ENVIRONMENT in
 esac
 
 # Ensure env.cue is complete for the target environment before exporting
-if ! cue vet -c ./env.cue -e "${ENVIRONMENT}" 2>/dev/null; then
+# Note: cue vet does not support -e; use cue export as the completeness check
+if ! cue export ./env.cue -e "${ENVIRONMENT}" --out json > /dev/null 2>&1; then
     log_error "env.cue is incomplete or invalid for ${ENVIRONMENT}"
-    log_error "Run: cue vet -c ./env.cue -e ${ENVIRONMENT}"
+    log_error "Run: cue export ./env.cue -e ${ENVIRONMENT} --out json"
     exit 1
 fi
 

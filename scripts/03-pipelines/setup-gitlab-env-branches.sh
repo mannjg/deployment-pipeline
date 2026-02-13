@@ -304,12 +304,16 @@ setup_env_branch() {
         log_warn "CUE not installed, skipping validation"
     fi
 
-    # Generate manifests if script exists
+    # Generate manifests - required for env branches to pass CI validation
     if [[ -x "./scripts/generate-manifests.sh" ]]; then
         log_info "Generating manifests for ${env}..."
         ./scripts/generate-manifests.sh "$env" 2>&1 || {
-            log_warn "Manifest generation failed (may need CUE setup), continuing..."
+            log_error "Manifest generation failed for ${env} - env branch will not pass CI"
+            exit 1
         }
+    else
+        log_error "generate-manifests.sh not found or not executable"
+        exit 1
     fi
 
     # Remove example-env.cue - it's a seed template that should only exist on main
