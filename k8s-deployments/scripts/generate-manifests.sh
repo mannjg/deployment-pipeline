@@ -47,6 +47,13 @@ case $ENVIRONMENT in
         ;;
 esac
 
+# Ensure env.cue is complete for the target environment before exporting
+if ! cue vet -c ./env.cue -e "${ENVIRONMENT}" 2>/dev/null; then
+    log_error "env.cue is incomplete or invalid for ${ENVIRONMENT}"
+    log_error "Run: cue vet -c ./env.cue -e ${ENVIRONMENT}"
+    exit 1
+fi
+
 # Create manifest directory
 mkdir -p "${MANIFEST_DIR}"
 
