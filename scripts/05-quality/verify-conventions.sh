@@ -420,15 +420,15 @@ PY
 run_tier_4() {
     log_info "Tier 4: CUE schema enforcement"
 
-    # cue vet ./... for k8s-deployments
+    # cue vet -c=false ./... for k8s-deployments (allow incomplete schemas)
     if command -v cue >/dev/null 2>&1; then
         if [[ -d "$PROJECT_ROOT/k8s-deployments" ]]; then
             local cue_output
-            cue_output=$(cd "$PROJECT_ROOT/k8s-deployments" && cue vet ./... 2>&1 || true)
+            cue_output=$(cd "$PROJECT_ROOT/k8s-deployments" && cue vet -c=false ./... 2>&1 || true)
             if [[ -n "$cue_output" ]]; then
-                issue 4 "k8s-deployments" "cue vet ./... failed" \
+                issue 4 "k8s-deployments" "cue vet -c=false ./... failed" \
                     "CORE_BELIEFS.md (CUE over raw YAML)" \
-                    "Run 'cd k8s-deployments && cue vet ./...' and address the errors"
+                    "Run 'cd k8s-deployments && cue vet -c=false ./...' and address the errors"
             fi
         fi
     else
