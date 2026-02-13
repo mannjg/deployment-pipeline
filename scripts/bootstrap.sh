@@ -354,11 +354,8 @@ apply_infrastructure_manifests() {
     fi
     apply_manifest "$PROJECT_ROOT/k8s/jenkins/jenkins-lightweight.yaml" "Jenkins"
 
-    # Nexus
+    # Nexus (Maven repos only - container registry is shared DSO resource)
     apply_manifest "$PROJECT_ROOT/k8s/nexus/nexus-lightweight.yaml" "Nexus"
-    if [[ -f "$PROJECT_ROOT/k8s/nexus/nexus-docker-nodeport.yaml" ]]; then
-        apply_manifest "$PROJECT_ROOT/k8s/nexus/nexus-docker-nodeport.yaml" "Nexus Docker NodePort"
-    fi
 
     # ArgoCD - use upstream manifest with namespace override
     log_info "Applying ArgoCD..."

@@ -5,9 +5,11 @@
 # Variables (use envsubst before applying):
 #   ${NEXUS_NAMESPACE} - Kubernetes namespace for Nexus
 #   ${MAVEN_REPO_HOST} - Maven repository hostname (e.g., nexus.jmann.local)
-#   ${CONTAINER_REGISTRY} - Container registry hostname (e.g., docker.jmann.local)
 #   ${STORAGE_CLASS} - StorageClass for PVCs
 #   ${CA_ISSUER} - ClusterIssuer name (e.g., alpha-ca-issuer)
+#
+# Note: Container registry (registry-dso) is a shared DSO resource.
+# Per-cluster Nexus only handles Maven repositories.
 
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -22,20 +24,6 @@ spec:
   commonName: ${MAVEN_REPO_HOST}
   dnsNames:
     - ${MAVEN_REPO_HOST}
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: docker-tls
-  namespace: ${NEXUS_NAMESPACE}
-spec:
-  secretName: docker-tls
-  issuerRef:
-    name: ${CA_ISSUER}
-    kind: ClusterIssuer
-  commonName: ${CONTAINER_REGISTRY}
-  dnsNames:
-    - ${CONTAINER_REGISTRY}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -161,31 +149,3 @@ spec:
             name: nexus
             port:
               number: 8081
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: nexus-docker
-  namespace: ${NEXUS_NAMESPACE}
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "0"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
-    nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-spec:
-  ingressClassName: public
-  tls:
-  - hosts:
-    - ${CONTAINER_REGISTRY}
-    secretName: docker-tls
-  rules:
-  - host: ${CONTAINER_REGISTRY}
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: nexus
-            port:
-              number: 5000
