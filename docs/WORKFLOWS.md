@@ -273,6 +273,10 @@ Application running in dev environment
 **Purpose**: Deploy to dev environment automatically
 **Failure Action**: Check Jenkins logs, CUE validation errors, ArgoCD sync status
 
+Validation gates in k8s-deployments CI:
+- `Validate CUE` runs `cue vet ./...` and `./scripts/pipeline validate-cue`.
+- `Validate Manifests` runs `./scripts/pipeline validate-manifests-static <env>` and `./scripts/pipeline validate-manifests-dry-run`.
+
 ---
 
 ### 5. Environment Promotion Workflow (Dev → Stage)

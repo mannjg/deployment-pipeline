@@ -46,3 +46,7 @@ The reset-demo-state.sh script follows this pattern by creating MRs for each env
 | After k8s-deployments core changes | `git push origin main` -> `sync-to-gitlab.sh` -> `reset-demo-state.sh` |
 | After example-app changes only | `git push origin main` -> `demo-uc-e1-app-deployment.sh` (syncs example-app internally) |
 | Demo reset / validation | `reset-demo-state.sh` -> `run-all-demos.sh` |
+
+## Tooling Dependencies (Critical)
+
+All scripts must rely on tools pre-installed in the Jenkins agent image and available on developer laptops. Runtime package installs (e.g., `pip install`, `go get`, `gem install`) are not allowed inside scripts or pipelines. When new tooling is required, add a decision record, update the agent image, validate in airgap, and redeploy.

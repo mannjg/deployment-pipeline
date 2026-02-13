@@ -14,6 +14,7 @@
 - Single cluster (all environments in one cluster).
 - No HA (single replicas of infrastructure components).
 - Local storage only.
+- Missing feature: Feature-branch deployments to shared dev/stage/prod environments are not supported (main-only app deployments).
 
 **Last verified:** 2026-01-16
 

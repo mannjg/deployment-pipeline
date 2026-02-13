@@ -189,6 +189,23 @@ git push origin main
 scripts/04-operations/sync-to-gitlab.sh
 ```
 
+- Don't add tools or languages to the tech stack without a decision record.
+
+Wrong:
+```bash
+# I need YAML merging, let me add ruby + a gem
+gem install yaml_merge
+yaml_merge base.yaml overlay.yaml
+```
+
+Right:
+```bash
+# Use existing tooling (yq is already in the agent image)
+yq eval-all 'select(fi == 0) * select(fi == 1)' base.yaml overlay.yaml
+```
+
+New tools require updating the Jenkins agent image, rebuilding, testing in airgap, and redeploying across all environments. Document the justification in `docs/decisions/` before introducing any new dependency.
+
 - Don't hardcode namespace names.
 
 Wrong:

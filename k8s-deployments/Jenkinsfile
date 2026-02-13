@@ -465,6 +465,7 @@ Target Environment: ${env.TARGET_ENV ?: 'N/A'}
                     script {
                         // Pure validation - no side effects
                         echo "Validating CUE configuration..."
+                        sh 'cue vet ./...'
                         sh './scripts/pipeline validate-cue'
                     }
                 }

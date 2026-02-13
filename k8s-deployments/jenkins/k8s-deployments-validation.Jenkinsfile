@@ -155,10 +155,11 @@ See: k8s-deployments/docs/CONFIGURATION.md"""
                             echo "Running CUE configuration validation..."
                             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-                            if [ -f "./scripts/validate-cue-config.sh" ]; then
-                                ./scripts/validate-cue-config.sh
+                            if [ -f "./scripts/pipeline" ]; then
+                                cue vet ./...
+                                ./scripts/pipeline validate-cue
                             else
-                                echo "✗ ERROR: validate-cue-config.sh not found!"
+                                echo "✗ ERROR: scripts/pipeline not found!"
                                 exit 1
                             fi
 
