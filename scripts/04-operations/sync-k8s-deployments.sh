@@ -5,6 +5,7 @@ set -euo pipefail
 
 # Source shared libraries
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$SCRIPT_DIR/../lib/logging.sh"
 # Pass CLUSTER_CONFIG explicitly to avoid inheriting parent's $1
 source "$SCRIPT_DIR/../lib/infra.sh" "${CLUSTER_CONFIG:-}"
