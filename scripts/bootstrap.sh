@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # bootstrap.sh - Bootstrap a complete cluster from nothing
 #
 # Usage: ./scripts/bootstrap.sh <config-file>

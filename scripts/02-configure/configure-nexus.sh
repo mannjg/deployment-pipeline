@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Configure Nexus repositories and settings via REST API
 #
 # Creates Maven and Docker repositories needed for the CI/CD pipeline.

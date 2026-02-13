@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Setup GitLab webhooks for k8s-deployments auto-promote
 #
 # Configures GitLab webhooks to trigger Jenkins auto-promote job

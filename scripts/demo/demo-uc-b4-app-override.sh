@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: App ConfigMap with Environment Override (UC-B4)
 #
 # This demo showcases the CUE override hierarchy where:

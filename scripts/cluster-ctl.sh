@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Cluster Control Script
 # Provides pause/resume/status commands for cluster lifecycle management
 #

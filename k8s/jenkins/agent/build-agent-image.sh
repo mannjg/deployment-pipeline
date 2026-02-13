@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Build and push Jenkins Agent Image to cluster registry
 #
 # Builds custom agent with JDK 21, Maven, Docker, CUE and pushes to Nexus.

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Environment-Specific ConfigMap Entry (UC-A3)
 #
 # This demo showcases how environment-specific changes in env.cue

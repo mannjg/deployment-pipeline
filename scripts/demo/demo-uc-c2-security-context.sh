@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Add Pod Security Context (UC-C2)
 #
 # This demo showcases how platform-wide security requirements propagate

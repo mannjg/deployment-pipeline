@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Platform Default with App Override (UC-C5)
 #
 # This demo showcases how an app can override platform-wide defaults

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Script to create Jenkins job for k8s-deployments validation
 # This job validates infrastructure changes before they're merged
 

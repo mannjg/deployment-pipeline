@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Verify credentials are valid and can access their respective APIs
 # Use this to detect credential drift or expiration
 set -euo pipefail

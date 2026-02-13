@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Configure GitLab merge requirements for k8s-deployments
 # Sets up project settings for merge request workflow
 set -euo pipefail

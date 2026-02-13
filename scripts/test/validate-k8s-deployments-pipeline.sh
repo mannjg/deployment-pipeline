@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # K8s-Deployments Pipeline Validation Script
 # Validates CUE configuration changes flow correctly through the pipeline
 #

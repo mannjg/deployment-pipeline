@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Validates CUE configuration files
 # Checks syntax, schema compliance, and imports
 #

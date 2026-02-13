@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # setup-gitlab-env-branches.sh
 # Initial Bootstrap: Create environment branches in GitLab k8s-deployments repo

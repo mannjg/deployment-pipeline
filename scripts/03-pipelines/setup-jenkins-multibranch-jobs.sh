@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Setup Jenkins MultiBranch Pipeline jobs
 #
 # Creates MultiBranch Pipeline jobs for example-app and k8s-deployments

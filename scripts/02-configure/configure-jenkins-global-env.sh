@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Configure global environment variables in Jenkins
 #
 # Copies environment variables from the Jenkins controller's system environment

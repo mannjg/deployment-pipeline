@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -123,10 +123,10 @@ run_tier_1() {
         # Shebang check
         local first_line
         first_line="$(head -n 1 "$script" || true)"
-        if [[ ! "$first_line" =~ ^#!/(usr/bin/env[[:space:]]+)?bash$ ]]; then
+        if [[ ! "$first_line" =~ ^#!/usr/bin/env[[:space:]]+bash$ ]]; then
             issue 1 "$rel_path:1" "Missing or non-bash shebang" \
                 "CORE_BELIEFS.md (boring, legible tooling)" \
-                "Use '#!/bin/bash' or '#!/usr/bin/env bash' as the first line"
+                "Use '#!/usr/bin/env bash' as the first line"
         fi
 
         # set -euo pipefail for non-lib scripts

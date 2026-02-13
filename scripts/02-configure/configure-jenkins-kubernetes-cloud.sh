@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Configure Kubernetes cloud in Jenkins for pod-based agents
 #
 # This script configures Jenkins to use the Kubernetes cluster for dynamic

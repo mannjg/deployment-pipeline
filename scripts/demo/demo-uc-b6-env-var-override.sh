@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: App Env Var with Environment Override (UC-B6)
 #
 # This demo showcases the CUE override hierarchy for environment variables:

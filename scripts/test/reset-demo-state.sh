@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # reset-demo-state.sh
 # Reset the demo environment to a clean state

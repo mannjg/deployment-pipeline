@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Add App-Level ConfigMap Entry (UC-B3)
 #
 # This demo proves that app-level ConfigMap entries propagate to ALL

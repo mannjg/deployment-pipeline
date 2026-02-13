@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Setup ArgoCD applications for all apps in all environments
 #
 # Usage: ./scripts/03-pipelines/setup-argocd-applications.sh <config-file>

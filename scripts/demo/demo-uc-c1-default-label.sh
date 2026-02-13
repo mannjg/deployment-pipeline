@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Add Default Label to All Deployments (UC-C1)
 #
 # This demo showcases how platform-wide changes propagate to all apps

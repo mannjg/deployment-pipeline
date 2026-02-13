@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Enable Debug Mode (UC-A2)
 #
 # This demo showcases how environment-specific debug settings in env.cue

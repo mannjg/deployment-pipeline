@@ -55,6 +55,31 @@ Right:
 scripts/lib/credentials.sh jenkins_token
 ```
 
+- Don't use `#!/bin/bash` shebangs.
+
+Wrong:
+```bash
+#!/bin/bash
+```
+
+Right:
+```bash
+#!/usr/bin/env bash
+```
+
+- Don't install packages at runtime.
+
+Wrong:
+```bash
+apt-get install -y yq
+```
+
+Right:
+```bash
+# Ensure the Jenkins agent image (and developer laptops) already include yq.
+# If a new tool is required, add a decision record and update the agent image.
+```
+
 ## Jenkinsfiles
 - Don't put logic in inline sh blocks over ~15 lines.
 

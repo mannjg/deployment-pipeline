@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Create GitLab projects for the pipeline demo
 set -euo pipefail
 

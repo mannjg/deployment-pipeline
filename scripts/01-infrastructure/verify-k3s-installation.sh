@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # K3s Installation Verification Script
 # Purpose: Verify k3s-in-k8s installation works across different Kubernetes distributions

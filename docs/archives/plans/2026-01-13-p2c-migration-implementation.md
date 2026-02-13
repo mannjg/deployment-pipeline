@@ -29,7 +29,7 @@ mkdir -p config
 
 ```bash
 cat > config/gitlab.env << 'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 # GitLab Configuration - Single Source of Truth
 # Used by: local scripts, CI/CD pipelines
 #
@@ -319,7 +319,7 @@ mkdir -p scripts/lib
 
 ```bash
 cat > scripts/lib/config.sh << 'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 # Helper to source GitLab configuration with validation
 # Usage: source "$(dirname "${BASH_SOURCE[0]}")/lib/config.sh"
 
@@ -530,7 +530,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
 
 Replace contents with:
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 # E2E Test Configuration
 # Sources central config and uses external URLs for outside-cluster access
 

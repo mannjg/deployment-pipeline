@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Add App Environment Variable (UC-B1)
 #
 # This demo proves that app-level environment variables propagate to ALL

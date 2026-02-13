@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 PIPELINE_CONFIG_FILE="${PIPELINE_CONFIG_FILE:-config/pipeline.json}"

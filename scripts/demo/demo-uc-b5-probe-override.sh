@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: App Probe with Environment Override (UC-B5)
 #
 # This demo showcases the CUE override hierarchy where:

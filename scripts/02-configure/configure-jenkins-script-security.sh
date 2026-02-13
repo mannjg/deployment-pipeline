@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Configure Jenkins script security approvals
 #
 # Approves required method signatures that pipelines need to use.

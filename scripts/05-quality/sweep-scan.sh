@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -103,10 +103,10 @@ run_convention_consistency() {
         "logging.sh source"
     )
     local -a pattern_regex=(
-        "set -euo pipefail"
-        "SCRIPT_DIR=\"\$\(cd \"\$\(dirname \"\${BASH_SOURCE\[0\]\}\"\)\" && pwd\)\""
-        "PROJECT_ROOT=\"\$\(cd \"\$SCRIPT_DIR/\.\./\.\.\" && pwd\)\""
-        "scripts/lib/logging\.sh"
+        'set -euo pipefail'
+        'SCRIPT_DIR=.*BASH_SOURCE\[0\].*pwd'
+        'PROJECT_ROOT=.*SCRIPT_DIR.*pwd|PROJECT_ROOT=.*dirname.*SCRIPT_DIR'
+        'scripts/lib/logging\.sh'
     )
 
     local idx
@@ -262,17 +262,47 @@ run_belief_coverage() {
             if ! command -v rg >/dev/null 2>&1; then
                 record_belief "$belief" "SKIP" "rg not installed"
             else
-                local violations
-                violations=$(rg -n "kubectl.*(--namespace|-n)" "$PROJECT_ROOT" -g '*.sh' \
-                    -g '!scripts/lib/credentials.sh' \
-                    -g '!scripts/demo/*' \
-                    -g '!scripts/test/*' \
-                    -g '!k8s-deployments/scripts/lib/*' \
-                    || true)
-                if [[ -n "$violations" ]]; then
+                local violations=()
+                local script
+                while IFS= read -r script; do
+                    if [[ "$script" == */scripts/demo/* || "$script" == */scripts/test/* ]]; then
+                        continue
+                    fi
+                    if [[ "$script" == */scripts/lib/credentials.sh || "$script" == */k8s-deployments/scripts/lib/* ]]; then
+                        continue
+                    fi
+                    local rel_path="${script#"$PROJECT_ROOT"/}"
+                    while IFS= read -r v; do
+                        [[ -z "$v" ]] && continue
+                        violations+=("${v}")
+                    done < <(awk -v file="$rel_path" '
+                        /kubectl/ && /(--namespace|-n)/ {
+                            for (i=1; i<=NF; i++) {
+                                if ($i == "-n" || $i == "--namespace") {
+                                    val=$(i+1)
+                                } else if ($i ~ /^--namespace=/) {
+                                    split($i, parts, "=");
+                                    val=parts[2]
+                                } else {
+                                    continue
+                                }
+
+                                if (val ~ /\$/) { continue }
+                                if (val ~ /^"\$/) { continue }
+                                if (val ~ /^\$\{/ ) { continue }
+                                if (val ~ /^\$[A-Za-z_]/) { continue }
+                                if (val ~ /^[A-Za-z0-9._-]+$/) {
+                                    printf("%s:%d:%s\n", file, NR, val)
+                                }
+                            }
+                        }
+                    ' "$script")
+                done < <(list_shell_scripts)
+
+                if [[ "${#violations[@]}" -gt 0 ]]; then
                     record_belief "$belief" "FAIL" "hardcoded namespaces detected"
-                    echo "$violations" | head -n 5 | while IFS= read -r v; do
-                        echo "  ${v#"$PROJECT_ROOT"/}"
+                    printf '%s\n' "${violations[@]}" | head -n 5 | while IFS= read -r v; do
+                        echo "  ${v}"
                     done
                 else
                     record_belief "$belief" "PASS" "no hardcoded namespaces detected"
@@ -287,7 +317,7 @@ run_belief_coverage() {
             else
                 local installs
                 installs=$(rg -n "\b(pip3? install|go get|apt-get install|apt install|brew install|yum install|dnf install|apk add|npm install)\b" \
-                    "$PROJECT_ROOT/scripts" -g '*.sh' || true)
+                    "$PROJECT_ROOT/scripts" -g '*.sh' -g '!scripts/05-quality/*' || true)
                 if [[ -n "$installs" ]]; then
                     record_belief "$belief" "FAIL" "runtime package install commands detected"
                     echo "$installs" | head -n 5 | while IFS= read -r i; do

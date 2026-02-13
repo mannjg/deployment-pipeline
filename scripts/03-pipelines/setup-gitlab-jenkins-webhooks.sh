@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Setup GitLab webhooks to trigger Jenkins MultiBranch Pipeline scans
 #
 # Creates webhooks in GitLab that notify Jenkins when code is pushed,

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Jenkins CLI - Centralized Jenkins operations
 #
 # Usage:

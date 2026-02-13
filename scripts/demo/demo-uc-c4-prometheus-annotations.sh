@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Add Standard Pod Annotation to All Deployments (UC-C4)
 #
 # This demo showcases how platform-wide pod annotations propagate to all apps

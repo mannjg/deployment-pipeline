@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: App Code + Config Change Together (UC-E2)
 #
 # This demo proves that code changes bundled with deployment/app.cue changes

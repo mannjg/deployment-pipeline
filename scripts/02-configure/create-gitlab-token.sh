@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Create GitLab Token
 # Creates a personal access token via gitlab-rails and stores it in K8s secret
 #

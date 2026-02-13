@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: App-Level Rollback (UC-E4)
 #
 # This demo proves that app images can be surgically rolled back while

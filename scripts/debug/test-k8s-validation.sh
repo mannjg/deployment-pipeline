@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Quick test script for k8s-deployments validation job
 
 set -e

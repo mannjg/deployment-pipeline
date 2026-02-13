@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Emergency Hotfix to Production (UC-D1)
 #
 # This demo showcases direct-to-production hotfix workflow - deploying

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Shared preflight check functions for k8s-deployments scripts
 #
 # Usage:

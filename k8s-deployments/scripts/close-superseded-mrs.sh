@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 # Close superseded GitLab merge requests before creating a new one (JENKINS-27)

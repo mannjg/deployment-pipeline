@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Configure MultiBranch Pipeline jobs with webhook trigger
 #
 # This script adds the MultiBranchScanWebhookTrigger to existing MultiBranch

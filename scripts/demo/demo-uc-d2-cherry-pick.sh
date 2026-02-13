@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Cherry-Pick Promotion (UC-D2)
 #
 # This demo showcases selective app promotion - promoting only specific apps

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo Helper Library
 # Shared functions for k8s-deployments demo scripts
 #

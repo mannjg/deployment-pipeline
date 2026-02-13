@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Pipeline Validation Script
 # Proves the CI/CD pipeline works: commit → build → deploy to dev → stage → prod
 #

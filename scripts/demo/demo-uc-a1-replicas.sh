@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Adjust Replica Count (UC-A1)
 #
 # This demo showcases how environment-specific replica changes in env.cue

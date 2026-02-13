@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # GitLab CLI - Centralized GitLab API operations
 #
 # Usage:

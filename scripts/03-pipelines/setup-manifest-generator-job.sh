@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Script to create the k8s-manifest-generator Jenkins job
 # This job automatically generates Kubernetes manifests from CUE configuration
 

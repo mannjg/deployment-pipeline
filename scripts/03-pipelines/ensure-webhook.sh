@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Ensure GitLab Webhook for Jenkins MultiBranch Pipeline
 #
 # Usage:

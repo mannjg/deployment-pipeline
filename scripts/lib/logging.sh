@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Shared logging functions for pipeline scripts
 # Usage: source "$(dirname "${BASH_SOURCE[0]}")/lib/logging.sh"
 

@@ -40,3 +40,5 @@ Purpose: Run periodic deep drift detection, belief maintenance, and doc freshnes
 ## Notes
 - The sweep is change-driven, not calendar-driven.
 - Keep the report actionable: every item must include the next step.
+- Belief coverage checks should minimize false positives; refine the checks when noisy results appear.
+- Refining a check (to reduce noise or improve precision) counts as a sweep outcome and should be noted in the report.

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 : "${PROMOTE_ENCODED_PROJECT:?PROMOTE_ENCODED_PROJECT is required}"

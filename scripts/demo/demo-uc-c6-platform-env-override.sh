@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Platform Default with Environment Override (UC-C6)
 #
 # This demo showcases how environment-specific configuration can override

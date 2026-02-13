@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Install required Jenkins plugins via REST API
 #
 # Installs plugins needed for the CI/CD pipeline:

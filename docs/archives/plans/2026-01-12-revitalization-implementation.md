@@ -293,7 +293,7 @@ git commit -m "feat: parameterize GitLab manifest for envsubst"
 
 Create file `scripts/apply-infrastructure.sh`:
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 # Load environment configuration
@@ -598,7 +598,7 @@ Expected: All pods Running/Completed
 
 Create file `scripts/verify-phase1.sh`:
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 source "${1:-env.local}"
@@ -780,7 +780,7 @@ Expected: Repository shows as connected
 
 Create file `scripts/verify-phase2.sh`:
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 echo "=== Phase 2 Integration Verification ==="

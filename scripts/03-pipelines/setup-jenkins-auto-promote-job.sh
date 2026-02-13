@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Setup Jenkins k8s-deployments-auto-promote job
 #
 # Creates the auto-promote pipeline job in Jenkins via the REST API.

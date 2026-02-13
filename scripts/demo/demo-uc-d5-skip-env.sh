@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Skip Environment - Dev to Prod Direct (UC-D5)
 #
 # This demo showcases direct dev→prod promotion workflow - deploying

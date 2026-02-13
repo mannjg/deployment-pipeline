@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Add App-Level Annotation (UC-B2)
 #
 # This demo proves that app-level pod annotations propagate to ALL

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Sync k8s-deployments to GitLab
 # Pushes dev, stage, and prod branches to the p2c/k8s-deployments GitLab repo
 set -euo pipefail

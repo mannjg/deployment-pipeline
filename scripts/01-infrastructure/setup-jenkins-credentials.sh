@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Setup Jenkins Credentials from Kubernetes Secrets
 #
 # Creates required credentials in Jenkins for pipeline operations.

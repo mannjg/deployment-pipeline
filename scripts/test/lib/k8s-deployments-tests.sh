@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Test case implementations for k8s-deployments pipeline validation
 # Sourced by validate-k8s-deployments-pipeline.sh
 

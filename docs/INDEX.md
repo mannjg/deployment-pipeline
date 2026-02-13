@@ -31,3 +31,6 @@ Conventions:
 - `docs/plans/2026-02-10-jenkins-roadmap.md` | Jenkins quality + v2 migration roadmap | Owner: platform | Last reviewed: 2026-02-12
 - `docs/plans/2026-02-10-jenkins-v2-migration-tickets.md` | Jenkins v2 migration tickets | Owner: platform | Last reviewed: 2026-02-12
 - `docs/plans/2026-02-10-jenkinsfile-quality-tickets.md` | Jenkinsfile quality tickets | Owner: platform | Last reviewed: 2026-02-12
+
+## Reports
+- `docs/reports/quality-scorecard.md` | Quality scorecard from the first sweep | Owner: platform | Last reviewed: 2026-02-13

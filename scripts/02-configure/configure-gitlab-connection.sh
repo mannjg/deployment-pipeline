@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Configure GitLab connection in Jenkins
 # Documents the manual steps required for GitLab plugin setup
 set -euo pipefail

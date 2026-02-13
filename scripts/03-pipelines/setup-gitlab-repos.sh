@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # setup-gitlab-repos.sh
 # Initialize and push repositories to GitLab

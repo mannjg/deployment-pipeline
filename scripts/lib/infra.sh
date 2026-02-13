@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Infrastructure configuration loader
 # Sources cluster config and validates required variables
 #

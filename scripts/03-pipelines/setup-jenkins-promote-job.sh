@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Setup Jenkins promote-environment job
 #
 # Creates the promote-environment pipeline job in Jenkins via the REST API.

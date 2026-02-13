@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Change Default Deployment Strategy (UC-C3)
 #
 # This demo showcases how platform-wide deployment policies propagate

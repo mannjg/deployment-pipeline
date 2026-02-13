@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Promote artifacts from one environment version to another
 # Re-deploys Maven JAR with new version, re-tags Docker image
 #

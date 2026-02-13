@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # pipeline-state.sh - Check and cleanup pipeline state (MRs, builds, branches)
 #
 # Source this file: source "$(dirname "$0")/lib/pipeline-state.sh"

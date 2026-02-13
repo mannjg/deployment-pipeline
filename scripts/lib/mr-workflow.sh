@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # mr-workflow.sh - MR-based workflow helpers for operational scripts
 #
 # Provides high-level functions for the MR workflow pattern:

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Validate Kubernetes manifests generated from CUE
 # Ensures YAML syntax is valid and manifests conform to K8s API schema
 

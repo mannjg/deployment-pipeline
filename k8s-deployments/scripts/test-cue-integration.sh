@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Integration tests for CUE configuration and manifest generation
 # Tests the complete workflow: CUE → Manifest → Validation
 #

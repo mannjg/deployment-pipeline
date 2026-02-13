@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: Environment Rollback (UC-D3)
 #
 # This demo showcases GitOps-based environment rollback - reverting an

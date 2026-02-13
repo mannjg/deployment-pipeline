@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 # Infrastructure Health Check Script
 # Quick verification that all pipeline components are ready

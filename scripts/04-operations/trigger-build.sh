@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Script to trigger Jenkins builds using the REST API
 # Usage: ./trigger-build.sh <job-name> [PARAM1=value1 PARAM2=value2 ...]
 

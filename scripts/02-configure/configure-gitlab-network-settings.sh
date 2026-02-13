@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Configure GitLab network settings for local/internal webhook URLs
 #
 # GitLab by default blocks webhooks to private/internal network addresses

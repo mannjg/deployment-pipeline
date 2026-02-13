@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # run-all-demos.sh - Run all verification tests with reset between each
 #
 # This script validates the entire CI/CD pipeline as a reference implementation.

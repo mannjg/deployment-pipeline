@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # assertions.sh - K8s verification functions for demo scripts
 #
 # Source this file: source "$(dirname "$0")/lib/assertions.sh"

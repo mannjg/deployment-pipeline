@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Verify Cluster Health
 # Checks all namespaces exist and pods are ready
 #

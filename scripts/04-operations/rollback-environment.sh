@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # rollback-environment.sh - Roll back an environment to its previous state
 #
 # Usage:

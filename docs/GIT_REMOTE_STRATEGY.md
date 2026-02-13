@@ -115,7 +115,7 @@ Or use the helper script:
 The script `scripts/04-operations/sync-to-gitlab.sh` implements the subtree sync:
 
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 # Sync subtrees to GitLab for CI/CD pipeline execution
 #
 # This script publishes the example-app and k8s-deployments subfolders

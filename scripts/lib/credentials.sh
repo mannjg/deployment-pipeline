@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Credential helpers with fail-fast behavior
 # Fetches credentials from K8s secrets or environment variables
 #

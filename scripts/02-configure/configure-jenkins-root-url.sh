@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Configure Jenkins root URL (JenkinsLocationConfiguration)
 #
 # Usage: ./scripts/02-configure/configure-jenkins-root-url.sh [config-file]

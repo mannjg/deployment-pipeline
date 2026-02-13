@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Check GitLab plugin installation and configuration
 
 set -e

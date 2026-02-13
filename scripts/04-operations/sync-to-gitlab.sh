@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Sync subtrees to GitLab for CI/CD pipeline execution
 #
 # This script publishes the example-app and k8s-deployments subfolders

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # pipeline-wait.sh - MR, Jenkins, and ArgoCD helpers for demo scripts
 #
 # Source this file: source "$(dirname "$0")/lib/pipeline-wait.sh"

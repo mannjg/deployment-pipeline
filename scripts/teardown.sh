@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Teardown Script
 # Completely tears down a cluster with safety features
 #

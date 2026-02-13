@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Demo: 3rd Party Dependency Upgrade (UC-D4)
 #
 # This demo showcases the 3rd party dependency upgrade workflow - rolling
