@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Infrastructure Health Check Script
 # Quick verification that all pipeline components are ready
 #
@@ -8,9 +9,8 @@
 #   0 - All components healthy
 #   1 - One or more components unhealthy
 
-set -uo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # -----------------------------------------------------------------------------
 # Configuration
@@ -18,29 +18,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load infrastructure config via lib/infra.sh
 source "$SCRIPT_DIR/../lib/infra.sh" "${1:-${CLUSTER_CONFIG:-}}"
-
-# Load credentials from K8s secrets
-load_credentials() {
-    JENKINS_USER=$(kubectl get secret "$JENKINS_ADMIN_SECRET" -n "$JENKINS_NAMESPACE" \
-        -o jsonpath="{.data.${JENKINS_ADMIN_USER_KEY}}" 2>/dev/null | base64 -d) || true
-    JENKINS_TOKEN=$(kubectl get secret "$JENKINS_ADMIN_SECRET" -n "$JENKINS_NAMESPACE" \
-        -o jsonpath="{.data.${JENKINS_ADMIN_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
-    GITLAB_TOKEN=$(kubectl get secret "$GITLAB_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
-        -o jsonpath="{.data.${GITLAB_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
-}
-
-# -----------------------------------------------------------------------------
-# Output Helpers
-# -----------------------------------------------------------------------------
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[0;33m'
-NC='\033[0m' # No Color
-
-log_pass()  { echo -e "${GREEN}[✓]${NC} $*"; }
-log_fail()  { echo -e "${RED}[✗]${NC} $*"; }
-log_warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
-log_info()  { echo "    $*"; }
+source "$PROJECT_ROOT/scripts/lib/logging.sh"
+source "$PROJECT_ROOT/scripts/lib/credentials.sh"
 
 # Track failures
 FAILED=0
@@ -63,8 +42,7 @@ check_warn() {
 # -----------------------------------------------------------------------------
 
 check_kubernetes() {
-    echo ""
-    echo "=== Kubernetes ==="
+    log_header "Kubernetes"
 
     if kubectl cluster-info &>/dev/null; then
         local context=$(kubectl config current-context 2>/dev/null)
@@ -92,8 +70,7 @@ check_kubernetes() {
 }
 
 check_gitlab() {
-    echo ""
-    echo "=== GitLab ==="
+    log_header "GitLab"
 
     # Check pod status
     local gitlab_pods=$(kubectl get pods -n "$GITLAB_NAMESPACE" -l app=gitlab -o json 2>/dev/null)
@@ -139,8 +116,7 @@ check_gitlab() {
 }
 
 check_jenkins() {
-    echo ""
-    echo "=== Jenkins ==="
+    log_header "Jenkins"
 
     # Check pod status
     local jenkins_pods=$(kubectl get pods -n "$JENKINS_NAMESPACE" -l app=jenkins -o json 2>/dev/null)
@@ -188,8 +164,7 @@ check_jenkins() {
 }
 
 check_nexus() {
-    echo ""
-    echo "=== Nexus ==="
+    log_header "Nexus"
 
     # Check pod status
     local nexus_pods=$(kubectl get pods -n "$NEXUS_NAMESPACE" -l app=nexus -o json 2>/dev/null)
@@ -222,8 +197,7 @@ check_nexus() {
 }
 
 check_argocd() {
-    echo ""
-    echo "=== ArgoCD ==="
+    log_header "ArgoCD"
 
     # Check controller pod
     local controller_pods=$(kubectl get pods -n "$ARGOCD_NAMESPACE" -l app.kubernetes.io/name=argocd-application-controller -o json 2>/dev/null)
@@ -272,8 +246,7 @@ check_argocd() {
 }
 
 check_deployments() {
-    echo ""
-    echo "=== Application Deployments ==="
+    log_header "Application Deployments"
 
     for env in dev stage prod; do
         local namespace="$env"
@@ -297,14 +270,12 @@ check_deployments() {
 # -----------------------------------------------------------------------------
 
 print_summary() {
-    echo ""
-    echo "==========================================="
+    log_header "Summary"
     if [[ $FAILED -eq 0 ]]; then
-        echo -e "${GREEN}All infrastructure components healthy${NC}"
+        log_pass "All infrastructure components healthy"
     else
-        echo -e "${RED}Some components have issues${NC}"
+        log_fail "Some components have issues"
     fi
-    echo "==========================================="
 }
 
 # -----------------------------------------------------------------------------
@@ -312,10 +283,17 @@ print_summary() {
 # -----------------------------------------------------------------------------
 
 main() {
-    echo "=== Infrastructure Health Check ==="
-    echo "$(date '+%Y-%m-%d %H:%M:%S')"
+    log_header "Infrastructure Health Check"
+    log_info "$(date '+%Y-%m-%d %H:%M:%S')"
 
-    load_credentials
+    if jenkins_auth=$(try_jenkins_credentials); then
+        JENKINS_USER="${jenkins_auth%%:*}"
+        JENKINS_TOKEN="${jenkins_auth#*:}"
+    fi
+
+    if gitlab_token=$(try_gitlab_token); then
+        GITLAB_TOKEN="$gitlab_token"
+    fi
 
     check_kubernetes
     check_gitlab

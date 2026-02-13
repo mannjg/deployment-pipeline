@@ -48,6 +48,25 @@ require_gitlab_token() {
     exit 1
 }
 
+# Fetch GitLab API token without exiting (returns non-zero if missing)
+try_gitlab_token() {
+    if [[ -n "${GITLAB_TOKEN:-}" ]]; then
+        echo "$GITLAB_TOKEN"
+        return 0
+    fi
+
+    local token
+    token=$(kubectl get secret "$GITLAB_TOKEN_SECRET" -n "$GITLAB_NAMESPACE" \
+        -o jsonpath="{.data.${GITLAB_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
+
+    if [[ -n "$token" ]]; then
+        echo "$token"
+        return 0
+    fi
+
+    return 1
+}
+
 # Fetch Jenkins credentials - fails if not available
 # Returns: username:password (for basic auth)
 require_jenkins_credentials() {
@@ -77,6 +96,27 @@ require_jenkins_credentials() {
     echo "  1. Environment: export JENKINS_USER=... JENKINS_TOKEN=..." >&2
     echo "  2. K8s secret:  kubectl get secret $JENKINS_ADMIN_SECRET -n $JENKINS_NAMESPACE" >&2
     exit 1
+}
+
+# Fetch Jenkins credentials without exiting (returns non-zero if missing)
+try_jenkins_credentials() {
+    if [[ -n "${JENKINS_USER:-}" && -n "${JENKINS_TOKEN:-}" ]]; then
+        echo "${JENKINS_USER}:${JENKINS_TOKEN}"
+        return 0
+    fi
+
+    local user password
+    user=$(kubectl get secret "$JENKINS_ADMIN_SECRET" -n "$JENKINS_NAMESPACE" \
+        -o jsonpath="{.data.${JENKINS_ADMIN_USER_KEY}}" 2>/dev/null | base64 -d) || true
+    password=$(kubectl get secret "$JENKINS_ADMIN_SECRET" -n "$JENKINS_NAMESPACE" \
+        -o jsonpath="{.data.${JENKINS_ADMIN_TOKEN_KEY}}" 2>/dev/null | base64 -d) || true
+
+    if [[ -n "$user" && -n "$password" ]]; then
+        echo "${user}:${password}"
+        return 0
+    fi
+
+    return 1
 }
 
 # Fetch GitLab user credentials (username for git operations)
