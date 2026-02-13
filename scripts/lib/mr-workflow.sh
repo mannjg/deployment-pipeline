@@ -81,7 +81,7 @@ mw_delete_branch() {
 
 # Commit multiple files to a branch in a single commit
 # Usage: mw_commit_files <project> <branch> <commit_message> <file1:content1> [file2:content2] ...
-# File content can be passed as base64 by prefixing with "base64:"
+# File specs: "path:content", "path:base64:b64content", or "path:delete" (to delete)
 # Returns: 0 on success, 1 on failure
 mw_commit_files() {
     local project="$1"
@@ -105,6 +105,19 @@ mw_commit_files() {
     for file_spec in "$@"; do
         local file_path="${file_spec%%:*}"
         local content="${file_spec#*:}"
+
+        # Support file deletion via "path:delete" convention
+        if [[ "$content" == "delete" ]]; then
+            local encoded_path=$(_mw_encode_path "$file_path")
+            local file_check=$(curl -sk -H "PRIVATE-TOKEN: $gitlab_token" \
+                "$gitlab_url/api/v4/projects/$encoded_project/repository/files/$encoded_path?ref=$branch" 2>/dev/null)
+            if echo "$file_check" | jq -e '.file_name' >/dev/null 2>&1; then
+                [[ "$first" == "true" ]] || echo "," >> "$actions_file"
+                first=false
+                echo "{\"action\":\"delete\",\"file_path\":\"$file_path\"}" >> "$actions_file"
+            fi
+            continue
+        fi
 
         # Check if content is base64 encoded
         local encoding="text"

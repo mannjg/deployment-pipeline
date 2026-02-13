@@ -285,7 +285,7 @@ setup_env_branch() {
     fi
 
     # Transform example-env.cue to env.cue
-    # Always extract from main branch - env branches don't have example-env.cue
+    # Always extract from main branch - env branches should not have example-env.cue
     log_info "Extracting example-env.cue from main branch..."
     git show main:example-env.cue > /tmp/example-env.cue.tmp
     transform_env_config "$env" "/tmp/example-env.cue.tmp" "env.cue"
@@ -310,6 +310,12 @@ setup_env_branch() {
         ./scripts/generate-manifests.sh "$env" 2>&1 || {
             log_warn "Manifest generation failed (may need CUE setup), continuing..."
         }
+    fi
+
+    # Remove example-env.cue - it's a seed template that should only exist on main
+    if [[ -f "example-env.cue" ]]; then
+        git rm example-env.cue
+        log_info "Removed example-env.cue (seed template, only needed on main)"
     fi
 
     # Commit and push

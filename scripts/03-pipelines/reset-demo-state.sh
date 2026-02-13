@@ -645,6 +645,9 @@ reset_env_via_mr() {
         log_info "  Prepared env.cue from baseline (namespace: $target_namespace)"
     fi
 
+    # 2f. Delete example-env.cue if it exists on the branch (seed template, only belongs on main)
+    files_to_commit+=("example-env.cue:delete")
+
     # 3. Execute MR workflow
     log_info "  Creating feature branch and MR..."
 
