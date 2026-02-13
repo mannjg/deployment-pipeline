@@ -23,4 +23,5 @@ This file is the canonical agent entry point and table of contents. It is intent
 - `docs/OPERATIONS.md` - Jenkins/GitLab operations and common commands.
 - `scripts/04-operations/` - Operational CLIs and helper scripts.
 - `scripts/05-quality/` - Convention checks and agent preflight scans.
+- `scripts/05-quality/session-preamble.sh` - Recommended start-of-session scan (Tier 1-2 warn-only + belief quick-check).
 - `scripts/demo/` - End-to-end demo workflows.
