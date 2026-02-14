@@ -20,7 +20,7 @@ Command: `scripts/05-quality/sweep-scan.sh`
 - Tier 4 reported no CUE schema enforcement errors.
 
 ## Convention Consistency
-- `set -euo pipefail` usage: 69/77 (89%). Outliers: `k8s-deployments/scripts/validate-cue-config.sh`, `k8s-deployments/scripts/test-cue-integration.sh`, `scripts/debug/test-k8s-validation.sh`, `scripts/debug/check-gitlab-plugin.sh`, `scripts/cluster-ctl.sh`, `scripts/03-pipelines/setup-gitlab-repos.sh`, `scripts/03-pipelines/setup-manifest-generator-job.sh`, `scripts/03-pipelines/setup-k8s-deployments-validation-job.sh`.
+- `set -euo pipefail` usage: 69/77 (89%). Outliers: `k8s-deployments/scripts/lib/validate-cue-config.sh`, `k8s-deployments/scripts/test-cue-integration.sh`, `scripts/debug/test-k8s-validation.sh`, `scripts/debug/check-gitlab-plugin.sh`, `scripts/cluster-ctl.sh`, `scripts/03-pipelines/setup-gitlab-repos.sh`, `scripts/03-pipelines/setup-manifest-generator-job.sh`, `scripts/03-pipelines/setup-k8s-deployments-validation-job.sh`.
 - `SCRIPT_DIR` bootstrap usage: 59/77 (76%).
 - `PROJECT_ROOT` bootstrap usage: 42/77 (54%).
 - `logging.sh` source usage: 6/77

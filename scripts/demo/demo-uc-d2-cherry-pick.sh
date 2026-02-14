@@ -280,7 +280,7 @@ git fetch origin "$SOURCE_ENV" --quiet
 
 # Run selective promotion
 demo_action "Running: promote-app-config.sh $SOURCE_ENV $TARGET_ENV --only-apps $APP_TO_PROMOTE"
-./scripts/promote-app-config.sh "$SOURCE_ENV" "$TARGET_ENV" --only-apps "$APP_TO_PROMOTE" || {
+./scripts/lib/promote-app-config.sh "$SOURCE_ENV" "$TARGET_ENV" --only-apps "$APP_TO_PROMOTE" || {
     demo_fail "promote-app-config.sh failed"
     exit 1
 }
@@ -441,7 +441,7 @@ cat << EOF
   - GitOps workflow preserved (MR, CI validation, ArgoCD sync)
 
   Command used:
-    ./scripts/promote-app-config.sh dev stage --only-apps exampleApp
+    ./scripts/lib/promote-app-config.sh dev stage --only-apps exampleApp
 
 EOF
 
@@ -473,7 +473,7 @@ if [[ "$CLEANUP_CLONE_OK" == "true" ]]; then
     cd "$CLEANUP_DIR"
 
     # Update image back to baseline
-    ./scripts/update-app-image.sh "$TARGET_ENV" "$APP_TO_PROMOTE" "$STAGE_APP_IMAGE_BASELINE" || {
+    ./scripts/lib/update-app-image.sh "$TARGET_ENV" "$APP_TO_PROMOTE" "$STAGE_APP_IMAGE_BASELINE" || {
         demo_warn "Failed to revert image - manual cleanup may be needed"
     }
 

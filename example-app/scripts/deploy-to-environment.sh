@@ -57,7 +57,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Updating image tag (L6)..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-./scripts/update-app-image.sh "${DEPLOY_ENV}" "${APP_NAME}" "${FULL_IMAGE}"
+./scripts/lib/update-app-image.sh "${DEPLOY_ENV}" "${APP_NAME}" "${FULL_IMAGE}"
 echo "✓ Updated ${APP_NAME} image in env.cue"
 
 # Stage CUE changes only - k8s-deployments CI will generate manifests
@@ -104,7 +104,7 @@ export GITLAB_URL_INTERNAL="${GITLAB_URL}"
     "${FEATURE_BRANCH}"
 
 # Create MR using GitLab API
-./scripts/create-gitlab-mr.sh \
+./scripts/lib/create-gitlab-mr.sh \
     "${FEATURE_BRANCH}" \
     "${DEPLOY_ENV}" \
     "${DEPLOY_MR_TITLE}" \
