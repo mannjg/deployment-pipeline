@@ -106,6 +106,3 @@ Set `PROTECTED="true"` for any cluster that:
 - Serves production traffic
 - Should not be accidentally destroyed
 
-## Backwards Compatibility
-
-The existing `config/infra.env` file remains as the legacy configuration and will be updated to source from the appropriate cluster config in a future update.

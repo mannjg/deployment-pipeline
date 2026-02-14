@@ -15,7 +15,7 @@
 #
 # Prerequisites:
 #   - kubectl configured with access to cluster
-#   - config/infra.env with infrastructure URLs
+#   - cluster config (config/clusters/*.env) with infrastructure URLs
 #   - MultiBranch Pipeline jobs already exist in Jenkins
 #   - multibranch-scan-webhook-trigger plugin installed in Jenkins
 

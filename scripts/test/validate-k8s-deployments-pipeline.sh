@@ -14,7 +14,7 @@
 # Prerequisites:
 #   - kubectl configured for target cluster
 #   - curl, jq, git, yq, cue installed
-#   - config/infra.env with infrastructure URLs
+#   - cluster config (config/clusters/*.env) with infrastructure URLs
 
 set -euo pipefail
 
@@ -36,7 +36,7 @@ else
     exit 1
 fi
 
-# Map infra.env to script variables
+# Map cluster config to script variables
 GITLAB_URL="${GITLAB_URL_EXTERNAL:?GITLAB_URL_EXTERNAL not set}"
 JENKINS_URL="${JENKINS_URL_EXTERNAL:?JENKINS_URL_EXTERNAL not set}"
 K8S_DEPLOYMENTS_REPO_URL="${GITLAB_URL}/${K8S_DEPLOYMENTS_REPO_PATH:?K8S_DEPLOYMENTS_REPO_PATH not set}.git"

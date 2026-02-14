@@ -19,7 +19,7 @@
 #   ${ARGOCD_HOST}       - ArgoCD hostname (e.g., argocd-alpha.jmann.local)
 #   ${CONTAINER_REGISTRY} - Container registry hostname (e.g., registry-dso.jmann.local)
 #
-# Naming convention (matches config/infra.env):
+# Naming convention (matches config/clusters/*.env):
 #   *_URL_INTERNAL  - Kubernetes service DNS names (pod-to-pod)
 #   *_URL_EXTERNAL  - Ingress/external hostnames (user-facing)
 

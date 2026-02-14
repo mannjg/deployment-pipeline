@@ -5,7 +5,7 @@
 #
 # Prerequisites:
 #   - kubectl configured for target cluster
-#   - config/infra.env sourced
+#   - cluster config sourced via scripts/lib/infra.sh
 #   - demo-helpers.sh sourced (for demo_action, demo_verify, etc.)
 #   - GITLAB_TOKEN, JENKINS_USER, JENKINS_TOKEN set (or loaded from secrets)
 

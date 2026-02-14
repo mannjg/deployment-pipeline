@@ -403,7 +403,7 @@ wait_for_example_app_build() {
 
 cleanup_example_app() {
     local gitlab_cli="$SCRIPT_DIR/../04-operations/gitlab-cli.sh"
-    local app_repo="$APP_REPO_PATH"  # From infra.env: p2c/example-app
+    local app_repo="$APP_REPO_PATH"  # From cluster config: p2c/example-app
 
     log_step "Phase 2b: Cleaning up example-app demo artifacts..."
 

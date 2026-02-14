@@ -37,11 +37,11 @@
 | prod | Production environment |
 
 **Centralized Config:**
-Source `config/infra.env` for infrastructure URLs in scripts:
+Source a cluster config via `scripts/lib/infra.sh` for infrastructure URLs in scripts:
 ```bash
-source config/infra.env
-echo $GITLAB_URL_EXTERNAL   # https://gitlab.jmann.local
-echo $JENKINS_URL_EXTERNAL  # https://jenkins.jmann.local
+source scripts/lib/infra.sh config/clusters/alpha.env
+echo $GITLAB_URL_EXTERNAL   # https://gitlab-alpha.jmann.local
+echo $JENKINS_URL_EXTERNAL  # https://jenkins-alpha.jmann.local
 echo $APP_REPO_PATH         # p2c/example-app
 ```
 

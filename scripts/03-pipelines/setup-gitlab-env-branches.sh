@@ -54,7 +54,7 @@ preflight_checks() {
     log_step "Running preflight checks..."
     local failed=0
 
-    # Check required infra.env variables
+    # Check required cluster config variables
     if [[ -z "${GITLAB_HOST_EXTERNAL:-}" ]]; then
         log_error "GITLAB_HOST_EXTERNAL not set in cluster config"
         failed=1

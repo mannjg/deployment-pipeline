@@ -25,7 +25,7 @@ deployment-pipeline/
 │   ├── cluster-config/    # Optional cluster-specific configs (e.g., kubeconfig)
 │   └── nexus/             # Nexus deployment
 ├── config/                # Centralized configuration
-│   └── infra.env          # Infrastructure URLs (GitLab, Jenkins, ArgoCD, Nexus)
+│   └── clusters/          # Per-cluster configs (alpha.env, reference.env, etc.)
 ├── docs/                  # Documentation
 │   ├── ARCHITECTURE.md    # System design details
 │   ├── ENVIRONMENT_SETUP.md  # Environment branch setup

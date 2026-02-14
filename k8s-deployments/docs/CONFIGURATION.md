@@ -79,7 +79,7 @@ data:
 
 ### APP_CUE_NAME Mapping
 
-The root project's `validate-pipeline.sh` requires `APP_CUE_NAME` in `config/infra.env`:
+The root project's `validate-pipeline.sh` requires `APP_CUE_NAME` in the cluster config (`config/clusters/*.env`):
 - Maps repository name to CUE manifest name
 - Example: `APP_REPO_NAME=example-app` → `APP_CUE_NAME=exampleApp`
 

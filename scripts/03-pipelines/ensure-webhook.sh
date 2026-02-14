@@ -21,7 +21,7 @@
 #
 # Prerequisites:
 #   - kubectl configured with access to cluster
-#   - config/infra.env with infrastructure URLs and secret references
+#   - cluster config (config/clusters/*.env) with infrastructure URLs and secret references
 
 set -euo pipefail
 
@@ -43,7 +43,7 @@ for arg in "$@"; do
 done
 source "$REPO_ROOT/scripts/lib/infra.sh" "${_CONFIG_ARG:-${CLUSTER_CONFIG:-}}"
 
-# Validate required config from infra.env
+# Validate required config from cluster config
 validate_config() {
     local missing=()
 
@@ -54,7 +54,7 @@ validate_config() {
     [[ -z "${JENKINS_URL_INTERNAL:-}" ]] && missing+=("JENKINS_URL_INTERNAL")
 
     if [[ ${#missing[@]} -gt 0 ]]; then
-        echo "[✗] Missing required config in infra.env:"
+        echo "[✗] Missing required config in cluster config:"
         for var in "${missing[@]}"; do
             echo "    - $var"
         done

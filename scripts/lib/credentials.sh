@@ -15,7 +15,7 @@ if ! declare -f log_error &>/dev/null; then
     source "$_CRED_LIB_DIR/logging.sh"
 fi
 
-# Ensure infra.sh is loaded (we need secret names from infra.env)
+# Ensure infra.sh is loaded (we need secret names from cluster config)
 if [[ -z "${GITLAB_TOKEN_SECRET:-}" ]]; then
     source "$_CRED_LIB_DIR/infra.sh"
 fi

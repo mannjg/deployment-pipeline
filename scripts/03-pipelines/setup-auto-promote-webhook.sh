@@ -52,7 +52,7 @@ validate_config() {
 
     if [[ ${#missing[@]} -gt 0 ]]; then
         log_fail "Missing required configuration: ${missing[*]}"
-        log_info "Ensure config/infra.env is properly configured"
+        log_info "Ensure cluster config is properly configured"
         exit 1
     fi
 }

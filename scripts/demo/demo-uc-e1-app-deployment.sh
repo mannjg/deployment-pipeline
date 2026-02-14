@@ -7,9 +7,9 @@
 # Prerequisites:
 #   - kubectl configured for target cluster
 #   - curl, jq, git installed
-#   - config/infra.env with infrastructure URLs and secret references
+#   - cluster config (config/clusters/*.env) with infrastructure URLs and secret references
 #
-# Credentials are loaded from K8s secrets as configured in infra.env.
+# Credentials are loaded from K8s secrets as configured in cluster config.
 #
 # Note: With the simplified pipeline, promotion MRs are auto-created by
 # k8s-deployments CI after successful deployment to dev/stage.
@@ -37,7 +37,7 @@ export MR_WORKFLOW_POLL_INTERVAL=10
 source "$REPO_ROOT/scripts/lib/mr-workflow.sh"
 
 # Fetch credentials from K8s secrets
-# Uses secret names/keys from infra.env
+# Uses secret names/keys from cluster config
 load_credentials_from_secrets() {
     # Jenkins credentials
     if [[ -z "${JENKINS_USER:-}" ]]; then
@@ -56,16 +56,16 @@ load_credentials_from_secrets() {
     fi
 }
 
-# Map infra.env variables to script variables (no defaults - must be set)
-JENKINS_URL="${JENKINS_URL_EXTERNAL:?JENKINS_URL_EXTERNAL not set in infra.env}"
-JENKINS_JOB_NAME="${JENKINS_APP_JOB_PATH:?JENKINS_APP_JOB_PATH not set in infra.env}"
-GITLAB_URL="${GITLAB_URL_EXTERNAL:?GITLAB_URL_EXTERNAL not set in infra.env}"
-GITLAB_PROJECT_PATH="${APP_REPO_PATH:?APP_REPO_PATH not set in infra.env}"
-ARGOCD_NAMESPACE="${ARGOCD_NAMESPACE:?ARGOCD_NAMESPACE not set in infra.env}"
-DEV_NAMESPACE="${DEV_NAMESPACE:?DEV_NAMESPACE not set in infra.env}"
+# Map cluster config variables to script variables (no defaults - must be set)
+JENKINS_URL="${JENKINS_URL_EXTERNAL:?JENKINS_URL_EXTERNAL not set in cluster config}"
+JENKINS_JOB_NAME="${JENKINS_APP_JOB_PATH:?JENKINS_APP_JOB_PATH not set in cluster config}"
+GITLAB_URL="${GITLAB_URL_EXTERNAL:?GITLAB_URL_EXTERNAL not set in cluster config}"
+GITLAB_PROJECT_PATH="${APP_REPO_PATH:?APP_REPO_PATH not set in cluster config}"
+ARGOCD_NAMESPACE="${ARGOCD_NAMESPACE:?ARGOCD_NAMESPACE not set in cluster config}"
+DEV_NAMESPACE="${DEV_NAMESPACE:?DEV_NAMESPACE not set in cluster config}"
 
-# Derived values (from required infra.env variables)
-APP_REPO_NAME="${APP_REPO_NAME:?APP_REPO_NAME not set in infra.env}"
+# Derived values (from required cluster config variables)
+APP_REPO_NAME="${APP_REPO_NAME:?APP_REPO_NAME not set in cluster config}"
 ARGOCD_APP_NAME="${APP_REPO_NAME}-dev"
 APP_LABEL="app=${APP_REPO_NAME}"
 
@@ -752,7 +752,7 @@ verify_mr_image() {
 
     # Fetch the GENERATED MANIFEST (not env.cue) - this is what actually deploys
     # Using manifests avoids parsing CUE and handles only the target app's deployment
-    local app_cue_name="${APP_CUE_NAME:?APP_CUE_NAME not set in infra.env}"
+    local app_cue_name="${APP_CUE_NAME:?APP_CUE_NAME not set in cluster config}"
     local manifest_path="manifests%2F${app_cue_name}%2F${app_cue_name}.yaml"
     local manifest=$(curl -sk -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
         "$GITLAB_URL/api/v4/projects/$encoded_project/repository/files/$manifest_path/raw?ref=$branch" 2>/dev/null)
