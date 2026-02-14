@@ -340,7 +340,9 @@ main() {
 
     echo ""
     log_step "Triggering initial branch scans..."
-    trigger_scan "example-app"
+    # Only scan k8s-deployments to discover env branches (dev/stage/prod).
+    # example-app is NOT scanned here — its first build should come from
+    # a user/demo action via webhook, not from bootstrap.
     trigger_scan "k8s-deployments"
 
     echo ""

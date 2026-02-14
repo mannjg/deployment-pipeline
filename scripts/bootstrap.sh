@@ -798,6 +798,30 @@ configure_services() {
 }
 
 # =============================================================================
+# Pipeline Quiescence
+# =============================================================================
+
+wait_for_pipeline_settle() {
+    log_info "Waiting for initial pipeline activity to settle..."
+    local timeout=300 interval=10 elapsed=0
+    while [[ $elapsed -lt $timeout ]]; do
+        local agent_count
+        agent_count=$(kubectl get pods -n "$JENKINS_NAMESPACE" -l jenkins/label \
+            --no-headers 2>/dev/null | wc -l)
+        if [[ "$agent_count" -eq 0 ]]; then
+            log_info "  ✓ Pipeline is quiescent"
+            return 0
+        fi
+        if [[ $elapsed -eq 0 ]]; then
+            log_info "  Jenkins has $agent_count agent pod(s) running..."
+        fi
+        sleep $interval
+        elapsed=$((elapsed + interval))
+    done
+    log_warn "  Timeout waiting for builds (${timeout}s) — continuing"
+}
+
+# =============================================================================
 # Summary Output
 # =============================================================================
 
@@ -903,6 +927,7 @@ main() {
 
         # Run only configuration
         configure_services
+        wait_for_pipeline_settle
     else
         # Execute full bootstrap steps
         check_namespace_collisions
@@ -910,6 +935,7 @@ main() {
         apply_infrastructure_manifests
         wait_for_infrastructure
         configure_services
+        wait_for_pipeline_settle
     fi
 
     print_summary
