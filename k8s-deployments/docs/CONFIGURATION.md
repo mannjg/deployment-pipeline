@@ -125,5 +125,5 @@ The full configuration contract is defined in `config/configmap.contract.yaml`.
 
 ## Related Documentation
 
-- [JENKINS_SETUP.md](JENKINS_SETUP.md) - Jenkins job configuration
+- [JENKINS_SETUP.md](../../docs/JENKINS_SETUP.md) - Jenkins job configuration (in outer project docs)
 - [Root CLAUDE.md](../../CLAUDE.md) - Project overview and conventions

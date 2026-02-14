@@ -219,7 +219,7 @@ Jenkins: update-deployment job triggered
 └──────────────────────────────────────────┘
          │
          ├─> Extract deployment/app.cue from example-app
-         │   └─> Copy to services/apps/example-app.cue
+         │   └─> Copy to templates/apps/example-app.cue
          │
          ├─> Update envs/dev.cue
          │   └─> Set image tag to 1.2.3
@@ -476,7 +476,7 @@ Jenkins: update-deployment
          │   └─> Detects changes (git diff)
          │
          ├─> Merges into k8s-deployments
-         │   └─> services/apps/example-app.cue updated
+         │   └─> templates/apps/example-app.cue updated
          │
          ├─> Generates manifests
          │   └─> New ConfigMap rendered

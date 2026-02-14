@@ -85,13 +85,13 @@ example-app/                      → GitHub
 
 ```
 k8s-deployments/                  → GitHub
-├── k8s/                          # K8s primitives (platform-owned)
+├── schemas/                      # K8s primitives (platform-owned)
 │   ├── deployment.cue
 │   ├── service.cue
 │   ├── configmap.cue
 │   ├── secret.cue
 │   └── pvc.cue
-├── services/
+├── templates/
 │   ├── base/                     # Base app template (platform-owned)
 │   ├── core/                     # Core definitions (platform-owned)
 │   ├── resources/                # Resource definitions (platform-owned)
@@ -113,8 +113,8 @@ k8s-deployments/                  → GitHub
 
 | Owner | Location | Rationale |
 |-------|----------|-----------|
-| **Platform (k8s-deployments)** | `k8s/` | K8s resource primitives - specs are universal |
-| **Platform (k8s-deployments)** | `services/base/`, `services/core/` | Common app patterns - shared across all apps |
+| **Platform (k8s-deployments)** | `schemas/` | K8s resource primitives - specs are universal |
+| **Platform (k8s-deployments)** | `templates/base/`, `templates/core/` | Common app patterns - shared across all apps |
 | **Platform (k8s-deployments)** | `env.cue` | Environment config - shared infrastructure |
 | **App repo** | `deployment/app.cue` | App-specific needs - only app devs know their requirements |
 
@@ -123,12 +123,12 @@ k8s-deployments/                  → GitHub
 ```
 Platform-owned (stable)          App-owned (changes with app)
 ─────────────────────────────    ────────────────────────────
-k8s/                         \
-services/base/                }── merge ──► manifests/
-services/core/               /        ▲
+schemas/                     \
+templates/base/               }── merge ──► manifests/
+templates/core/              /        ▲
 env.cue                     /         │
                                       │
-                          services/apps/{app}.cue
+                          templates/apps/{app}.cue
                           (copied from app repo)
 ```
 
@@ -199,7 +199,7 @@ Full URLs are parameterized (not just domain suffix) to support varying naming c
 ├─────────────────────────────────────────────────────────────┤
 │ 5. Update Deployment Repo                                   │
 │    • Clone k8s-deployments                                  │
-│    • Copy app.cue → services/apps/{app-name}.cue            │
+│    • Copy app.cue → templates/apps/{app-name}.cue            │
 │    • Update image tag in CUE file                           │
 │    • Commit & push to k8s-deployments                       │
 │    (triggers Deployment Pipeline)                           │
@@ -238,12 +238,12 @@ Full URLs are parameterized (not just domain suffix) to support varying naming c
 ### Branch Strategy
 
 ```
-main        → Source CUE libraries only (k8s/, services/base/, services/core/)
+main        → Source CUE libraries only (schemas/, templates/base/, templates/core/)
                No env.cue, no manifests
 
-dev         → env.cue (dev values) + services/apps/ + manifests/
-stage       → env.cue (stage values) + services/apps/ + manifests/
-prod        → env.cue (prod values) + services/apps/ + manifests/
+dev         → env.cue (dev values) + templates/apps/ + manifests/
+stage       → env.cue (stage values) + templates/apps/ + manifests/
+prod        → env.cue (prod values) + templates/apps/ + manifests/
 ```
 
 ### Promotion Flow
@@ -251,7 +251,7 @@ prod        → env.cue (prod values) + services/apps/ + manifests/
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         dev branch                                  │
-│  services/apps/example-app.cue  (changed)                           │
+│  templates/apps/example-app.cue  (changed)                           │
 │  env.cue                        (dev values - stays here)           │
 │  manifests/                     (regenerated for dev)               │
 └───────────────────────────┬─────────────────────────────────────────┘
@@ -261,7 +261,7 @@ prod        → env.cue (prod values) + services/apps/ + manifests/
                             ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        stage branch                                 │
-│  services/apps/example-app.cue  ← merged from dev                   │
+│  templates/apps/example-app.cue  ← merged from dev                   │
 │  env.cue                        (stage values - untouched)          │
 │  manifests/                     ← regenerated using stage env.cue   │
 └─────────────────────────────────────────────────────────────────────┘

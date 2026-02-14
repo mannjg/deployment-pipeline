@@ -7,9 +7,9 @@ set -euo pipefail
 # Usage: ./promote-app-config.sh <source-env> <target-env>
 #
 # What gets SYNCED (from source to target):
-#   - services/base/  - Base defaults and schemas
-#   - services/core/  - Shared templates (defaultLabels, #App)
-#   - services/apps/  - App definitions
+#   - templates/base/  - Base defaults and schemas
+#   - templates/core/  - Shared templates (defaultLabels, #App)
+#   - templates/apps/  - App definitions
 #   - deployment.image in env.cue (all apps, including 3rd party)
 #
 # What gets PRESERVED (via CUE unification):
@@ -178,7 +178,7 @@ log_debug "Created backup: $BACKUP_FILE"
 log_info "Syncing platform and app layers from $SOURCE_ENV..."
 PLATFORM_CHANGED=false
 
-for dir in services/base services/core services/apps; do
+for dir in templates/base templates/core templates/apps; do
     if [ -d "$SOURCE_DIR/$dir" ]; then
         # Check if there are actual differences
         if ! diff -rq "$dir" "$SOURCE_DIR/$dir" >/dev/null 2>&1; then

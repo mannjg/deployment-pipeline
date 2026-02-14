@@ -1021,7 +1021,7 @@ Push a change to dev and verify pipeline runs.
 
 Add logic to:
 1. Clone k8s-deployments
-2. Copy `deployment/app.cue` to `services/apps/example-app.cue`
+2. Copy `deployment/app.cue` to `templates/apps/example-app.cue`
 3. Update image tag in the CUE file
 4. Commit and push
 

@@ -9,13 +9,13 @@ This document defines the demonstration use cases for the deployment pipeline, s
 ### CUE Configuration Layers
 
 ```
-Platform (services/base/, services/core/)
+Platform (templates/base/, templates/core/)
     │
     │  Provides: defaults, schemas, templates
     │  Example: default labels, security contexts, deployment strategies
     │
     ▼
-App (services/apps/*.cue)
+App (templates/apps/*.cue)
     │
     │  Provides: app-specific config that applies to ALL environments
     │  Example: app env vars, app annotations, app-level ConfigMap defaults
@@ -42,8 +42,8 @@ Each layer can override values from the layer above:
 | Change Location | Propagates To | Mechanism |
 |-----------------|---------------|-----------|
 | `env.cue` on dev | Dev only | Direct commit to branch |
-| `services/apps/*.cue` | All envs for that app | Merge main → env branches |
-| `services/base/` or `services/core/` | All apps, all envs | Merge main → env branches |
+| `templates/apps/*.cue` | All envs for that app | Merge main → env branches |
+| `templates/base/` or `templates/core/` | All apps, all envs | Merge main → env branches |
 
 ---
 
@@ -91,14 +91,14 @@ Changes made to `env.cue` on a single environment branch. These intentionally **
 
 ## Category B: App-Level Cross-Environment Configuration
 
-Changes made to `services/apps/<app>.cue`. These **SHOULD propagate** to all environments for that app (via merge from main to environment branches).
+Changes made to `templates/apps/<app>.cue`. These **SHOULD propagate** to all environments for that app (via merge from main to environment branches).
 
 ### UC-B1: Add App Environment Variable
 
 | Aspect | Detail |
 |--------|--------|
 | **Story** | "As an app team, we need a new FEATURE_FLAGS env var in all environments" |
-| **Change Location** | `services/apps/example-app.cue` → `appEnvVars` |
+| **Change Location** | `templates/apps/example-app.cue` → `appEnvVars` |
 | **Change** | Add `{name: "FEATURE_FLAGS", value: "new-checkout,dark-mode"}` |
 | **Expected Behavior** | After propagation, all envs (dev/stage/prod) have the new env var |
 | **Validates** | App-level env vars flow through without manual intervention |
@@ -108,7 +108,7 @@ Changes made to `services/apps/<app>.cue`. These **SHOULD propagate** to all env
 | Aspect | Detail |
 |--------|--------|
 | **Story** | "As a platform team, we want to set app-specific Prometheus scrape timeout" |
-| **Change Location** | `services/apps/example-app.cue` → `appConfig.deployment.podAnnotations` |
+| **Change Location** | `templates/apps/example-app.cue` → `appConfig.deployment.podAnnotations` |
 | **Change** | Add `"prometheus.io/scrape-timeout": "30s"` |
 | **Expected Behavior** | All envs get the annotation; env.cue doesn't need to specify it |
 | **Validates** | App-level appConfig fields inherit to all envs via CUE unification |
@@ -119,7 +119,7 @@ Changes made to `services/apps/<app>.cue`. These **SHOULD propagate** to all env
 | Aspect | Detail |
 |--------|--------|
 | **Story** | "As an app team, we need a consistent cache-ttl setting across all environments" |
-| **Change Location** | `services/apps/example-app.cue` → `appConfig.configMap.data` |
+| **Change Location** | `templates/apps/example-app.cue` → `appConfig.configMap.data` |
 | **Change** | Add `"cache-ttl": "300"` |
 | **Expected Behavior** | All envs get cache-ttl=300 in ConfigMap; envs can override if needed |
 | **Validates** | App-level ConfigMap entries propagate; env-level can still override |
@@ -129,7 +129,7 @@ Changes made to `services/apps/<app>.cue`. These **SHOULD propagate** to all env
 | Aspect | Detail |
 |--------|--------|
 | **Story** | "App sets cache-ttl=300, but prod needs cache-ttl=600 for performance" |
-| **Change Location** | App: `services/apps/example-app.cue`; Override: `env.cue` on `prod` |
+| **Change Location** | App: `templates/apps/example-app.cue`; Override: `env.cue` on `prod` |
 | **Change** | App sets `"cache-ttl": "300"`; Prod's env.cue sets `"cache-ttl": "600"` |
 | **Expected Behavior** | Dev/stage get 300; prod gets 600 |
 | **Validates** | Environment override takes precedence over app-level default |
@@ -141,7 +141,7 @@ Changes made to `services/apps/<app>.cue`. These **SHOULD propagate** to all env
 | Aspect | Detail |
 |--------|--------|
 | **Story** | "App defines readiness probe with 10s timeout, but prod needs 30s due to cold-start characteristics" |
-| **Change Location** | App: `services/apps/example-app.cue` → `appConfig.deployment.readinessProbe`; Override: `env.cue` on `prod` |
+| **Change Location** | App: `templates/apps/example-app.cue` → `appConfig.deployment.readinessProbe`; Override: `env.cue` on `prod` |
 | **Change** | App sets `timeoutSeconds: 10`; Prod's env.cue sets `timeoutSeconds: 30` |
 | **Expected Behavior** | Dev/stage use 10s timeout; prod uses 30s |
 | **Validates** | Environment can override any app-level appConfig field (clean CUE merge) |
@@ -151,7 +151,7 @@ Changes made to `services/apps/<app>.cue`. These **SHOULD propagate** to all env
 | Aspect | Detail |
 |--------|--------|
 | **Story** | "App sets LOG_LEVEL=INFO as default, but dev needs LOG_LEVEL=DEBUG for troubleshooting" |
-| **Change Location** | App: `services/apps/example-app.cue` → `appEnvVars`; Override: `env.cue` on `dev` → `additionalEnv` |
+| **Change Location** | App: `templates/apps/example-app.cue` → `appEnvVars`; Override: `env.cue` on `dev` → `additionalEnv` |
 | **Change** | App sets `{name: "LOG_LEVEL", value: "INFO"}`; Dev's env.cue sets `{name: "LOG_LEVEL", value: "DEBUG"}` |
 | **Expected Behavior** | Stage/prod use INFO; dev uses DEBUG |
 | **Design Note** | Uses `#MergeEnvVars` helper to merge env vars by name. `additionalEnv` values override `appEnvVars` values with the same name. |
@@ -161,14 +161,14 @@ Changes made to `services/apps/<app>.cue`. These **SHOULD propagate** to all env
 
 ## Category C: Platform-Wide Configuration
 
-Changes made to `services/base/` (defaults/schema) or `services/core/` (templates). These **SHOULD propagate** to all apps in all environments.
+Changes made to `templates/base/` (defaults/schema) or `templates/core/` (templates). These **SHOULD propagate** to all apps in all environments.
 
 ### UC-C1: Add Default Label to All Deployments
 
 | Aspect | Detail |
 |--------|--------|
 | **Story** | "As a platform team, we need all deployments to have a `cost-center` label for chargeback reporting" |
-| **Change Location** | `services/core/app.cue` → `defaultLabels` |
+| **Change Location** | `templates/core/app.cue` → `defaultLabels` |
 | **Change** | Add `"cost-center": "platform-shared"` to defaultLabels |
 | **Expected Behavior** | All apps in all envs get the label; apps/envs can override if needed |
 | **Validates** | Template-level changes propagate universally |
@@ -178,7 +178,7 @@ Changes made to `services/base/` (defaults/schema) or `services/core/` (template
 | Aspect | Detail |
 |--------|--------|
 | **Story** | "As a security team, we require all pods to run as non-root" |
-| **Change Location** | `services/base/defaults.cue` → `#DefaultPodSecurityContext`; referenced in `services/resources/deployment.cue` |
+| **Change Location** | `templates/base/defaults.cue` → `#DefaultPodSecurityContext`; referenced in `templates/resources/deployment.cue` |
 | **Change** | Enable `runAsNonRoot: true`, `runAsUser: 1000` |
 | **Expected Behavior** | All deployments across all apps/envs get the security context |
 | **Validates** | Base defaults flow through templates to all generated manifests |
@@ -188,7 +188,7 @@ Changes made to `services/base/` (defaults/schema) or `services/core/` (template
 | Aspect | Detail |
 |--------|--------|
 | **Story** | "As a platform team, we want zero-downtime deployments as the default" |
-| **Change Location** | `services/base/defaults.cue` → `#DefaultDeploymentStrategy` |
+| **Change Location** | `templates/base/defaults.cue` → `#DefaultDeploymentStrategy` |
 | **Change** | Change `maxUnavailable: 1` → `maxUnavailable: 0` |
 | **Expected Behavior** | All apps default to zero-downtime unless explicitly overridden |
 | **Validates** | Changing base defaults affects all consumers |
@@ -198,7 +198,7 @@ Changes made to `services/base/` (defaults/schema) or `services/core/` (template
 | Aspect | Detail |
 |--------|--------|
 | **Story** | "As a platform team, we want to set a default Prometheus scrape interval for all pods" |
-| **Change Location** | `services/core/app.cue` → `defaultPodAnnotations` |
+| **Change Location** | `templates/core/app.cue` → `defaultPodAnnotations` |
 | **Change** | Add `"prometheus.io/scrape-interval": "30s"` to defaultPodAnnotations |
 | **Expected Behavior** | All deployments get the scrape-interval annotation; apps/envs can override if needed |
 | **Validates** | Platform-wide defaults propagate to all apps in all environments |
@@ -209,7 +209,7 @@ Changes made to `services/base/` (defaults/schema) or `services/core/` (template
 | Aspect | Detail |
 |--------|--------|
 | **Story** | "Platform sets Prometheus scraping on, but legacy-app needs it off" |
-| **Change Location** | Platform: `services/core/app.cue`; Override: `services/apps/legacy-app.cue` |
+| **Change Location** | Platform: `templates/core/app.cue`; Override: `templates/apps/legacy-app.cue` |
 | **Change** | Platform sets `"prometheus.io/scrape": "true"`; legacy-app sets `"prometheus.io/scrape": "false"` |
 | **Expected Behavior** | Most apps get scraping enabled; legacy-app has it disabled across all its envs |
 | **Validates** | App layer can override platform defaults |
@@ -219,7 +219,7 @@ Changes made to `services/base/` (defaults/schema) or `services/core/` (template
 | Aspect | Detail |
 |--------|--------|
 | **Story** | "Platform sets cost-center=platform-shared, but prod overrides to cost-center=production-critical" |
-| **Change Location** | Platform: `services/core/app.cue`; Override: `env.cue` on `prod` |
+| **Change Location** | Platform: `templates/core/app.cue`; Override: `env.cue` on `prod` |
 | **Change** | Platform sets `"cost-center": "platform-shared"`; prod's env.cue sets `"cost-center": "production-critical"` |
 | **Expected Behavior** | Dev/stage get platform-shared; prod gets production-critical |
 | **Validates** | Full override chain: Platform → App → Env |
@@ -359,16 +359,16 @@ Changes that originate from the **application repository** (example-app), not k8
 | **A: Env-Specific** | UC-A1 | Adjust replica count | `env.cue` | Stays in env |
 | | UC-A2 | Enable debug mode | `env.cue` | Stays in env |
 | | UC-A3 | Env-specific ConfigMap entry | `env.cue` | Stays in env |
-| **B: App-Level** | UC-B1 | Add app env var | `services/apps/*.cue` | All envs for app |
-| | UC-B2 | Add app annotation | `services/apps/*.cue` | All envs for app |
-| | UC-B3 | Add app ConfigMap entry | `services/apps/*.cue` | All envs for app |
+| **B: App-Level** | UC-B1 | Add app env var | `templates/apps/*.cue` | All envs for app |
+| | UC-B2 | Add app annotation | `templates/apps/*.cue` | All envs for app |
+| | UC-B3 | Add app ConfigMap entry | `templates/apps/*.cue` | All envs for app |
 | | UC-B4 | App ConfigMap with env override | App + `env.cue` | App default, env overrides |
 | | UC-B5 | App probe with env override | App + `env.cue` | App default, env overrides |
 | | UC-B6 | App env var with env override | App + `env.cue` | App default, env overrides |
-| **C: Platform-Wide** | UC-C1 | Add default label | `services/core/` | All apps, all envs |
-| | UC-C2 | Add security context | `services/base/` | All apps, all envs |
-| | UC-C3 | Change deployment strategy | `services/base/` | All apps, all envs |
-| | UC-C4 | Add pod annotation | `services/core/` | All apps, all envs |
+| **C: Platform-Wide** | UC-C1 | Add default label | `templates/core/` | All apps, all envs |
+| | UC-C2 | Add security context | `templates/base/` | All apps, all envs |
+| | UC-C3 | Change deployment strategy | `templates/base/` | All apps, all envs |
+| | UC-C4 | Add pod annotation | `templates/core/` | All apps, all envs |
 | | UC-C5 | Platform default with app override | Platform + App | Platform default, app overrides |
 | | UC-C6 | Platform default with env override | Platform + `env.cue` | Platform default, env overrides |
 | **D: Operational** | UC-D1 | Emergency hotfix to prod | Direct MR to `prod` | Bypasses chain |
@@ -384,9 +384,9 @@ Changes that originate from the **application repository** (example-app), not k8
 ### Override Hierarchy
 
 ```
-Platform (services/base/, services/core/)
+Platform (templates/base/, templates/core/)
     ↓ UC-C1 through UC-C4 demonstrate this layer
-App (services/apps/*.cue)
+App (templates/apps/*.cue)
     ↓ UC-B1 through UC-B3 demonstrate this layer
     ↓ UC-C5 demonstrates app overriding platform
 Env (env.cue per branch)
@@ -461,8 +461,8 @@ The current `promote-app-config.sh` only promotes:
 Future enhancement should also promote:
 - `deployment.additionalEnv` (app env vars)
 - `configMap.data` (app config)
-- Changes to `services/apps/*.cue`
-- Changes to `services/base/` and `services/core/`
+- Changes to `templates/apps/*.cue`
+- Changes to `templates/base/` and `templates/core/`
 
 While preserving:
 - `namespace`

@@ -159,11 +159,11 @@ This is a **reference implementation** for GitOps CI/CD in airgapped environment
   ```
   k8s-deployments/
   ├── cue.mod/                    # CUE module definition
-  ├── k8s/                        # Base Kubernetes schemas
+  ├── schemas/                     # Base Kubernetes schemas
   │   ├── deployment.cue
   │   ├── service.cue
   │   └── configmap.cue
-  ├── services/
+  ├── templates/
   │   ├── base/
   │   │   ├── schema.cue          # #AppConfig schema
   │   │   └── defaults.cue        # Default values
@@ -234,7 +234,7 @@ This is a **reference implementation** for GitOps CI/CD in airgapped environment
   Jenkins: Checkout k8s-deployments (dev branch)
          │
          ├─> Extract deployment/app.cue from source repo
-         │   └─> Copy to services/apps/example-app.cue
+         │   └─> Copy to templates/apps/example-app.cue
          │
          ├─> Update image tag in envs/dev.cue
          │
@@ -293,7 +293,7 @@ Jenkins: update-deployment job
          ├─> Git clone k8s-deployments (dev branch)
          │
          ├─> Copy deployment/app.cue
-         │   └─> To services/apps/example-app.cue
+         │   └─> To templates/apps/example-app.cue
          │
          ├─> CUE validates against #AppConfig schema
          │

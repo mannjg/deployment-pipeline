@@ -56,8 +56,8 @@ example-app/
 
 k8s-deployments/
 ├── cue.mod/               # CUE module
-├── k8s/                   # Base schemas
-├── services/
+├── schemas/               # Base schemas
+├── templates/
 │   ├── base/              # Schemas and defaults
 │   ├── apps/              # Application configs
 │   └── resources/         # Resource templates

@@ -17,7 +17,7 @@ export GITLAB_TOKEN="your-gitlab-token"  # or let script get from K8s secret
 This script:
 1. Clones k8s-deployments from GitLab.
 2. Creates dev/stage/prod branches from main.
-3. Transforms `example-env.cue` into `env.cue` with environment-specific values.
+3. Transforms `seed-env.cue` into `env.cue` with environment-specific values.
 4. Pushes all branches to GitLab.
 
 ## Reset Demo State (and propagate core changes)
@@ -28,11 +28,11 @@ This script:
 
 This script resets demo state AND propagates core files from main to env branches:
 - Cleans up MRs, demo branches, Jenkins queue.
-- Syncs `services/`, `scripts/`, `Jenkinsfile` from GitLab main to dev/stage/prod via MR workflow.
+- Syncs `templates/`, `scripts/`, `Jenkinsfile` from GitLab main to dev/stage/prod via MR workflow.
 - Preserves CI/CD-managed image tags in env.cue.
 
 ## Seed Template Maintenance
 
-- `k8s-deployments/example-env.cue` is the seed template (persisted to GitHub).
+- `k8s-deployments/seed-env.cue` is the seed template (persisted to GitHub).
 - Only used during INITIAL bootstrap (when branches don't exist).
 - Once branches have valid CI/CD images, they are managed by the pipeline.

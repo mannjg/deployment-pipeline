@@ -11,13 +11,13 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for required environment vari
 ```
 k8s-deployments/
 ├── cue.mod/               # CUE module definition
-├── k8s/                   # Base Kubernetes resource schemas
+├── schemas/               # Base Kubernetes resource type definitions
 │   ├── configmap.cue
 │   ├── deployment.cue
 │   ├── pvc.cue
 │   ├── secret.cue
 │   └── service.cue
-├── services/
+├── templates/
 │   ├── base/              # Platform defaults and schema
 │   │   ├── schema.cue     # #AppConfig schema
 │   │   ├── defaults.cue   # Platform-wide defaults
@@ -34,8 +34,8 @@ k8s-deployments/
 │       ├── example-app.cue
 │       └── postgres.cue
 ├── scripts/               # Deployment and validation scripts
-├── jenkins/               # Jenkins pipeline definitions
-├── example-env.cue        # Seed template (bootstrap only, not used at runtime)
+├── jenkins/               # Jenkins pipeline definitions and helpers
+├── seed-env.cue           # Seed template (bootstrap only, not used at runtime)
 ├── Jenkinsfile
 └── README.md
 ```
@@ -94,13 +94,13 @@ To promote from dev to stage (or stage to prod):
 
 The configuration hierarchy (lower layers override higher):
 
-### 1. Platform (`services/base/`, `services/core/`)
+### 1. Platform (`templates/base/`, `templates/core/`)
 Platform-wide defaults: security contexts, deployment strategies, resource templates.
 
-### 2. Resource Templates (`services/resources/`)
+### 2. Resource Templates (`templates/resources/`)
 Reusable templates that generate Kubernetes resources from `#AppConfig`.
 
-### 3. Application (`services/apps/`)
+### 3. Application (`templates/apps/`)
 Application-level settings that apply across all environments.
 
 ### 4. Environment (`env.cue` on each branch)
@@ -118,13 +118,13 @@ cue vet ./...
 
 ## Adding a New Application
 
-1. **Create application CUE file**: `services/apps/<app-name>.cue`
+1. **Create application CUE file**: `templates/apps/<app-name>.cue`
 
 ```cue
 package apps
 
 import (
-	core "deployments.local/k8s-deployments/services/core"
+	core "deployments.local/k8s-deployments/templates/core"
 )
 
 myApp: core.#App & {
