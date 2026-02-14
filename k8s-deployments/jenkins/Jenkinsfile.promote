@@ -4,7 +4,7 @@ import groovy.transform.Field
 
 def loadHelpers() {
     if (helpers == null) {
-        helpers = load 'Jenkinsfile.helpers.groovy'
+        helpers = load 'jenkins/helpers.groovy'
     }
     return helpers
 }
