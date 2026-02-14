@@ -5,12 +5,12 @@ set -euo pipefail
 # Usage: ./create-gitlab-mr.sh <source_branch> <target_branch> <title> <description>
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-GITLAB_API="${SCRIPT_DIR}/gitlab-api.sh"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+GITLAB_API="${SCRIPT_DIR}/../gitlab-api.sh"
 
 # Load preflight library and local config
-source "${SCRIPT_DIR}/lib/preflight.sh"
-preflight_load_local_env "$SCRIPT_DIR"
+source "${SCRIPT_DIR}/preflight.sh"
+preflight_load_local_env "$SCRIPT_DIR/.."
 
 # Preflight checks
 preflight_check_required GITLAB_URL_INTERNAL GITLAB_GROUP GITLAB_TOKEN

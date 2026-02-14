@@ -22,11 +22,11 @@ set -euo pipefail
 #   - Source env branch must be fetchable from origin
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Load preflight library
-source "${SCRIPT_DIR}/lib/preflight.sh"
-preflight_load_local_env "$SCRIPT_DIR"
+source "${SCRIPT_DIR}/preflight.sh"
+preflight_load_local_env "$SCRIPT_DIR/.."
 preflight_check_command "cue" "https://cuelang.org/docs/install/"
 preflight_check_command "jq" "https://stedolan.github.io/jq/download/"
 

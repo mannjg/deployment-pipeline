@@ -7,11 +7,11 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Load preflight library
-source "${SCRIPT_DIR}/lib/preflight.sh"
-preflight_load_local_env "$SCRIPT_DIR"
+source "${SCRIPT_DIR}/preflight.sh"
+preflight_load_local_env "$SCRIPT_DIR/.."
 
 # Check required commands
 preflight_check_command "cue" "https://cuelang.org/docs/install/"
