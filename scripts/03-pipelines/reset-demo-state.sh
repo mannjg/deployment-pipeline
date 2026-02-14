@@ -69,7 +69,7 @@ while [[ $# -gt 0 ]]; do
             echo "  CLUSTER_CONFIG      Path to cluster config file (required)"
             echo ""
             echo "Examples:"
-            echo "  CLUSTER_CONFIG=config/clusters/reference.env $0"
+            echo "  CLUSTER_CONFIG=config/clusters/alpha.env $0"
             echo "  $0 --branches dev         # Reset dev only"
             echo "  $0 --branches dev,stage   # Reset dev and stage"
             echo "  $0 --reset-example-app    # Reset all + clean example-app demo artifacts"

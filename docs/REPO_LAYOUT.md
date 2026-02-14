@@ -11,31 +11,27 @@ deployment-pipeline/
 │   ├── 03-pipelines/      # Pipeline and webhook setup
 │   ├── 04-operations/     # Operational CLIs and helper scripts
 │   ├── 05-quality/        # Convention/invariant checks and preflight scans
-│   ├── demo/              # End-to-end demo workflows
-│   ├── debug/             # Debugging helpers
-│   ├── lib/               # Shared script libraries
-│   ├── teardown/          # Tear-down helpers
-│   └── test/              # Local test harness scripts
-├── k8s/                   # Infrastructure manifests
+│   ├── demo/              # End-to-end demo workflows (use case tests)
+│   └── lib/               # Shared script libraries
+├── infrastructure/        # Infrastructure manifests
 │   ├── argocd/            # ArgoCD install and ingress
 │   ├── cert-manager/      # TLS certificate management
 │   ├── gitlab/            # GitLab deployment
 │   ├── jenkins/           # Jenkins Helm values and manifests
 │   │   └── agent/         # Custom Jenkins agent (Dockerfile, build script, CA cert)
-│   ├── cluster-config/    # Optional cluster-specific configs (e.g., kubeconfig)
 │   └── nexus/             # Nexus deployment
 ├── config/                # Centralized configuration
-│   └── clusters/          # Per-cluster configs (alpha.env, reference.env, etc.)
+│   └── clusters/          # Per-cluster configs (alpha.env, beta.env)
 ├── docs/                  # Documentation
 │   ├── ARCHITECTURE.md    # System design details
 │   ├── ENVIRONMENT_SETUP.md  # Environment branch setup
 │   ├── GIT_REMOTE_STRATEGY.md  # Full git workflow details
 │   ├── INDEX.md           # Documentation index
-│   ├── INVARIANTS.md      # Critical rules and ordering
 │   ├── OPERATIONS.md      # Operational commands and debugging
 │   ├── REPO_LAYOUT.md     # This file
 │   ├── STATUS.md          # Current state and service access
 │   ├── WORKFLOWS.md       # CI/CD workflow details
+│   ├── governance/        # Agent governance (beliefs, invariants, anti-patterns, sweep)
 │   └── archives/          # Historical docs (may be stale)
 └── CLAUDE.md              # Claude adapter (points to AGENTS.md)
 ```

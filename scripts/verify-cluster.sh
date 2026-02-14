@@ -55,7 +55,7 @@ Exit codes:
 
 Examples:
   $(basename "$0") config/clusters/alpha.env
-  $(basename "$0") config/clusters/reference.env
+  $(basename "$0") config/clusters/beta.env
 EOF
     exit 1
 }

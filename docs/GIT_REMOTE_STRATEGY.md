@@ -28,7 +28,7 @@ deployment-pipeline/              ← GitHub: mannjg/deployment-pipeline (full m
 │   └── scripts/
 ├── scripts/                      ← Not synced to GitLab
 ├── argocd/                       ← Not synced to GitLab
-├── k8s/                          ← Not synced to GitLab
+├── infrastructure/               ← Not synced to GitLab
 ├── config/                       ← Not synced to GitLab
 └── docs/                         ← Not synced to GitLab
 ```

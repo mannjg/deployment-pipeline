@@ -438,7 +438,7 @@ Basic monitoring via:
 1. **Git repositories**: Already distributed, backed up by cloning
 2. **Nexus artifacts**: PVC backup recommended
 3. **Jenkins configuration**: PVC backup or Configuration as Code
-4. **ArgoCD applications**: Stored in Git (k8s/argocd/)
+4. **ArgoCD applications**: Stored in Git (infrastructure/argocd/)
 
 ### Recovery Procedures
 

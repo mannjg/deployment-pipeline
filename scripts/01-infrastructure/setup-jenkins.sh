@@ -46,7 +46,7 @@ check_prerequisites() {
 
     # Check if custom agent image exists
     if ! docker images | grep -q "jenkins-agent-custom"; then
-        log_error "Custom Jenkins agent image not found. Please run: ./k8s/jenkins/agent/build-agent-image.sh"
+        log_error "Custom Jenkins agent image not found. Please run: ./infrastructure/jenkins/agent/build-agent-image.sh"
         exit 1
     fi
 
@@ -74,7 +74,7 @@ deploy_jenkins() {
             log_info "Upgrading Jenkins..."
             helm upgrade jenkins jenkins/jenkins \
                 -n "$JENKINS_NAMESPACE" \
-                -f "$PROJECT_ROOT/k8s/jenkins/values.yaml" \
+                -f "$PROJECT_ROOT/infrastructure/jenkins/values.yaml" \
                 --timeout=600s
         else
             log_info "Skipping deployment"
@@ -84,7 +84,7 @@ deploy_jenkins() {
         log_info "Installing Jenkins (this may take several minutes)..."
         helm install jenkins jenkins/jenkins \
             -n "$JENKINS_NAMESPACE" \
-            -f "$PROJECT_ROOT/k8s/jenkins/values.yaml" \
+            -f "$PROJECT_ROOT/infrastructure/jenkins/values.yaml" \
             --timeout=600s \
             --wait
     fi
@@ -116,9 +116,9 @@ get_admin_password() {
 
     if kubectl get secret -n "$JENKINS_NAMESPACE" jenkins &> /dev/null; then
         ADMIN_PASSWORD=$(kubectl get secret -n "$JENKINS_NAMESPACE" jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
-        echo "$ADMIN_PASSWORD" > "$PROJECT_ROOT/k8s/jenkins/admin-password.txt"
-        chmod 600 "$PROJECT_ROOT/k8s/jenkins/admin-password.txt"
-        log_info "Admin password saved to: $PROJECT_ROOT/k8s/jenkins/admin-password.txt"
+        echo "$ADMIN_PASSWORD" > "$PROJECT_ROOT/infrastructure/jenkins/admin-password.txt"
+        chmod 600 "$PROJECT_ROOT/infrastructure/jenkins/admin-password.txt"
+        log_info "Admin password saved to: $PROJECT_ROOT/infrastructure/jenkins/admin-password.txt"
     else
         log_warn "Admin password secret not found. It may be created later."
         log_info "You can retrieve it with:"
@@ -150,8 +150,8 @@ print_info() {
     echo ""
     echo "Default credentials:"
     echo "  Username: admin"
-    if [[ -f "$PROJECT_ROOT/k8s/jenkins/admin-password.txt" ]]; then
-        echo "  Password: $(cat $PROJECT_ROOT/k8s/jenkins/admin-password.txt)"
+    if [[ -f "$PROJECT_ROOT/infrastructure/jenkins/admin-password.txt" ]]; then
+        echo "  Password: $(cat $PROJECT_ROOT/infrastructure/jenkins/admin-password.txt)"
     else
         echo "  Password: Run the following to retrieve:"
         echo "    kubectl get secret -n $JENKINS_NAMESPACE jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d"

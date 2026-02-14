@@ -12,16 +12,16 @@ Reset strategy: `scripts/03-pipelines/reset-demo-state.sh` between smoke runs un
 
 Smoke run procedure (alpha + beta):
 1) Ensure alpha and beta are fully torn down:
-   - `scripts/teardown/teardown-all.sh <alpha-config>`
-   - `scripts/teardown/teardown-all.sh <beta-config>`
+   - `scripts/teardown.sh <alpha-config>`
+   - `scripts/teardown.sh <beta-config>`
 2) Bootstrap alpha: `scripts/bootstrap.sh <alpha-config>`
 3) Run smoke (or micro-smoke) on alpha:
    - Micro-smoke: `scripts/demo/demo-uc-e1-app-deployment.sh`
    - Smoke: `scripts/demo/run-all-demos.sh <alpha-config> UC-E1 UC-C1 UC-D2 UC-D3`
-4) Teardown alpha: `scripts/teardown/teardown-all.sh <alpha-config>`
+4) Teardown alpha: `scripts/teardown.sh <alpha-config>`
 5) Bootstrap beta: `scripts/bootstrap.sh <beta-config>`
 6) Run smoke (or micro-smoke) on beta (same commands as alpha, with beta config)
-7) Teardown beta: `scripts/teardown/teardown-all.sh <beta-config>`
+7) Teardown beta: `scripts/teardown.sh <beta-config>`
 
 When to run smoke:
 - After a cluster of low-risk refactors (e.g., JENKINS-30/31/35 done together).

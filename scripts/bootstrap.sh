@@ -299,7 +299,7 @@ provision_ca_to_certmanager() {
     # Check if cert-manager namespace exists
     if ! kubectl get namespace cert-manager &>/dev/null; then
         log_error "cert-manager namespace not found"
-        log_error "Install cert-manager first: kubectl apply -f k8s/cert-manager/cert-manager.yaml"
+        log_error "Install cert-manager first: kubectl apply -f infrastructure/cert-manager/cert-manager.yaml"
         return 1
     fi
 
@@ -346,23 +346,23 @@ apply_infrastructure_manifests() {
     # Apply in order of dependencies
 
     # GitLab
-    apply_manifest "$PROJECT_ROOT/k8s/gitlab/gitlab-lightweight.yaml" "GitLab"
+    apply_manifest "$PROJECT_ROOT/infrastructure/gitlab/gitlab-lightweight.yaml" "GitLab"
 
     # Jenkins (pipeline-config first, then main deployment)
-    if [[ -f "$PROJECT_ROOT/k8s/jenkins/pipeline-config.yaml" ]]; then
-        apply_manifest "$PROJECT_ROOT/k8s/jenkins/pipeline-config.yaml" "Jenkins Pipeline Config"
+    if [[ -f "$PROJECT_ROOT/infrastructure/jenkins/pipeline-config.yaml" ]]; then
+        apply_manifest "$PROJECT_ROOT/infrastructure/jenkins/pipeline-config.yaml" "Jenkins Pipeline Config"
     fi
-    apply_manifest "$PROJECT_ROOT/k8s/jenkins/jenkins-lightweight.yaml" "Jenkins"
+    apply_manifest "$PROJECT_ROOT/infrastructure/jenkins/jenkins-lightweight.yaml" "Jenkins"
 
     # Nexus (Maven repos only - container registry is shared DSO resource)
-    apply_manifest "$PROJECT_ROOT/k8s/nexus/nexus-lightweight.yaml" "Nexus"
+    apply_manifest "$PROJECT_ROOT/infrastructure/nexus/nexus-lightweight.yaml" "Nexus"
 
     # ArgoCD - use upstream manifest with namespace override
     log_info "Applying ArgoCD..."
     if ! kubectl apply -n "$ARGOCD_NAMESPACE" -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml 2>/dev/null; then
         log_warn "Upstream ArgoCD manifest failed, trying local copy..."
-        if [[ -f "$PROJECT_ROOT/k8s/argocd/install.yaml" ]]; then
-            kubectl apply -n "$ARGOCD_NAMESPACE" -f "$PROJECT_ROOT/k8s/argocd/install.yaml"
+        if [[ -f "$PROJECT_ROOT/infrastructure/argocd/install.yaml" ]]; then
+            kubectl apply -n "$ARGOCD_NAMESPACE" -f "$PROJECT_ROOT/infrastructure/argocd/install.yaml"
         else
             log_error "No ArgoCD manifest available"
             return 1
@@ -370,8 +370,8 @@ apply_infrastructure_manifests() {
     fi
 
     # ArgoCD Ingress
-    if [[ -f "$PROJECT_ROOT/k8s/argocd/ingress.yaml" ]]; then
-        apply_manifest "$PROJECT_ROOT/k8s/argocd/ingress.yaml" "ArgoCD Ingress"
+    if [[ -f "$PROJECT_ROOT/infrastructure/argocd/ingress.yaml" ]]; then
+        apply_manifest "$PROJECT_ROOT/infrastructure/argocd/ingress.yaml" "ArgoCD Ingress"
     fi
 
     log_info "Infrastructure manifests applied"
@@ -639,7 +639,7 @@ prompt_registry_credentials() {
 
 build_jenkins_agent_image() {
     log_info "Building Jenkins agent image..."
-    run_script_if_exists "$PROJECT_ROOT/k8s/jenkins/agent/build-agent-image.sh" "Jenkins agent image" "true"
+    run_script_if_exists "$PROJECT_ROOT/infrastructure/jenkins/agent/build-agent-image.sh" "Jenkins agent image" "true"
 }
 
 configure_nexus() {

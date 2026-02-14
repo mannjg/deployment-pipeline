@@ -42,7 +42,7 @@ kubectl delete namespace test-ns
 
 ### Storage Classes
 
-The default Jenkins Helm values use `microk8s-hostpath`. Update `k8s/jenkins/values.yaml` if your cluster uses a different storage class:
+The default Jenkins Helm values use `microk8s-hostpath`. Update `infrastructure/jenkins/values.yaml` if your cluster uses a different storage class:
 
 ```bash
 # List available storage classes

@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VERIFY_SCRIPT="$PROJECT_ROOT/scripts/05-quality/verify-conventions.sh"
-BELIEFS_FILE="$PROJECT_ROOT/docs/CORE_BELIEFS.md"
+BELIEFS_FILE="$PROJECT_ROOT/docs/governance/CORE_BELIEFS.md"
 
 issues=0
 tier1_count=0
@@ -62,7 +62,7 @@ run_convention_scan() {
 
 belief_quick_check() {
     if [[ ! -f "$BELIEFS_FILE" ]]; then
-        emit_issue "missing docs/CORE_BELIEFS.md (belief quick-check skipped)"
+        emit_issue "missing docs/governance/CORE_BELIEFS.md (belief quick-check skipped)"
         return
     fi
 
@@ -73,7 +73,7 @@ belief_quick_check() {
     done < "$BELIEFS_FILE"
 
     if [[ ${#recent_beliefs[@]} -eq 0 ]]; then
-        emit_issue "no beliefs found in docs/CORE_BELIEFS.md"
+        emit_issue "no beliefs found in docs/governance/CORE_BELIEFS.md"
         return
     fi
 

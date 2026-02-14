@@ -1,216 +1,119 @@
 # Kubernetes Deployments Repository
 
-This repository contains CUE-based Kubernetes deployment configurations for all applications in the CI/CD pipeline.
-
-## Status
-
-**CUE Integration**: ✅ Complete (Build #32 verified)
-- Dynamic manifest generation from CUE configuration
-- No Python dependencies (pure CUE + bash)
-- Integrated with Jenkins CI/CD pipeline
-- Auto-deployment via ArgoCD
+CUE-based Kubernetes deployment configurations for all applications in the CI/CD pipeline.
 
 ## Configuration
 
-See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for:
-- Required environment variables
-- Jenkins ConfigMap setup
-- Local development configuration
-- Branch naming conventions
+See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for required environment variables, Jenkins ConfigMap setup, and local development.
 
 ## Structure
 
 ```
 k8s-deployments/
 ├── cue.mod/               # CUE module definition
-│   └── module.cue         # Module: deployments.local/k8s-deployments
-├── k8s/                   # Kubernetes resource schemas (imported from upstream)
+├── k8s/                   # Base Kubernetes resource schemas
+│   ├── configmap.cue
 │   ├── deployment.cue
-│   ├── service.cue
-│   └── configmap.cue
+│   ├── pvc.cue
+│   ├── secret.cue
+│   └── service.cue
 ├── services/
-│   ├── base/              # Base schemas and defaults
+│   ├── base/              # Platform defaults and schema
 │   │   ├── schema.cue     # #AppConfig schema
-│   │   └── defaults.cue   # Default values for resources
-│   ├── resources/         # Resource templates (NEW)
+│   │   ├── defaults.cue   # Platform-wide defaults
+│   │   └── helpers.cue    # CUE helper functions
+│   ├── resources/         # Resource templates
 │   │   ├── deployment.cue # #DeploymentTemplate
 │   │   ├── service.cue    # #ServiceTemplate, #DebugServiceTemplate
-│   │   └── configmap.cue  # #ConfigMapTemplate
+│   │   ├── configmap.cue  # #ConfigMapTemplate
+│   │   ├── pvc.cue        # #PVCTemplate
+│   │   └── secret.cue     # #SecretTemplate
 │   ├── core/              # Core application templates
 │   │   └── app.cue        # #App template with resources_list
 │   └── apps/              # Application-specific configurations
-│       └── example-app.cue
-├── envs/                  # Environment-specific configurations
-│   ├── dev.cue            # Development environment
-│   ├── stage.cue          # Staging environment
-│   └── prod.cue           # Production environment
-├── manifests/             # Generated Kubernetes YAML manifests
-│   ├── dev/
-│   │   └── example-app.yaml
-│   ├── stage/
-│   └── prod/
-├── scripts/
-│   └── generate-manifests.sh  # Manifest generation using resources_list
+│       ├── example-app.cue
+│       └── postgres.cue
+├── scripts/               # Deployment and validation scripts
+├── jenkins/               # Jenkins pipeline definitions
+├── example-env.cue        # Seed template (bootstrap only, not used at runtime)
+├── Jenkinsfile
 └── README.md
-
 ```
+
+**Note:** `env.cue`, `envs/`, and `manifests/` directories exist only on environment branches in GitLab (dev/stage/prod), not on main.
 
 ## Git Branch Strategy
 
 This repository uses a **branch-per-environment** strategy:
 
+- `main` branch → Platform schemas, app definitions, seed template
 - `dev` branch → dev namespace → Auto-synced by ArgoCD
 - `stage` branch → stage namespace → Auto-synced by ArgoCD
 - `prod` branch → prod namespace → Auto-synced by ArgoCD
 
 ## Workflow
 
-### 1. Automatic Updates (CI/CD) - **NOW ACTIVE**
+### Automatic Updates (CI/CD)
 
 When code is merged to main in an application repository:
 
 1. **Jenkins builds and publishes Docker image**
    - Builds application with Maven/Quarkus
-   - Publishes to Nexus Docker registry (nexus.local:5000)
-   - Publishes Maven artifact to Nexus
+   - Publishes to container registry
 
 2. **Jenkins updates CUE configuration**
    - Clones k8s-deployments repository (dev branch)
-   - Updates `envs/dev.cue` with new image tag
+   - Updates image tag in `env.cue`
    - Runs `./scripts/generate-manifests.sh dev`
    - Commits and pushes to dev branch
 
 3. **Manifest generation** (scripts/generate-manifests.sh)
-   - Queries `resources_list` from CUE to discover resources
-   - Exports individual resources: `-e dev.exampleApp.resources.<resource>`
-   - CUE automatically formats with `---` separators
-   - Generates `manifests/dev/example-app.yaml`
+   - Queries `resources_list` from CUE to discover resources dynamically
+   - Exports each resource to YAML
+   - Generates `manifests/<env>/<app>.yaml`
 
 4. **ArgoCD auto-sync**
-   - Detects changes in dev branch
-   - Syncs to dev namespace
-   - Application updated automatically
+   - Detects changes on environment branch
+   - Syncs to target namespace
 
-5. **Promotion MR creation** (placeholder)
-   - Jenkins creates draft MR: dev → stage
-   - Ready for manual review and promotion
+5. **Promotion MR creation**
+   - Jenkins creates MR: dev → stage (or stage → prod)
+   - Merge triggers the same generate/sync cycle for the next environment
 
-### 2. Manual Promotion (Future)
+### Promotion
 
 To promote from dev to stage (or stage to prod):
 
 1. Review the MR showing the complete diff
-2. Undraft and merge the MR
-3. ArgoCD automatically syncs to target environment
-4. (Optional) Jenkins creates next promotion MR
+2. Merge the MR
+3. Jenkins regenerates manifests on the target branch
+4. ArgoCD automatically syncs to target environment
+5. Jenkins creates the next promotion MR
 
-## CUE Configuration
+## CUE Configuration Layers
 
-The configuration is split into layers for maximum reusability:
+The configuration hierarchy (lower layers override higher):
 
-### 1. Resource Templates (`services/resources/`)
+### 1. Platform (`services/base/`, `services/core/`)
+Platform-wide defaults: security contexts, deployment strategies, resource templates.
 
-Reusable templates for Kubernetes resources:
+### 2. Resource Templates (`services/resources/`)
+Reusable templates that generate Kubernetes resources from `#AppConfig`.
 
-- **deployment.cue**: `#DeploymentTemplate` - Generates Deployment resources
-- **service.cue**: `#ServiceTemplate`, `#DebugServiceTemplate` - Generates Services
-- **configmap.cue**: `#ConfigMapTemplate` - Generates ConfigMaps
+### 3. Application (`services/apps/`)
+Application-level settings that apply across all environments.
 
-### 2. Core Application Template (`services/core/app.cue`)
-
-The `#App` template:
-- Imports resource templates
-- Generates resources based on configuration
-- Defines `resources_list` for dynamic discovery
-- Example: `resources_list: ["configmap", "debugService", "deployment", "service"]`
-
-### 3. Application Configuration (`services/apps/example-app.cue`)
-
-Defines application-level settings that apply across all environments:
-- Application name
-- App-level environment variables
-- Default configuration
-- Example: Quarkus-specific env vars
-
-### 4. Environment Configuration (`envs/*.cue`)
-
-Defines environment-specific overrides:
-- Namespace
-- Docker image tag (updated by Jenkins)
-- Replica count
-- Resource limits
-- Environment-specific variables
-- Debug mode settings
+### 4. Environment (`env.cue` on each branch)
+Environment-specific overrides: namespace, image tag, replicas, resource limits.
 
 ## Generating Manifests
 
-### How Manifest Generation Works
-
-The `generate-manifests.sh` script uses CUE's `resources_list` field for dynamic resource discovery:
-
-1. **Query resources_list**: `cue export ./envs/dev.cue -e "dev.exampleApp.resources_list" --out json`
-   - Returns: `["debugService", "deployment", "service"]`
-
-2. **Build export flags**: `-e dev.exampleApp.resources.debugService -e dev.exampleApp.resources.deployment -e dev.exampleApp.resources.service`
-
-3. **CUE exports resources**: `cue export ./envs/dev.cue <flags> --out yaml`
-   - CUE automatically adds `---` separators between resources
-   - No Python post-processing needed!
-
-4. **Output**: Valid Kubernetes YAML ready for ArgoCD
-
-### Manually Generate Manifests
-
 ```bash
-# Generate for dev
+# Generate for an environment
 ./scripts/generate-manifests.sh dev
 
-# Generate for stage
-./scripts/generate-manifests.sh stage
-
-# Generate for prod
-./scripts/generate-manifests.sh prod
-```
-
-### Validate CUE Configuration
-
-```bash
-# Validate all configurations
+# Validate CUE configuration
 cue vet ./...
-
-# Export dev configuration
-cue export ./envs/dev.cue --path dev
-
-# Show specific resource
-cue export ./envs/dev.cue -e dev.exampleApp.resources.deployment
-
-# Show diff between environments
-diff <(cue export ./envs/dev.cue --path dev) <(cue export ./envs/stage.cue --path stage)
-```
-
-## ArgoCD Applications
-
-Each environment has its own ArgoCD Application:
-
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: example-app-dev
-  namespace: argocd
-spec:
-  project: default
-  source:
-    repoURL: http://gitlab.local/root/k8s-deployments.git
-    targetRevision: dev
-    path: manifests/dev
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: dev
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
 ```
 
 ## Adding a New Application
@@ -231,70 +134,23 @@ myApp: core.#App & {
 }
 ```
 
-2. **Add to environment files**: Update `envs/dev.cue`, `envs/stage.cue`, `envs/prod.cue`
+2. **Add to environment `env.cue`** on each branch with environment-specific overrides.
 
-```cue
-dev: myApp: apps.myApp & {
-	appConfig: {
-		namespace: "dev"
-		deployment: {
-			image: "nexus.local:5000/my-app:latest"
-			replicas: 1
-			...
-		}
-	}
-}
-```
+3. **Generate manifests**: `./scripts/generate-manifests.sh <env>`
 
-3. **Generate manifests**:
-
-```bash
-./scripts/generate-manifests.sh dev
-```
-
-4. **Commit and push**:
-
-```bash
-git add .
-git commit -m "Add my-app configuration"
-git push origin dev
-```
-
-5. **Create ArgoCD Application** (see docs)
+4. **Create ArgoCD Application** for the new app in each environment.
 
 ## Troubleshooting
 
-### CUE Validation Errors
-
 ```bash
-# Check for errors
+# Validate CUE
 cue vet ./...
 
 # Format CUE files
 cue fmt ./...
-```
 
-### Manifest Generation Fails
-
-```bash
-# Verbose CUE export
-cue export -v ./envs/dev.cue --path dev
-
-# Check specific app
-cue export ./services/apps/example-app.cue
-```
-
-### ArgoCD Sync Issues
-
-```bash
-# Check ArgoCD status
-argocd app get example-app-dev
-
-# Manual sync
-argocd app sync example-app-dev
-
-# View diff
-argocd app diff example-app-dev
+# Verbose export for debugging
+cue export -v ./... --out yaml
 ```
 
 ## Resources
@@ -302,9 +158,3 @@ argocd app diff example-app-dev
 - [CUE Language Documentation](https://cuelang.org/docs/)
 - [ArgoCD Documentation](https://argo-cd.readthedocs.io/)
 - [Kubernetes Documentation](https://kubernetes.io/docs/)
-
-## License
-
-Example deployment repository for CI/CD pipeline demonstration.
-# Webhook test
-# Webhook test 2

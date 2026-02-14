@@ -11,27 +11,37 @@ Each `.env` file defines a complete cluster configuration including:
 - Storage class configuration
 - Repository paths and URLs
 
+## Deployment Topologies
+
+The configs represent two distinct deployment topologies:
+
+**Multi-namespace** (`alpha.env`): Each infrastructure component gets its own namespace (`gitlab-alpha`, `jenkins-alpha`, `nexus-alpha`, `argocd-alpha`), plus separate environment namespaces (`dev-alpha`, `stage-alpha`, `prod-alpha`). Best for isolation and resource visibility.
+
+**Single-namespace** (`beta.env`): All infrastructure components share one namespace (`infra-beta`), with separate environment namespaces (`dev-beta`, `stage-beta`, `prod-beta`). Simpler to manage, fewer namespaces to create.
+
+Both topologies use separate namespaces for dev/stage/prod environments.
+
 ## Usage
 
 **All scripts require a config file as the first argument:**
 
 ```bash
-# Example: Deploy infrastructure to the alpha cluster
-./scripts/01-infrastructure/deploy-all.sh config/clusters/alpha.env
+# Bootstrap a cluster
+./scripts/bootstrap.sh config/clusters/alpha.env
 
-# Example: Run demo on the reference cluster
-./scripts/05-demos/demo-uc-e1-app-deployment.sh config/clusters/reference.env
+# Run demos
+./scripts/demo/run-all-demos.sh config/clusters/alpha.env
 
-# Example: Reset demo state
+# Reset demo state
 ./scripts/03-pipelines/reset-demo-state.sh config/clusters/alpha.env
 ```
 
 ## Available Configurations
 
-| File | Cluster | Protected | Description |
-|------|---------|-----------|-------------|
-| `reference.env` | reference | Yes | Current production cluster - protected from teardown |
-| `alpha.env` | alpha | No | Test cluster template with -alpha suffix naming |
+| File | Cluster | Topology | Protected | Description |
+|------|---------|----------|-----------|-------------|
+| `alpha.env` | alpha | Multi-namespace | No | Separate namespace per component with `-alpha` suffix |
+| `beta.env` | beta | Single-namespace | No | Shared `infra-beta` namespace for all infrastructure |
 
 ## Creating a New Cluster Configuration
 
@@ -48,9 +58,9 @@ Each `.env` file defines a complete cluster configuration including:
 
 3. Add DNS entries for the new hostnames (or update /etc/hosts)
 
-4. Run infrastructure deployment:
+4. Run bootstrap:
    ```bash
-   ./scripts/01-infrastructure/deploy-all.sh config/clusters/mycluster.env
+   ./scripts/bootstrap.sh config/clusters/mycluster.env
    ```
 
 ## Configuration Variables
@@ -91,7 +101,6 @@ Each `.env` file defines a complete cluster configuration including:
 The `PROTECTED` variable prevents accidental teardown of important clusters:
 
 ```bash
-# In reference.env
 PROTECTED="true"
 
 # Teardown script behavior:
@@ -105,4 +114,3 @@ Set `PROTECTED="true"` for any cluster that:
 - Contains important data
 - Serves production traffic
 - Should not be accidentally destroyed
-

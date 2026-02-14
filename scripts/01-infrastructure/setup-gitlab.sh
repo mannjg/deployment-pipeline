@@ -67,7 +67,7 @@ deploy_gitlab() {
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
                 log_info "Deleting existing GitLab deployment..."
-                kubectl delete -f "$PROJECT_ROOT/k8s/gitlab/gitlab-lightweight.yaml" || true
+                kubectl delete -f "$PROJECT_ROOT/infrastructure/gitlab/gitlab-lightweight.yaml" || true
                 sleep 10
             else
                 log_info "Skipping deployment"
@@ -76,7 +76,7 @@ deploy_gitlab() {
         fi
 
         log_info "Deploying GitLab (this may take several minutes)..."
-        kubectl apply -f "$PROJECT_ROOT/k8s/gitlab/gitlab-lightweight.yaml"
+        kubectl apply -f "$PROJECT_ROOT/infrastructure/gitlab/gitlab-lightweight.yaml"
     else
         # Use Helm deployment
         log_info "Using Helm-based GitLab deployment"
@@ -89,7 +89,7 @@ deploy_gitlab() {
                 log_info "Upgrading GitLab..."
                 helm upgrade gitlab gitlab/gitlab \
                     -n "$GITLAB_NAMESPACE" \
-                    -f "$PROJECT_ROOT/k8s/gitlab/values.yaml" \
+                    -f "$PROJECT_ROOT/infrastructure/gitlab/values.yaml" \
                     --timeout=600s
             else
                 log_info "Skipping deployment"
@@ -99,7 +99,7 @@ deploy_gitlab() {
             log_info "Installing GitLab (this may take several minutes)..."
             helm install gitlab gitlab/gitlab \
                 -n "$GITLAB_NAMESPACE" \
-                -f "$PROJECT_ROOT/k8s/gitlab/values.yaml" \
+                -f "$PROJECT_ROOT/infrastructure/gitlab/values.yaml" \
                 --timeout=600s \
                 --wait
         fi
@@ -189,8 +189,8 @@ get_root_password() {
     if [[ "$USE_LIGHTWEIGHT" == "true" ]]; then
         # For lightweight deployment, password is set in the manifest
         log_info "Using default password from lightweight deployment"
-        echo "changeme123" > "$PROJECT_ROOT/k8s/gitlab/root-password.txt"
-        chmod 600 "$PROJECT_ROOT/k8s/gitlab/root-password.txt"
+        echo "changeme123" > "$PROJECT_ROOT/infrastructure/gitlab/root-password.txt"
+        chmod 600 "$PROJECT_ROOT/infrastructure/gitlab/root-password.txt"
         log_warn "Initial password is: changeme123"
         log_warn "Please change this after first login!"
     else
@@ -199,9 +199,9 @@ get_root_password() {
 
         if kubectl get secret -n "$GITLAB_NAMESPACE" gitlab-gitlab-initial-root-password &> /dev/null; then
             ROOT_PASSWORD=$(kubectl get secret -n "$GITLAB_NAMESPACE" gitlab-gitlab-initial-root-password -o jsonpath='{.data.password}' | base64 -d)
-            echo "$ROOT_PASSWORD" > "$PROJECT_ROOT/k8s/gitlab/root-password.txt"
-            chmod 600 "$PROJECT_ROOT/k8s/gitlab/root-password.txt"
-            log_info "Root password saved to: $PROJECT_ROOT/k8s/gitlab/root-password.txt"
+            echo "$ROOT_PASSWORD" > "$PROJECT_ROOT/infrastructure/gitlab/root-password.txt"
+            chmod 600 "$PROJECT_ROOT/infrastructure/gitlab/root-password.txt"
+            log_info "Root password saved to: $PROJECT_ROOT/infrastructure/gitlab/root-password.txt"
         else
             log_warn "Root password secret not found. It may be created later."
         fi
@@ -219,10 +219,10 @@ print_info() {
     echo ""
     echo "Default credentials:"
     echo "  Username: root"
-    if [[ -f "$PROJECT_ROOT/k8s/gitlab/root-password.txt" ]]; then
-        echo "  Password: $(cat $PROJECT_ROOT/k8s/gitlab/root-password.txt)"
+    if [[ -f "$PROJECT_ROOT/infrastructure/gitlab/root-password.txt" ]]; then
+        echo "  Password: $(cat $PROJECT_ROOT/infrastructure/gitlab/root-password.txt)"
     else
-        echo "  Password: Check $PROJECT_ROOT/k8s/gitlab/root-password.txt (will be created)"
+        echo "  Password: Check $PROJECT_ROOT/infrastructure/gitlab/root-password.txt (will be created)"
         echo "  Or run: kubectl get secret -n $GITLAB_NAMESPACE gitlab-gitlab-initial-root-password -o jsonpath='{.data.password}' | base64 -d"
     fi
     echo ""

@@ -11,7 +11,7 @@ Purpose: Run periodic deep drift detection, belief maintenance, and doc freshnes
 ## Sweep steps
 1. Run the mechanical checks (all tiers, strict mode).
 2. Run the convention consistency scan (patterns used by the majority, flag outliers).
-3. Run belief coverage analysis (each belief in `docs/CORE_BELIEFS.md` must be traceable to the codebase).
+3. Run belief coverage analysis (each belief in `docs/governance/CORE_BELIEFS.md` must be traceable to the codebase).
 4. Run belief gap analysis (identify patterns without a matching belief; propose candidates).
 5. Run doc freshness check against `docs/INDEX.md`.
 6. Produce a sweep report with violations found, fixes applied, belief updates proposed, and stale docs.

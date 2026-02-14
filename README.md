@@ -12,7 +12,7 @@ Local GitOps CI/CD pipeline demonstration using Jenkins, GitLab, ArgoCD, and Nex
 
 - `example-app/` - Sample Quarkus application
 - `k8s-deployments/` - CUE-based Kubernetes configurations
-- `k8s/` - Infrastructure manifests (GitLab, Jenkins, Nexus, ArgoCD)
+- `infrastructure/` - Infrastructure manifests (GitLab, Jenkins, Nexus, ArgoCD)
 - `scripts/` - Setup and helper scripts
 - `docs/` - Documentation
 

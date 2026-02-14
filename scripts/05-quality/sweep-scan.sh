@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VERIFY_SCRIPT="$PROJECT_ROOT/scripts/05-quality/verify-conventions.sh"
-BELIEFS_FILE="$PROJECT_ROOT/docs/CORE_BELIEFS.md"
+BELIEFS_FILE="$PROJECT_ROOT/docs/governance/CORE_BELIEFS.md"
 DOC_INDEX="$PROJECT_ROOT/docs/INDEX.md"
 
 # shellcheck source=../lib/logging.sh
@@ -159,7 +159,7 @@ run_belief_coverage() {
     report_section "Belief Coverage"
 
     if [[ ! -f "$BELIEFS_FILE" ]]; then
-        record_belief "docs/CORE_BELIEFS.md" "FAIL" "Missing CORE_BELIEFS.md"
+        record_belief "docs/governance/CORE_BELIEFS.md" "FAIL" "Missing CORE_BELIEFS.md"
         return
     fi
 

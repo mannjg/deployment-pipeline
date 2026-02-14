@@ -81,7 +81,7 @@ Arguments:
 Examples:
   $(basename "$0") pause config/clusters/alpha.env
   $(basename "$0") resume config/clusters/alpha.env
-  $(basename "$0") status config/clusters/reference.env
+  $(basename "$0") status config/clusters/beta.env
 
 Notes:
   - The pause command provides defense against accidentally using the wrong cluster

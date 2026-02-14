@@ -216,13 +216,13 @@ create_namespaces() {
 save_kubeconfig() {
     log_info "Saving kubeconfig for external tools..."
 
-    mkdir -p "$PROJECT_ROOT/k8s/microk8s"
+    mkdir -p "$PROJECT_ROOT/infrastructure/microk8s"
 
     # Export kubeconfig
-    microk8s config > "$PROJECT_ROOT/k8s/microk8s/kubeconfig"
+    microk8s config > "$PROJECT_ROOT/infrastructure/microk8s/kubeconfig"
 
-    log_info "Kubeconfig saved to: $PROJECT_ROOT/k8s/microk8s/kubeconfig"
-    log_info "To use with kubectl: export KUBECONFIG=$PROJECT_ROOT/k8s/microk8s/kubeconfig"
+    log_info "Kubeconfig saved to: $PROJECT_ROOT/infrastructure/microk8s/kubeconfig"
+    log_info "To use with kubectl: export KUBECONFIG=$PROJECT_ROOT/infrastructure/microk8s/kubeconfig"
 }
 
 print_summary() {

@@ -81,36 +81,36 @@ if ssh "$REMOTE_USER@$REMOTE_HOST" "kubectl get namespace cert-manager" &>/dev/n
         echo "cert-manager already running, skipping..."
     else
         echo "Applying cert-manager..."
-        scp "$PROJECT_DIR/k8s/cert-manager/cert-manager.yaml" "$REMOTE_USER@$REMOTE_HOST:/tmp/"
+        scp "$PROJECT_DIR/infrastructure/cert-manager/cert-manager.yaml" "$REMOTE_USER@$REMOTE_HOST:/tmp/"
         ssh "$REMOTE_USER@$REMOTE_HOST" "kubectl apply -f /tmp/cert-manager.yaml"
         wait_for_pods "cert-manager" "app.kubernetes.io/instance=cert-manager" 120
     fi
 else
     echo "Applying cert-manager..."
-    scp "$PROJECT_DIR/k8s/cert-manager/cert-manager.yaml" "$REMOTE_USER@$REMOTE_HOST:/tmp/"
+    scp "$PROJECT_DIR/infrastructure/cert-manager/cert-manager.yaml" "$REMOTE_USER@$REMOTE_HOST:/tmp/"
     ssh "$REMOTE_USER@$REMOTE_HOST" "kubectl apply -f /tmp/cert-manager.yaml"
     wait_for_pods "cert-manager" "app.kubernetes.io/instance=cert-manager" 120
 fi
 
 # Apply cluster issuers
 echo "Applying ClusterIssuers..."
-apply_manifest "$PROJECT_DIR/k8s/cert-manager/cluster-issuer.yaml" "ClusterIssuers"
+apply_manifest "$PROJECT_DIR/infrastructure/cert-manager/cluster-issuer.yaml" "ClusterIssuers"
 
 # 2. GitLab
 echo ""
 echo "=== Step 2: GitLab ==="
-apply_manifest "$PROJECT_DIR/k8s/gitlab/gitlab-lightweight.yaml" "GitLab"
+apply_manifest "$PROJECT_DIR/infrastructure/gitlab/gitlab-lightweight.yaml" "GitLab"
 echo "GitLab deployment started (takes 3-5 minutes to be ready)"
 
 # 3. Nexus
 echo ""
 echo "=== Step 3: Nexus ==="
-apply_manifest "$PROJECT_DIR/k8s/nexus/nexus-lightweight.yaml" "Nexus"
+apply_manifest "$PROJECT_DIR/infrastructure/nexus/nexus-lightweight.yaml" "Nexus"
 
 # 4. Jenkins
 echo ""
 echo "=== Step 4: Jenkins ==="
-apply_manifest "$PROJECT_DIR/k8s/jenkins/jenkins-lightweight.yaml" "Jenkins"
+apply_manifest "$PROJECT_DIR/infrastructure/jenkins/jenkins-lightweight.yaml" "Jenkins"
 
 # 5. ArgoCD
 echo ""
@@ -124,12 +124,12 @@ ssh "$REMOTE_USER@$REMOTE_HOST" \
     "kubectl apply -n $ARGOCD_NAMESPACE -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml" || {
     # If upstream fails, try local copy
     echo "Upstream failed, trying local copy..."
-    if [[ -f "$PROJECT_DIR/k8s/argocd/install.yaml" ]]; then
-        scp "$PROJECT_DIR/k8s/argocd/install.yaml" "$REMOTE_USER@$REMOTE_HOST:/tmp/"
+    if [[ -f "$PROJECT_DIR/infrastructure/argocd/install.yaml" ]]; then
+        scp "$PROJECT_DIR/infrastructure/argocd/install.yaml" "$REMOTE_USER@$REMOTE_HOST:/tmp/"
         ssh "$REMOTE_USER@$REMOTE_HOST" "kubectl apply -n $ARGOCD_NAMESPACE -f /tmp/install.yaml"
     fi
 }
-apply_manifest "$PROJECT_DIR/k8s/argocd/ingress.yaml" "ArgoCD Ingress"
+apply_manifest "$PROJECT_DIR/infrastructure/argocd/ingress.yaml" "ArgoCD Ingress"
 
 echo ""
 echo "=== Deployment Complete ==="
