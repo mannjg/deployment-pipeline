@@ -34,7 +34,7 @@ export GITLAB_GROUP
 export GITLAB_TOKEN
 export PROMOTED_IMAGE_TAG_FILE="${WORKSPACE}/promoted-image-tag"
 
-bash ./scripts/promote-artifact.sh \
+bash ./scripts/lib/promote-artifact.sh \
     --source-env "${SOURCE_ENV}" \
     --target-env "${TARGET_ENV}" \
     --app-name "${APP_NAME}" \

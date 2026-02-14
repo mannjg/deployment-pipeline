@@ -49,7 +49,7 @@ if [[ -n "${NEW_IMAGE_TAG}" ]]; then
     echo "Promoting with image override: ${NEW_IMAGE}"
 fi
 
-./scripts/promote-app-config.sh ${IMAGE_OVERRIDE_FLAG} "${SOURCE_ENV}" "${TARGET_ENV}" || {
+./scripts/lib/promote-app-config.sh ${IMAGE_OVERRIDE_FLAG} "${SOURCE_ENV}" "${TARGET_ENV}" || {
     echo "ERROR: App config promotion failed"
     exit 1
 }
@@ -82,7 +82,7 @@ git push -u origin "${PROMOTION_BRANCH}"
 # Create MR using GitLab API
 export GITLAB_URL_INTERNAL="${GITLAB_URL}"
 
-./scripts/create-gitlab-mr.sh \
+./scripts/lib/create-gitlab-mr.sh \
     "${PROMOTION_BRANCH}" \
     "${TARGET_ENV}" \
     "Promote ${SOURCE_ENV} to ${TARGET_ENV}" \

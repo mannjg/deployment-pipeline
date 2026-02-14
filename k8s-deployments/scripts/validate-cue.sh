@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ -x "./scripts/validate-cue-config.sh" ]; then
-    ./scripts/validate-cue-config.sh || {
+if [ -x "./scripts/lib/validate-cue-config.sh" ]; then
+    ./scripts/lib/validate-cue-config.sh || {
         echo "CUE validation failed"
         exit 1
     }

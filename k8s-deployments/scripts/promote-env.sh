@@ -41,7 +41,7 @@ echo "Feature branch: ${FEATURE_BRANCH}"
 echo ""
 
 # Update the image in target environment's env.cue
-./scripts/update-app-image.sh "${TARGET_ENV}" "${APP_NAME}" "${PROMOTE_FULL_IMAGE}"
+./scripts/lib/update-app-image.sh "${TARGET_ENV}" "${APP_NAME}" "${PROMOTE_FULL_IMAGE}"
 echo "[${TARGET_ENV^^}] Updated ${APP_NAME} image in env.cue"
 
 # Regenerate Kubernetes manifests for target environment
@@ -72,7 +72,7 @@ git push -u origin "${FEATURE_BRANCH}"
 # Create MR using GitLab API
 export GITLAB_URL_INTERNAL="${GITLAB_URL}"
 
-./scripts/create-gitlab-mr.sh \
+./scripts/lib/create-gitlab-mr.sh \
     "${FEATURE_BRANCH}" \
     "${TARGET_ENV}" \
     "Promote ${APP_NAME} to ${TARGET_ENV}: ${PROMOTE_IMAGE_TAG}" \
