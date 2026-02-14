@@ -121,7 +121,7 @@ If migrating from older variable names:
 
 ## Configuration Schema
 
-The full configuration contract is defined in `config/configmap.schema.yaml`.
+The full configuration contract is defined in `config/configmap.contract.yaml`.
 
 ## Related Documentation
 

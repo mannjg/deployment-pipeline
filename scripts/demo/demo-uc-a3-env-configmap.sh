@@ -314,9 +314,9 @@ cat << EOF
   - No manual manifest editing required
 
   CUE Layering Validated:
-    Platform (services/core/) -> defaults
+    Platform (templates/core/) -> defaults
         |
-    App (services/apps/) -> app-wide config
+    App (templates/apps/) -> app-wide config
         |
     Environment (env.cue on $TARGET_ENV) -> env-specific override
                                             (STAYS HERE)

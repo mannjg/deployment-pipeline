@@ -343,9 +343,9 @@ cat << EOF
   - No manual kubectl scaling required
 
   CUE Layering Validated:
-    Platform (services/core/) -> defaults
+    Platform (templates/core/) -> defaults
         |
-    App (services/apps/) -> app-wide config
+    App (templates/apps/) -> app-wide config
         |
     Environment (env.cue on $TARGET_ENV) -> replicas: $NEW_REPLICAS
                                             (STAYS HERE)

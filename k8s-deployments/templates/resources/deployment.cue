@@ -5,8 +5,8 @@ package resources
 import (
 	"list"
 
-	"deployments.local/k8s-deployments/k8s"
-	base "deployments.local/k8s-deployments/services/base"
+	"deployments.local/k8s-deployments/schemas:k8s"
+	base "deployments.local/k8s-deployments/templates/base"
 )
 
 // _projectedSecretsVolumeBuilder builds a projected secrets volume with configurable items.

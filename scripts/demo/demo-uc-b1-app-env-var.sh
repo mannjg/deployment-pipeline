@@ -8,12 +8,12 @@
 # "As an app team, we need a new FEATURE_FLAGS env var in all environments"
 #
 # What This Demonstrates:
-# - Changes to services/apps/example-app.cue flow through promotion chain
+# - Changes to templates/apps/example-app.cue flow through promotion chain
 # - The appEnvVars array in CUE correctly generates container env vars
 # - All environments (dev/stage/prod) receive the same app-level configuration
 #
 # Flow:
-#   1. Add FEATURE_FLAGS env var to services/apps/example-app.cue
+#   1. Add FEATURE_FLAGS env var to templates/apps/example-app.cue
 #   2. Create MR: feature → dev
 #   3. Promote through dev → stage → prod
 #   4. Verify all envs have FEATURE_FLAGS
@@ -42,7 +42,7 @@ DEMO_ENV_VAR_NAME="FEATURE_FLAGS"
 DEMO_ENV_VAR_VALUE="dark-mode,new-checkout"
 DEMO_APP="example-app"
 DEMO_APP_CUE="exampleApp"  # CUE identifier
-APP_CUE_PATH="services/apps/example-app.cue"
+APP_CUE_PATH="templates/apps/example-app.cue"
 ENVIRONMENTS=("dev" "stage" "prod")
 
 # ============================================================================
@@ -300,7 +300,7 @@ cat << EOF
   This demo validated UC-B1: Add App Environment Variable
 
   What happened:
-  1. Added '$DEMO_ENV_VAR_NAME: $DEMO_ENV_VAR_VALUE' to services/apps/example-app.cue
+  1. Added '$DEMO_ENV_VAR_NAME: $DEMO_ENV_VAR_VALUE' to templates/apps/example-app.cue
   2. Promoted through all environments using GitOps pattern:
      - Feature branch → dev: Manual MR (pipeline generates manifests)
      - dev → stage: Jenkins auto-created promotion MR
@@ -313,7 +313,7 @@ cat << EOF
   - Single change automatically flows through the entire promotion chain
 
   CUE Hierarchy Validated:
-    App (services/apps/example-app.cue) → appEnvVars array
+    App (templates/apps/example-app.cue) → appEnvVars array
         ↓
     All Environments (dev, stage, prod) → same env var in deployment
 

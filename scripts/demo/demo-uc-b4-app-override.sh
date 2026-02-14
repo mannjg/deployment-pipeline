@@ -16,7 +16,7 @@
 #
 # Flow:
 # Phase 1: Add App-Level Default (propagates to all envs)
-#   1. Add cache-ttl=300 to services/apps/example-app.cue
+#   1. Add cache-ttl=300 to templates/apps/example-app.cue
 #   2. Create MR: feature → dev
 #   3. Promote through dev → stage → prod
 #   4. Verify all envs have cache-ttl=300
@@ -27,9 +27,9 @@
 #   7. Verify dev/stage have 300, prod has 600
 #
 # CUE Override Hierarchy:
-#   Platform (services/base/, services/core/)
+#   Platform (templates/base/, templates/core/)
 #     ↓
-#   App (services/apps/*.cue)  ← Phase 1 adds here
+#   App (templates/apps/*.cue)  ← Phase 1 adds here
 #     ↓
 #   Env (env.cue per branch)   ← Phase 2 overrides here (WINS)
 #
@@ -139,11 +139,11 @@ demo_verify "Baseline confirmed: '$DEMO_KEY' absent from all environments"
 
 demo_step 3 "PHASE 1: Add App-Level Default"
 
-demo_info "Adding '$DEMO_KEY: $APP_DEFAULT_VALUE' to services/apps/example-app.cue"
+demo_info "Adding '$DEMO_KEY: $APP_DEFAULT_VALUE' to templates/apps/example-app.cue"
 demo_info "This will propagate to ALL environments (dev, stage, prod)"
 
 # Edit LOCAL file directly (same pattern as UC-C1)
-APP_CUE_PATH="services/apps/example-app.cue"
+APP_CUE_PATH="templates/apps/example-app.cue"
 
 # Check if entry already exists
 if grep -q "\"$DEMO_KEY\"" "$APP_CUE_PATH"; then
@@ -462,7 +462,7 @@ cat << EOF
   What happened:
 
   PHASE 1: App-Level Default
-  1. Added '$DEMO_KEY: $APP_DEFAULT_VALUE' to services/apps/example-app.cue
+  1. Added '$DEMO_KEY: $APP_DEFAULT_VALUE' to templates/apps/example-app.cue
   2. Promoted through all environments using GitOps pattern:
      - Feature branch → dev: Manual MR (pipeline generates manifests)
      - dev → stage: Jenkins auto-created promotion MR
@@ -482,7 +482,7 @@ cat << EOF
   - All changes go through MR with pipeline validation (GitOps)
 
   CUE Override Hierarchy Validated:
-    App (services/apps/example-app.cue) → sets default ($APP_DEFAULT_VALUE)
+    App (templates/apps/example-app.cue) → sets default ($APP_DEFAULT_VALUE)
         |
     Environment (env.cue on prod) → overrides for prod only ($PROD_OVERRIDE_VALUE)
 

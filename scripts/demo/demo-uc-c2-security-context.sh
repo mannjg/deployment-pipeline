@@ -8,7 +8,7 @@
 # "As a security team, we require all pods to run as non-root"
 #
 # What This Demonstrates:
-# - Changes to services/base/defaults.cue propagate to ALL apps in ALL environments
+# - Changes to templates/base/defaults.cue propagate to ALL apps in ALL environments
 # - Security contexts are enforced at the pod level
 # - Pipeline generates manifests with security context included
 # - Promotion preserves the security requirement across environments
@@ -95,21 +95,21 @@ fi
 
 demo_step 2 "Enable Pod Security Context in Base Layer"
 
-demo_info "Enabling 'runAsNonRoot: true' in services/base/defaults.cue"
+demo_info "Enabling 'runAsNonRoot: true' in templates/base/defaults.cue"
 
 # Check current state
-if grep -q "runAsNonRoot: true" services/base/defaults.cue 2>/dev/null && \
-   ! grep -q "// runAsNonRoot: true" services/base/defaults.cue 2>/dev/null; then
+if grep -q "runAsNonRoot: true" templates/base/defaults.cue 2>/dev/null && \
+   ! grep -q "// runAsNonRoot: true" templates/base/defaults.cue 2>/dev/null; then
     demo_warn "runAsNonRoot: true already enabled"
     demo_info "This demo will verify the current state"
 fi
 
 # Enable runAsNonRoot in #DefaultPodSecurityContext
 # Change: "// runAsNonRoot: true" -> "runAsNonRoot: true"
-sed -i 's|// runAsNonRoot: true|runAsNonRoot: true|' services/base/defaults.cue
+sed -i 's|// runAsNonRoot: true|runAsNonRoot: true|' templates/base/defaults.cue
 
 # Verify the change was made
-if grep -q "^[[:space:]]*runAsNonRoot: true" services/base/defaults.cue; then
+if grep -q "^[[:space:]]*runAsNonRoot: true" templates/base/defaults.cue; then
     demo_verify "Enabled runAsNonRoot: true in #DefaultPodSecurityContext"
 else
     demo_fail "Failed to enable runAsNonRoot in defaults.cue"
@@ -125,8 +125,8 @@ else
     exit 1
 fi
 
-demo_action "Changed section in services/base/defaults.cue:"
-grep -A5 "#DefaultPodSecurityContext" services/base/defaults.cue | head -8 | sed 's/^/    /'
+demo_action "Changed section in templates/base/defaults.cue:"
+grep -A5 "#DefaultPodSecurityContext" templates/base/defaults.cue | head -8 | sed 's/^/    /'
 
 # ---------------------------------------------------------------------------
 # Step 3: Push CUE Change via GitLab API
@@ -146,7 +146,7 @@ demo_action "Creating branch '$FEATURE_BRANCH' from dev in GitLab..."
 }
 
 demo_action "Pushing CUE change to GitLab..."
-cat services/base/defaults.cue | "$GITLAB_CLI" file update p2c/k8s-deployments services/base/defaults.cue \
+cat templates/base/defaults.cue | "$GITLAB_CLI" file update p2c/k8s-deployments templates/base/defaults.cue \
     --ref "$FEATURE_BRANCH" \
     --message "feat: enable runAsNonRoot security context (UC-C2)" \
     --stdin >/dev/null || {
@@ -156,7 +156,7 @@ cat services/base/defaults.cue | "$GITLAB_CLI" file update p2c/k8s-deployments s
 demo_verify "Feature branch pushed"
 
 # Restore local changes
-git checkout services/base/defaults.cue 2>/dev/null || true
+git checkout templates/base/defaults.cue 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Step 4: MR-Gated Promotion Through Environments
@@ -183,7 +183,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
         # Verify MR contains expected changes
         demo_action "Verifying MR contains CUE and manifest changes..."
-        assert_mr_contains_diff "$mr_iid" "services/base/defaults.cue" "runAsNonRoot" || exit 1
+        assert_mr_contains_diff "$mr_iid" "templates/base/defaults.cue" "runAsNonRoot" || exit 1
         assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "runAsNonRoot" || exit 1
 
         # Capture baseline time BEFORE merge
@@ -273,7 +273,7 @@ cat << EOF
   This demo validated UC-C2: Add Pod Security Context
 
   What happened:
-  1. Enabled 'runAsNonRoot: true' in services/base/defaults.cue
+  1. Enabled 'runAsNonRoot: true' in templates/base/defaults.cue
   2. Pushed CUE change only (no manual manifest generation)
   3. Promoted through environments using GitOps pattern:
      - Feature branch → dev: Manual MR (pipeline generates manifests)

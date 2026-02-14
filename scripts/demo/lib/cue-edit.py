@@ -18,7 +18,7 @@ Examples:
   cue-edit.py env-configmap add env.cue dev exampleApp redis-url "redis://redis.dev:6379"
 
   # Add cache-ttl to app's default ConfigMap (propagates to all envs)
-  cue-edit.py app-configmap add services/apps/example-app.cue exampleApp cache-ttl "300"
+  cue-edit.py app-configmap add templates/apps/example-app.cue exampleApp cache-ttl "300"
 
   # Set replicas for an app in an environment
   cue-edit.py env-field set env.cue dev exampleApp replicas 2
@@ -60,10 +60,10 @@ App-level pod annotation overrides:
 
 Examples:
   # Disable Prometheus scraping for postgres (overrides platform default)
-  cue-edit.py app-annotation add services/apps/postgres.cue postgres prometheus.io/scrape false
+  cue-edit.py app-annotation add templates/apps/postgres.cue postgres prometheus.io/scrape false
 
   # Remove the override (restore platform default behavior)
-  cue-edit.py app-annotation remove services/apps/postgres.cue postgres prometheus.io/scrape
+  cue-edit.py app-annotation remove templates/apps/postgres.cue postgres prometheus.io/scrape
 """
 
 import argparse
@@ -93,14 +93,14 @@ def run_cue_vet(file_path: str, project_root: str) -> tuple[bool, str]:
 
 
 def find_project_root(file_path: str) -> str:
-    """Find the project root (directory containing cue.mod or services/)."""
+    """Find the project root (directory containing cue.mod or templates/)."""
     path = Path(file_path).resolve()
     # If it's a file, start from its parent directory
     if path.is_file():
         path = path.parent
     # Check current directory first, then walk up
     while path != path.parent:
-        if (path / "cue.mod").exists() or (path / "services").exists():
+        if (path / "cue.mod").exists() or (path / "templates").exists():
             return str(path)
         path = path.parent
     # Fallback to original path
@@ -234,7 +234,7 @@ def remove_env_configmap_entry(content: str, env: str, app: str, key: str) -> st
 
 
 def add_app_configmap_entry(content: str, app: str, key: str, value: str) -> str:
-    """Add a ConfigMap entry to an app's default config in services/apps/*.cue.
+    """Add a ConfigMap entry to an app's default config in templates/apps/*.cue.
 
     Structure: exampleApp: core.#App & {
         appName: "example-app"
@@ -292,7 +292,7 @@ def remove_app_configmap_entry(content: str, _app: str, key: str) -> str:
     """Remove a ConfigMap entry from an app's default config.
 
     Note: The _app parameter is unused but kept for API consistency.
-    This function operates on single-app files (services/apps/*.cue), so it
+    This function operates on single-app files (templates/apps/*.cue), so it
     modifies the first matching entry found.
     """
     pattern = rf'(\n\s*)"{re.escape(key)}":\s*"[^"]*"\s*'
@@ -382,13 +382,13 @@ def add_platform_annotation(project_root: str, key: str, value: str) -> dict:
     """Add a default pod annotation to the platform layer.
 
     This modifies two files:
-    1. services/core/app.cue - Add/update defaultPodAnnotations struct and pass to template
-    2. services/resources/deployment.cue - Accept and use defaultPodAnnotations
+    1. templates/core/app.cue - Add/update defaultPodAnnotations struct and pass to template
+    2. templates/resources/deployment.cue - Accept and use defaultPodAnnotations
 
     Returns dict with 'app_cue' and 'deployment_cue' keys containing modified content.
     """
-    app_cue_path = Path(project_root) / "services" / "core" / "app.cue"
-    deployment_cue_path = Path(project_root) / "services" / "resources" / "deployment.cue"
+    app_cue_path = Path(project_root) / "templates" / "core" / "app.cue"
+    deployment_cue_path = Path(project_root) / "templates" / "resources" / "deployment.cue"
 
     if not app_cue_path.exists():
         raise ValueError(f"File not found: {app_cue_path}")
@@ -527,8 +527,8 @@ def remove_platform_annotation(project_root: str, key: str) -> dict:
 
     Returns dict with modified content for both files.
     """
-    app_cue_path = Path(project_root) / "services" / "core" / "app.cue"
-    deployment_cue_path = Path(project_root) / "services" / "resources" / "deployment.cue"
+    app_cue_path = Path(project_root) / "templates" / "core" / "app.cue"
+    deployment_cue_path = Path(project_root) / "templates" / "resources" / "deployment.cue"
 
     if not app_cue_path.exists():
         raise ValueError(f"File not found: {app_cue_path}")
@@ -588,12 +588,12 @@ def remove_platform_annotation(project_root: str, key: str) -> dict:
 # ============================================================================
 
 def add_app_pod_annotation(content: str, _app: str, key: str, value: str) -> str:
-    """Add a pod annotation override to an app's config in services/apps/*.cue.
+    """Add a pod annotation override to an app's config in templates/apps/*.cue.
 
     This adds appConfig.deployment.podAnnotations to override platform defaults.
 
     Note: The _app parameter is unused but kept for API consistency.
-    This function operates on single-app files (services/apps/*.cue), so it
+    This function operates on single-app files (templates/apps/*.cue), so it
     modifies the first appConfig block found. This is consistent with other
     app-level functions like remove_app_configmap_entry.
 
@@ -654,7 +654,7 @@ def remove_app_pod_annotation(content: str, _app: str, key: str) -> str:
     Also cleans up empty podAnnotations and deployment blocks if they become empty.
 
     Note: The _app parameter is unused but kept for API consistency.
-    This function operates on single-app files (services/apps/*.cue), so it
+    This function operates on single-app files (templates/apps/*.cue), so it
     modifies the first matching annotation found. This is consistent with other
     app-level functions like remove_app_configmap_entry.
     """
@@ -680,11 +680,11 @@ def remove_app_pod_annotation(content: str, _app: str, key: str) -> str:
 def add_platform_label(project_root: str, key: str, value: str) -> dict:
     """Add a default label to the platform layer (defaultLabels in app.cue).
 
-    This modifies services/core/app.cue to add a label to the defaultLabels struct.
+    This modifies templates/core/app.cue to add a label to the defaultLabels struct.
 
     Returns dict with 'app_cue' key containing modified content.
     """
-    app_cue_path = Path(project_root) / "services" / "core" / "app.cue"
+    app_cue_path = Path(project_root) / "templates" / "core" / "app.cue"
 
     if not app_cue_path.exists():
         raise ValueError(f"File not found: {app_cue_path}")
@@ -777,7 +777,7 @@ def remove_platform_label(project_root: str, key: str) -> dict:
 
     Returns dict with modified content.
     """
-    app_cue_path = Path(project_root) / "services" / "core" / "app.cue"
+    app_cue_path = Path(project_root) / "templates" / "core" / "app.cue"
 
     if not app_cue_path.exists():
         raise ValueError(f"File not found: {app_cue_path}")
@@ -1048,7 +1048,7 @@ def main():
     app_ann_sub = app_ann.add_subparsers(dest='action')
 
     app_ann_add = app_ann_sub.add_parser('add', help='Add a pod annotation override to app config')
-    app_ann_add.add_argument('file', help='CUE file to modify (services/apps/*.cue)')
+    app_ann_add.add_argument('file', help='CUE file to modify (templates/apps/*.cue)')
     app_ann_add.add_argument('app', help='App name (CUE identifier)')
     app_ann_add.add_argument('key', help='Annotation key (e.g., prometheus.io/scrape)')
     app_ann_add.add_argument('value', help='Annotation value (e.g., false)')

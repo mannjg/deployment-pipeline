@@ -4,14 +4,14 @@ This directory contains configuration contracts and templates for k8s-deployment
 
 ## Files
 
-- `configmap.schema.yaml` - Configuration contract defining required variables
+- `configmap.contract.yaml` - Configuration contract defining required variables
 - `local.env.example` - Template for local development
 
 ## Usage
 
 ### For Jenkins Pipelines
 
-Configure the `pipeline-config` ConfigMap with variables from `configmap.schema.yaml`.
+Configure the `pipeline-config` ConfigMap with variables from `configmap.contract.yaml`.
 
 ### For Local Development
 

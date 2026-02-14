@@ -438,7 +438,7 @@ run_tier_4() {
     fi
 
     # App CUE files should not reference env-specific values directly
-    if [[ -d "$PROJECT_ROOT/k8s-deployments/services/apps" ]]; then
+    if [[ -d "$PROJECT_ROOT/k8s-deployments/templates/apps" ]]; then
         if [[ "$RG_AVAILABLE" -ne 1 ]]; then
             log_warn "rg not available; skipping env-specific reference scan"
         else
@@ -453,12 +453,12 @@ run_tier_4() {
             issue 4 "$rel_path:$lineno" "App CUE references env-specific values" \
                 "ANTI_PATTERNS.md (CUE schemas: Don't reference env-specific values from app definitions)" \
                 "Move env-specific data to env.cue or appConfig overrides"
-        done < <(rg -n "\benvs\." "$PROJECT_ROOT/k8s-deployments/services/apps" -g '*.cue' || true)
+        done < <(rg -n "\benvs\." "$PROJECT_ROOT/k8s-deployments/templates/apps" -g '*.cue' || true)
         fi
     fi
 
     # Every field in #App has default or is explicitly required (heuristic)
-    local app_schema="$PROJECT_ROOT/k8s-deployments/services/core/app.cue"
+    local app_schema="$PROJECT_ROOT/k8s-deployments/templates/core/app.cue"
     if [[ -f "$app_schema" ]]; then
         if ! command -v python3 >/dev/null 2>&1; then
             issue 4 "python3" "python3 not installed" \

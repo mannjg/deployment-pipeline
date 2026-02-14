@@ -17,7 +17,7 @@
 #
 # Flow:
 # Phase 1: Add App-Level Default (propagates to all envs)
-#   1. Add LOG_LEVEL=INFO to appEnvVars in services/apps/example-app.cue
+#   1. Add LOG_LEVEL=INFO to appEnvVars in templates/apps/example-app.cue
 #   2. Create MR: feature → dev
 #   3. Promote through dev → stage → prod
 #   4. Verify all envs have LOG_LEVEL=INFO
@@ -142,11 +142,11 @@ demo_verify "Baseline confirmed: $ENV_VAR_NAME not present in any environment"
 
 demo_step 3 "PHASE 1: Add App-Level Default"
 
-demo_info "Adding $ENV_VAR_NAME=$APP_DEFAULT_VALUE to appEnvVars in services/apps/example-app.cue"
+demo_info "Adding $ENV_VAR_NAME=$APP_DEFAULT_VALUE to appEnvVars in templates/apps/example-app.cue"
 demo_info "This will propagate to ALL environments (dev, stage, prod)"
 
 # Edit LOCAL file directly
-APP_CUE_PATH="services/apps/example-app.cue"
+APP_CUE_PATH="templates/apps/example-app.cue"
 
 # Check if LOG_LEVEL already exists
 if grep -q "\"$ENV_VAR_NAME\"" "$APP_CUE_PATH"; then
@@ -464,7 +464,7 @@ cat << EOF
   What happened:
 
   PHASE 1: App-Level Default
-  1. Added $ENV_VAR_NAME=$APP_DEFAULT_VALUE to appEnvVars in services/apps/example-app.cue
+  1. Added $ENV_VAR_NAME=$APP_DEFAULT_VALUE to appEnvVars in templates/apps/example-app.cue
   2. Promoted through all environments using GitOps pattern:
      - Feature branch → dev: Manual MR (pipeline generates manifests)
      - dev → stage: Jenkins auto-created promotion MR

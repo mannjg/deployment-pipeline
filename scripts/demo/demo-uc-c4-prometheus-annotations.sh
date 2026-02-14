@@ -8,7 +8,7 @@
 # "As a platform team, we want to set a default Prometheus scrape interval for all pods"
 #
 # What This Demonstrates:
-# - Changes to services/core/ and services/resources/ propagate to ALL apps in ALL environments
+# - Changes to templates/core/ and templates/resources/ propagate to ALL apps in ALL environments
 # - The MR shows both CUE change AND generated manifest changes
 # - Pipeline generates manifests (not the human)
 # - Apps/environments can override annotations if needed
@@ -18,7 +18,7 @@
 # how platform teams can add new annotations that propagate to all apps.
 #
 # CUE Changes Made:
-# 1. services/core/app.cue - Add prometheus.io/scrape-interval to defaultPodAnnotations
+# 1. templates/core/app.cue - Add prometheus.io/scrape-interval to defaultPodAnnotations
 #
 # Prerequisites:
 # - Environment branches (dev/stage/prod) exist in GitLab
@@ -135,17 +135,17 @@ demo_verify "Baseline confirmed: '$DEMO_ANNOTATION_KEY' absent from all environm
 
 demo_step 3 "Add Default Pod Annotations to Platform Layer"
 
-demo_info "Adding annotation to defaultPodAnnotations in services/core/app.cue"
+demo_info "Adding annotation to defaultPodAnnotations in templates/core/app.cue"
 demo_info "  (deployment.cue infrastructure already supports defaultPodAnnotations)"
 
 # Make CUE changes using cue-edit.py (includes CUE validation)
 add_prometheus_annotations || exit 1
 
 demo_action "Summary of CUE changes:"
-echo "  services/core/app.cue:"
-git diff --stat services/core/app.cue 2>/dev/null || echo "    (no diff available)"
-echo "  services/resources/deployment.cue:"
-git diff --stat services/resources/deployment.cue 2>/dev/null || echo "    (no diff available)"
+echo "  templates/core/app.cue:"
+git diff --stat templates/core/app.cue 2>/dev/null || echo "    (no diff available)"
+echo "  templates/resources/deployment.cue:"
+git diff --stat templates/resources/deployment.cue 2>/dev/null || echo "    (no diff available)"
 
 # ---------------------------------------------------------------------------
 # Step 4: Push CUE Changes via GitLab API
@@ -166,30 +166,30 @@ demo_action "Creating branch '$FEATURE_BRANCH' from dev in GitLab..."
     exit 1
 }
 
-demo_action "Pushing services/core/app.cue to GitLab..."
-cat services/core/app.cue | "$GITLAB_CLI" file update p2c/k8s-deployments services/core/app.cue \
+demo_action "Pushing templates/core/app.cue to GitLab..."
+cat templates/core/app.cue | "$GITLAB_CLI" file update p2c/k8s-deployments templates/core/app.cue \
     --ref "$FEATURE_BRANCH" \
     --message "feat: add default Prometheus annotations to all deployments (UC-C4)" \
     --stdin >/dev/null || {
-    demo_fail "Failed to update services/core/app.cue in GitLab"
+    demo_fail "Failed to update templates/core/app.cue in GitLab"
     exit 1
 }
 
 # Check if deployment.cue was modified
-if ! git diff --quiet services/resources/deployment.cue 2>/dev/null; then
-    demo_action "Pushing services/resources/deployment.cue to GitLab..."
-    cat services/resources/deployment.cue | "$GITLAB_CLI" file update p2c/k8s-deployments services/resources/deployment.cue \
+if ! git diff --quiet templates/resources/deployment.cue 2>/dev/null; then
+    demo_action "Pushing templates/resources/deployment.cue to GitLab..."
+    cat templates/resources/deployment.cue | "$GITLAB_CLI" file update p2c/k8s-deployments templates/resources/deployment.cue \
         --ref "$FEATURE_BRANCH" \
         --message "feat: add default Prometheus annotations support (UC-C4)" \
         --stdin >/dev/null || {
-        demo_fail "Failed to update services/resources/deployment.cue in GitLab"
+        demo_fail "Failed to update templates/resources/deployment.cue in GitLab"
         exit 1
     }
 fi
 demo_verify "Feature branch pushed"
 
 # Restore local changes (don't leave local repo dirty)
-git checkout services/core/app.cue services/resources/deployment.cue 2>/dev/null || true
+git checkout templates/core/app.cue templates/resources/deployment.cue 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Step 5: MR-Gated Promotion Through Environments
@@ -217,7 +217,7 @@ for env in "${ENVIRONMENTS[@]}"; do
         # Verify MR contains expected changes
         # Note: deployment.cue infrastructure is already in place, only app.cue changes
         demo_action "Verifying MR contains CUE and manifest changes..."
-        assert_mr_contains_diff "$mr_iid" "services/core/app.cue" "$DEMO_ANNOTATION_KEY" || exit 1
+        assert_mr_contains_diff "$mr_iid" "templates/core/app.cue" "$DEMO_ANNOTATION_KEY" || exit 1
         assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "$DEMO_ANNOTATION_KEY" || exit 1
 
         # Capture baseline time BEFORE merge
@@ -281,7 +281,7 @@ cat << EOF
 
   What happened:
   1. Verified baseline (scrape-interval annotation absent from all envs)
-  2. Added $DEMO_ANNOTATION_KEY to defaultPodAnnotations in services/core/app.cue
+  2. Added $DEMO_ANNOTATION_KEY to defaultPodAnnotations in templates/core/app.cue
   3. Pushed CUE changes only (no manual manifest generation)
   4. Promoted through environments using GitOps pattern:
      - Feature branch -> dev: Manual MR (pipeline generates manifests)
@@ -299,7 +299,7 @@ cat << EOF
   - Platform annotation propagated to ALL apps in ALL environments
   - Apps/environments can override this value if needed
 
-  Platform Baseline (already in services/core/app.cue):
+  Platform Baseline (already in templates/core/app.cue):
   - prometheus.io/scrape: "true"
   - prometheus.io/port: "8080"
   - prometheus.io/path: "/metrics"

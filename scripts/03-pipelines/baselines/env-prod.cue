@@ -10,7 +10,7 @@
 package envs
 
 import (
-	"deployments.local/k8s-deployments/services/apps"
+	"deployments.local/k8s-deployments/templates/apps"
 )
 
 // Prod: Production environment settings for example-app

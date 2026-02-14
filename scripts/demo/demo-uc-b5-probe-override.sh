@@ -16,7 +16,7 @@
 #
 # Flow:
 # Phase 1: Add App-Level Default (propagates to all envs)
-#   1. Add readinessProbe.timeoutSeconds=10 to services/apps/example-app.cue
+#   1. Add readinessProbe.timeoutSeconds=10 to templates/apps/example-app.cue
 #   2. Create MR: feature → dev
 #   3. Promote through dev → stage → prod
 #   4. Verify all envs have timeoutSeconds=10
@@ -136,7 +136,7 @@ demo_step 3 "PHASE 1: Verify App-Level Default"
 FEATURE_BRANCH=""
 
 # Edit LOCAL file directly (same pattern as UC-B4)
-APP_CUE_PATH="services/apps/example-app.cue"
+APP_CUE_PATH="templates/apps/example-app.cue"
 
 # Check if readinessProbe already exists in app config
 if grep -q "readinessProbe" "$APP_CUE_PATH"; then
@@ -166,7 +166,7 @@ if [[ "${SKIP_PHASE1:-false}" == "true" ]]; then
     demo_action "Current app-level readinessProbe configuration:"
     grep -A5 "readinessProbe" "$APP_CUE_PATH" | sed 's/^/    /'
 else
-    demo_info "Adding readinessProbe.timeoutSeconds=$APP_DEFAULT_TIMEOUT to services/apps/example-app.cue"
+    demo_info "Adding readinessProbe.timeoutSeconds=$APP_DEFAULT_TIMEOUT to templates/apps/example-app.cue"
     demo_info "This will propagate to ALL environments (dev, stage, prod)"
 
     # Add readinessProbe to appConfig block
@@ -472,7 +472,7 @@ cat << EOF
   What happened:
 
   PHASE 1: App-Level Default
-  1. Added readinessProbe.timeoutSeconds=$APP_DEFAULT_TIMEOUT to services/apps/example-app.cue
+  1. Added readinessProbe.timeoutSeconds=$APP_DEFAULT_TIMEOUT to templates/apps/example-app.cue
   2. Promoted through all environments using GitOps pattern:
      - Feature branch → dev: Manual MR (pipeline generates manifests)
      - dev → stage: Jenkins auto-created promotion MR
@@ -492,7 +492,7 @@ cat << EOF
   - All changes go through MR with pipeline validation (GitOps)
 
   CUE Override Hierarchy Validated:
-    App (services/apps/example-app.cue) → sets default (${APP_DEFAULT_TIMEOUT}s)
+    App (templates/apps/example-app.cue) → sets default (${APP_DEFAULT_TIMEOUT}s)
         |
     Environment (env.cue on prod) → overrides for prod only (${PROD_OVERRIDE_TIMEOUT}s)
 

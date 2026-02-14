@@ -110,7 +110,7 @@ belief_quick_check() {
 
         if [[ "$belief" == *"CUE over raw YAML"* ]]; then
             mapped=1
-            if [[ ! -f "$PROJECT_ROOT/k8s-deployments/services/core/app.cue" ]]; then
+            if [[ ! -f "$PROJECT_ROOT/k8s-deployments/templates/core/app.cue" ]]; then
                 emit_belief_issue "belief quick-check failed: app.cue missing"
             fi
         fi

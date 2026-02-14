@@ -410,7 +410,7 @@ else
     exit 1
 fi
 
-# Verify services/apps/example-app.cue has the new env var
+# Verify templates/apps/example-app.cue has the new env var
 if echo "$MR_CHANGES" | jq -r '.changes[] | select(.new_path | contains("example-app.cue")) | .diff' | grep -q "$DEMO_ENV_VAR_NAME"; then
     demo_verify "MR contains $DEMO_ENV_VAR_NAME in example-app.cue"
 else
@@ -530,7 +530,7 @@ cat << EOF
   4. Committed ALL changes in a single commit
   5. Jenkins built the app and created k8s-deployments MR with:
      - Image tag update (env.cue)
-     - Env var addition (services/apps/example-app.cue)
+     - Env var addition (templates/apps/example-app.cue)
      - Regenerated manifests with both changes
   6. Promoted atomically through dev → stage → prod
 

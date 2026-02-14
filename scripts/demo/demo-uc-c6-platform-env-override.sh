@@ -114,13 +114,13 @@ done
 
 demo_step 2 "Add Platform Default Label"
 
-demo_info "Adding '$DEMO_LABEL_KEY: $PLATFORM_LABEL_VALUE' to services/core/app.cue"
+demo_info "Adding '$DEMO_LABEL_KEY: $PLATFORM_LABEL_VALUE' to templates/core/app.cue"
 
 # Make CUE change using cue-edit.py
 add_platform_label || exit 1
 
 demo_action "Summary of CUE changes:"
-git diff --stat services/core/app.cue 2>/dev/null || echo "  (no diff available)"
+git diff --stat templates/core/app.cue 2>/dev/null || echo "  (no diff available)"
 
 # ---------------------------------------------------------------------------
 # Step 3: Push CUE Change via GitLab API
@@ -142,7 +142,7 @@ demo_action "Creating branch '$FEATURE_BRANCH' from dev in GitLab..."
 }
 
 demo_action "Pushing CUE change to GitLab..."
-cat services/core/app.cue | "$GITLAB_CLI" file update p2c/k8s-deployments services/core/app.cue \
+cat templates/core/app.cue | "$GITLAB_CLI" file update p2c/k8s-deployments templates/core/app.cue \
     --ref "$FEATURE_BRANCH" \
     --message "feat: add $DEMO_LABEL_KEY label to all deployments (UC-C6)" \
     --stdin >/dev/null || {
@@ -152,7 +152,7 @@ cat services/core/app.cue | "$GITLAB_CLI" file update p2c/k8s-deployments servic
 demo_verify "Feature branch pushed"
 
 # Restore local changes (don't leave local repo dirty)
-git checkout services/core/app.cue 2>/dev/null || true
+git checkout templates/core/app.cue 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Step 4: Promote Platform Default Through All Environments
@@ -179,7 +179,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
         # Verify MR contains expected changes
         demo_action "Verifying MR contains CUE and manifest changes..."
-        assert_mr_contains_diff "$mr_iid" "services/core/app.cue" "$DEMO_LABEL_KEY" || exit 1
+        assert_mr_contains_diff "$mr_iid" "templates/core/app.cue" "$DEMO_LABEL_KEY" || exit 1
         assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "$DEMO_LABEL_KEY" || exit 1
 
         # Capture baseline time BEFORE merge
@@ -351,7 +351,7 @@ cat << EOF
   This demo validated UC-C6: Platform Default with Environment Override
 
   What happened:
-  1. Added '$DEMO_LABEL_KEY: $PLATFORM_LABEL_VALUE' to platform layer (services/core/app.cue)
+  1. Added '$DEMO_LABEL_KEY: $PLATFORM_LABEL_VALUE' to platform layer (templates/core/app.cue)
   2. Promoted through all environments using GitOps pattern:
      - Feature branch -> dev: Manual MR (pipeline generates manifests)
      - dev -> stage: Jenkins auto-created promotion MR
@@ -369,7 +369,7 @@ cat << EOF
   - All changes go through MR with pipeline validation (GitOps)
 
   Override Hierarchy Validated:
-    Platform (services/core/app.cue) -> sets default
+    Platform (templates/core/app.cue) -> sets default
         |
     Environment (env.cue on prod) -> overrides for prod only
 

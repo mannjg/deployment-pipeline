@@ -352,9 +352,9 @@ cat << EOF
   - All changes go through MR with pipeline validation
 
   CUE Layering Validated:
-    Platform (services/core/) -> debug: false default
+    Platform (templates/core/) -> debug: false default
         |
-    App (services/apps/) -> inherits default
+    App (templates/apps/) -> inherits default
         |
     Environment (env.cue on $TARGET_ENV) -> debug: true
                                             (STAYS HERE)

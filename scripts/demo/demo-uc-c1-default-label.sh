@@ -9,7 +9,7 @@
 # for chargeback reporting"
 #
 # What This Demonstrates:
-# - Changes to services/core/ propagate to ALL apps in ALL environments
+# - Changes to templates/core/ propagate to ALL apps in ALL environments
 # - The MR shows both CUE change AND generated manifest changes
 # - Pipeline generates manifests (not the human)
 # - Promotion uses Jenkins-created branches that preserve env-specific config
@@ -97,10 +97,10 @@ done
 
 demo_step 2 "Add Default Label to Platform Layer"
 
-demo_info "Adding '$DEMO_LABEL_KEY: $DEMO_LABEL_VALUE' to services/core/app.cue"
+demo_info "Adding '$DEMO_LABEL_KEY: $DEMO_LABEL_VALUE' to templates/core/app.cue"
 
 # Check if label already exists
-if grep -q "$DEMO_LABEL_KEY" services/core/app.cue; then
+if grep -q "$DEMO_LABEL_KEY" templates/core/app.cue; then
     demo_warn "Label '$DEMO_LABEL_KEY' already exists in app.cue"
     demo_info "Updating value to '$DEMO_LABEL_VALUE'"
 fi
@@ -108,18 +108,18 @@ fi
 # Add/update the label in defaultLabels
 # Using sed to add after the existing labels
 # Note: Use CUE default syntax (*"value" | string) to allow environment overrides
-if ! grep -q "$DEMO_LABEL_KEY" services/core/app.cue; then
+if ! grep -q "$DEMO_LABEL_KEY" templates/core/app.cue; then
     # Add new label after "deployment: appName" with default syntax for overridability
-    sed -i "/deployment: appName/a\\		\"$DEMO_LABEL_KEY\": *\"$DEMO_LABEL_VALUE\" | string" services/core/app.cue
-    demo_verify "Added label to services/core/app.cue"
+    sed -i "/deployment: appName/a\\		\"$DEMO_LABEL_KEY\": *\"$DEMO_LABEL_VALUE\" | string" templates/core/app.cue
+    demo_verify "Added label to templates/core/app.cue"
 else
     # Update existing label (preserve default syntax if present)
-    sed -i "s/\"$DEMO_LABEL_KEY\": \*\?\"[^\"]*\"\( | string\)\?/\"$DEMO_LABEL_KEY\": *\"$DEMO_LABEL_VALUE\" | string/" services/core/app.cue
-    demo_verify "Updated label in services/core/app.cue"
+    sed -i "s/\"$DEMO_LABEL_KEY\": \*\?\"[^\"]*\"\( | string\)\?/\"$DEMO_LABEL_KEY\": *\"$DEMO_LABEL_VALUE\" | string/" templates/core/app.cue
+    demo_verify "Updated label in templates/core/app.cue"
 fi
 
 # Verify the label was actually added/updated (check for either concrete or default syntax)
-if ! grep -qE "\"$DEMO_LABEL_KEY\": \*?\"$DEMO_LABEL_VALUE\"" services/core/app.cue; then
+if ! grep -qE "\"$DEMO_LABEL_KEY\": \*?\"$DEMO_LABEL_VALUE\"" templates/core/app.cue; then
     demo_fail "Failed to add/update $DEMO_LABEL_KEY in app.cue"
     exit 1
 fi
@@ -133,8 +133,8 @@ else
     exit 1
 fi
 
-demo_action "Changed section in services/core/app.cue:"
-grep -A5 "defaultLabels" services/core/app.cue | head -10 | sed 's/^/    /'
+demo_action "Changed section in templates/core/app.cue:"
+grep -A5 "defaultLabels" templates/core/app.cue | head -10 | sed 's/^/    /'
 
 # ---------------------------------------------------------------------------
 # Step 3: Push CUE Change via GitLab API
@@ -156,7 +156,7 @@ demo_action "Creating branch '$FEATURE_BRANCH' from dev in GitLab..."
 }
 
 demo_action "Pushing CUE change to GitLab..."
-cat services/core/app.cue | "$GITLAB_CLI" file update p2c/k8s-deployments services/core/app.cue \
+cat templates/core/app.cue | "$GITLAB_CLI" file update p2c/k8s-deployments templates/core/app.cue \
     --ref "$FEATURE_BRANCH" \
     --message "feat: add $DEMO_LABEL_KEY label to all deployments (UC-C1)" \
     --stdin >/dev/null || {
@@ -166,7 +166,7 @@ cat services/core/app.cue | "$GITLAB_CLI" file update p2c/k8s-deployments servic
 demo_verify "Feature branch pushed"
 
 # Restore local changes (don't leave local repo dirty)
-git checkout services/core/app.cue 2>/dev/null || true
+git checkout templates/core/app.cue 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Step 4: MR-Gated Promotion Through Environments
@@ -203,7 +203,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
         # Verify MR contains expected changes
         demo_action "Verifying MR contains CUE and manifest changes..."
-        assert_mr_contains_diff "$mr_iid" "services/core/app.cue" "$DEMO_LABEL_KEY" || exit 1
+        assert_mr_contains_diff "$mr_iid" "templates/core/app.cue" "$DEMO_LABEL_KEY" || exit 1
         assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "$DEMO_LABEL_KEY" || exit 1
 
         # Capture baseline time BEFORE merge (for next env's promotion MR detection)
@@ -301,7 +301,7 @@ cat << EOF
   This demo validated UC-C1: Add Default Label to All Deployments
 
   What happened:
-  1. Added '$DEMO_LABEL_KEY: $DEMO_LABEL_VALUE' as a CUE default to services/core/app.cue
+  1. Added '$DEMO_LABEL_KEY: $DEMO_LABEL_VALUE' as a CUE default to templates/core/app.cue
   2. Pushed CUE change only (no manual manifest generation)
   3. Promoted through environments using GitOps pattern:
      - Feature branch → dev: Manual MR (pipeline generates manifests)

@@ -8,7 +8,7 @@
 # "As a platform team, we want zero-downtime deployments as the default"
 #
 # What This Demonstrates:
-# - Changes to services/base/defaults.cue propagate to ALL apps in ALL environments
+# - Changes to templates/base/defaults.cue propagate to ALL apps in ALL environments
 # - Deployment strategy is enforced at the deployment spec level
 # - Pipeline generates manifests with updated strategy included
 # - Promotion preserves the strategy across environments
@@ -90,20 +90,20 @@ demo_info "Current maxUnavailable in dev: $current_max_unavailable"
 
 demo_step 2 "Change Deployment Strategy in Base Layer"
 
-demo_info "Changing maxUnavailable: 1 -> 0 in services/base/defaults.cue"
+demo_info "Changing maxUnavailable: 1 -> 0 in templates/base/defaults.cue"
 
 # Check current state
-current_value=$(grep -A4 "#DefaultDeploymentStrategy:" services/base/defaults.cue | grep "maxUnavailable" | head -1 || echo "")
+current_value=$(grep -A4 "#DefaultDeploymentStrategy:" templates/base/defaults.cue | grep "maxUnavailable" | head -1 || echo "")
 demo_info "Current setting: $current_value"
 
 # Change maxUnavailable from 1 to 0 in #DefaultDeploymentStrategy
 # This is a precise replacement within the #DefaultDeploymentStrategy block only
 sed -i '/#DefaultDeploymentStrategy:/,/#DefaultProductionDeploymentStrategy:/ {
     s/maxUnavailable: 1/maxUnavailable: 0/
-}' services/base/defaults.cue
+}' templates/base/defaults.cue
 
 # Verify the change was made
-new_value=$(grep -A4 "#DefaultDeploymentStrategy:" services/base/defaults.cue | grep "maxUnavailable" | head -1 || echo "")
+new_value=$(grep -A4 "#DefaultDeploymentStrategy:" templates/base/defaults.cue | grep "maxUnavailable" | head -1 || echo "")
 if [[ "$new_value" == *"maxUnavailable: 0"* ]]; then
     demo_verify "Changed maxUnavailable to 0 in #DefaultDeploymentStrategy"
 else
@@ -121,8 +121,8 @@ else
     exit 1
 fi
 
-demo_action "Changed section in services/base/defaults.cue:"
-grep -A6 "#DefaultDeploymentStrategy:" services/base/defaults.cue | head -7 | sed 's/^/    /'
+demo_action "Changed section in templates/base/defaults.cue:"
+grep -A6 "#DefaultDeploymentStrategy:" templates/base/defaults.cue | head -7 | sed 's/^/    /'
 
 # ---------------------------------------------------------------------------
 # Step 3: Push CUE Change via GitLab API
@@ -142,7 +142,7 @@ demo_action "Creating branch '$FEATURE_BRANCH' from dev in GitLab..."
 }
 
 demo_action "Pushing CUE change to GitLab..."
-cat services/base/defaults.cue | "$GITLAB_CLI" file update p2c/k8s-deployments services/base/defaults.cue \
+cat templates/base/defaults.cue | "$GITLAB_CLI" file update p2c/k8s-deployments templates/base/defaults.cue \
     --ref "$FEATURE_BRANCH" \
     --message "feat: enable zero-downtime deployments (UC-C3)" \
     --stdin >/dev/null || {
@@ -152,7 +152,7 @@ cat services/base/defaults.cue | "$GITLAB_CLI" file update p2c/k8s-deployments s
 demo_verify "Feature branch pushed"
 
 # Restore local changes
-git checkout services/base/defaults.cue 2>/dev/null || true
+git checkout templates/base/defaults.cue 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Step 4: MR-Gated Promotion Through Environments
@@ -179,7 +179,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
         # Verify MR contains expected changes
         demo_action "Verifying MR contains CUE and manifest changes..."
-        assert_mr_contains_diff "$mr_iid" "services/base/defaults.cue" "maxUnavailable" || exit 1
+        assert_mr_contains_diff "$mr_iid" "templates/base/defaults.cue" "maxUnavailable" || exit 1
         assert_mr_contains_diff "$mr_iid" "manifests/.*\\.yaml" "maxUnavailable" || exit 1
 
         # Capture baseline time BEFORE merge
@@ -275,7 +275,7 @@ cat << EOF
   This demo validated UC-C3: Change Default Deployment Strategy
 
   What happened:
-  1. Changed maxUnavailable from 1 to 0 in services/base/defaults.cue
+  1. Changed maxUnavailable from 1 to 0 in templates/base/defaults.cue
   2. Pushed CUE change only (no manual manifest generation)
   3. Promoted through environments using GitOps pattern:
      - Feature branch -> dev: Manual MR (pipeline generates manifests)

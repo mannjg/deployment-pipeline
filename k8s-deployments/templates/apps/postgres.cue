@@ -3,7 +3,7 @@
 package apps
 
 import (
-	core "deployments.local/k8s-deployments/services/core"
+	core "deployments.local/k8s-deployments/templates/core"
 )
 
 // postgres application configuration

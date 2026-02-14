@@ -8,12 +8,12 @@
 # "As a platform team, we want to set app-specific Prometheus scrape timeout"
 #
 # What This Demonstrates:
-# - Changes to services/apps/example-app.cue flow through promotion chain
+# - Changes to templates/apps/example-app.cue flow through promotion chain
 # - The appConfig.deployment.podAnnotations in CUE correctly generates pod annotations
 # - All environments (dev/stage/prod) receive the same app-level configuration
 #
 # Flow:
-#   1. Add prometheus.io/scrape-timeout annotation to services/apps/example-app.cue
+#   1. Add prometheus.io/scrape-timeout annotation to templates/apps/example-app.cue
 #   2. Create MR: feature -> dev
 #   3. Promote through dev -> stage -> prod
 #   4. Verify all envs have the prometheus annotation
@@ -42,7 +42,7 @@ DEMO_ANNOTATION_KEY="prometheus.io/scrape-timeout"
 DEMO_ANNOTATION_VALUE="30s"
 DEMO_APP="example-app"
 DEMO_APP_CUE="exampleApp"  # CUE identifier
-APP_CUE_PATH="services/apps/example-app.cue"
+APP_CUE_PATH="templates/apps/example-app.cue"
 ENVIRONMENTS=("dev" "stage" "prod")
 
 # ============================================================================
@@ -303,7 +303,7 @@ cat << EOF
   This demo validated UC-B2: Add App-Level Annotation
 
   What happened:
-  1. Added '$DEMO_ANNOTATION_KEY: $DEMO_ANNOTATION_VALUE' to services/apps/example-app.cue
+  1. Added '$DEMO_ANNOTATION_KEY: $DEMO_ANNOTATION_VALUE' to templates/apps/example-app.cue
   2. Promoted through all environments using GitOps pattern:
      - Feature branch -> dev: Manual MR (pipeline generates manifests)
      - dev -> stage: Jenkins auto-created promotion MR
@@ -317,7 +317,7 @@ cat << EOF
   - Prometheus can now scrape this app in all environments
 
   CUE Hierarchy Validated:
-    App (services/apps/example-app.cue) -> appConfig.deployment.podAnnotations
+    App (templates/apps/example-app.cue) -> appConfig.deployment.podAnnotations
         |
     All Environments (dev, stage, prod) -> same annotation on pods
 

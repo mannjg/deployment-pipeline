@@ -8,12 +8,12 @@
 # "As an app team, we need a consistent cache-ttl setting across all environments"
 #
 # What This Demonstrates:
-# - Changes to services/apps/example-app.cue flow through promotion chain
+# - Changes to templates/apps/example-app.cue flow through promotion chain
 # - The appConfig.configMap.data in CUE correctly generates ConfigMap entries
 # - All environments (dev/stage/prod) receive the same app-level configuration
 #
 # Flow:
-#   1. Add cache-ttl entry to services/apps/example-app.cue configMap
+#   1. Add cache-ttl entry to templates/apps/example-app.cue configMap
 #   2. Create MR: feature -> dev
 #   3. Promote through dev -> stage -> prod
 #   4. Verify all envs have the cache-ttl ConfigMap entry
@@ -42,7 +42,7 @@ DEMO_CONFIGMAP_KEY="cache-ttl"
 DEMO_CONFIGMAP_VALUE="300"
 DEMO_APP="example-app"
 DEMO_APP_CUE="exampleApp"  # CUE identifier
-APP_CUE_PATH="services/apps/example-app.cue"
+APP_CUE_PATH="templates/apps/example-app.cue"
 CONFIGMAP_NAME="${DEMO_APP}-config"
 ENVIRONMENTS=("dev" "stage" "prod")
 
@@ -309,7 +309,7 @@ cat << EOF
   This demo validated UC-B3: Add App-Level ConfigMap Entry
 
   What happened:
-  1. Added '$DEMO_CONFIGMAP_KEY: $DEMO_CONFIGMAP_VALUE' to services/apps/example-app.cue
+  1. Added '$DEMO_CONFIGMAP_KEY: $DEMO_CONFIGMAP_VALUE' to templates/apps/example-app.cue
   2. Promoted through all environments using GitOps pattern:
      - Feature branch -> dev: Manual MR (pipeline generates manifests)
      - dev -> stage: Jenkins auto-created promotion MR
@@ -323,7 +323,7 @@ cat << EOF
   - Environments can still override this value if needed (see UC-B4)
 
   CUE Hierarchy Validated:
-    App (services/apps/example-app.cue) -> appConfig.configMap.data
+    App (templates/apps/example-app.cue) -> appConfig.configMap.data
         |
     All Environments (dev, stage, prod) -> same ConfigMap entry
 

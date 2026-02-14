@@ -192,10 +192,10 @@ run_belief_coverage() {
         fi
 
         if [[ "$belief" == *"CUE over raw YAML"* ]]; then
-            if [[ -f "$PROJECT_ROOT/k8s-deployments/services/core/app.cue" ]]; then
+            if [[ -f "$PROJECT_ROOT/k8s-deployments/templates/core/app.cue" ]]; then
                 record_belief "$belief" "PASS" "app.cue present"
             else
-                record_belief "$belief" "FAIL" "Missing k8s-deployments/services/core/app.cue"
+                record_belief "$belief" "FAIL" "Missing k8s-deployments/templates/core/app.cue"
             fi
             continue
         fi
@@ -223,7 +223,7 @@ run_belief_coverage() {
                 record_belief "$belief" "SKIP" "rg not installed"
             else
                 local matches
-                matches=$(rg -n "\benvs\." "$PROJECT_ROOT/k8s-deployments/services/apps" -g '*.cue' || true)
+                matches=$(rg -n "\benvs\." "$PROJECT_ROOT/k8s-deployments/templates/apps" -g '*.cue' || true)
                 if [[ -n "$matches" ]]; then
                     record_belief "$belief" "FAIL" "env-specific references found in apps"
                     echo "$matches" | head -n 5 | while IFS= read -r m; do
@@ -240,7 +240,7 @@ run_belief_coverage() {
             if ! command -v rg >/dev/null 2>&1; then
                 record_belief "$belief" "SKIP" "rg not installed"
             else
-                if rg -q "#App" "$PROJECT_ROOT/k8s-deployments/services/apps" -g '*.cue' 2>/dev/null; then
+                if rg -q "#App" "$PROJECT_ROOT/k8s-deployments/templates/apps" -g '*.cue' 2>/dev/null; then
                     record_belief "$belief" "PASS" "apps reference #App"
                 else
                     record_belief "$belief" "FAIL" "No #App references found in apps"
@@ -250,7 +250,7 @@ run_belief_coverage() {
         fi
 
         if [[ "$belief" == *"Defaults in #App"* ]]; then
-            if [[ -f "$PROJECT_ROOT/k8s-deployments/services/core/app.cue" ]]; then
+            if [[ -f "$PROJECT_ROOT/k8s-deployments/templates/core/app.cue" ]]; then
                 record_belief "$belief" "PASS" "see Tier 4 optional default check"
             else
                 record_belief "$belief" "FAIL" "Missing app.cue"

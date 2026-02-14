@@ -76,8 +76,8 @@ IMPORTANT: Never run generate-manifests.sh manually - this pipeline owns manifes
       <extensions>
         <hudson.plugins.git.extensions.impl.PathRestriction>
           <includedRegions>envs/.*\.cue
-services/.*\.cue
-k8s/.*\.cue
+templates/.*\.cue
+schemas/.*\.cue
 scripts/generate-manifests\.sh</includedRegions>
           <excludedRegions>manifests/.*</excludedRegions>
         </hudson.plugins.git.extensions.impl.PathRestriction>

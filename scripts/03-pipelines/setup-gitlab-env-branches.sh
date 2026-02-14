@@ -4,7 +4,7 @@
 # Initial Bootstrap: Create environment branches in GitLab k8s-deployments repo
 #
 # This script creates dev, stage, and prod branches from main ONLY if they
-# don't exist or have empty env.cue files. It transforms example-env.cue into
+# don't exist or have empty env.cue files. It transforms seed-env.cue into
 # env.cue with environment-specific placeholder values.
 #
 # IMPORTANT: This is for INITIAL BOOTSTRAP only. Once branches have valid
@@ -13,7 +13,7 @@
 #
 # Prerequisites:
 # 1. GitLab k8s-deployments repo exists with main branch
-# 2. main branch has example-env.cue template
+# 2. main branch has seed-env.cue template
 # 3. GITLAB_TOKEN env var set, or gitlab-token K8s secret exists
 #
 # Usage:
@@ -193,16 +193,16 @@ cd "$WORK_DIR/k8s-deployments"
 git config user.name "Setup Script"
 git config user.email "setup@local"
 
-# Verify example-env.cue exists on main
-if [[ ! -f "example-env.cue" ]]; then
-    log_error "example-env.cue not found on main branch"
+# Verify seed-env.cue exists on main
+if [[ ! -f "seed-env.cue" ]]; then
+    log_error "seed-env.cue not found on main branch"
     log_error "Ensure the template file exists before running this script"
     exit 1
 fi
 
-log_info "Found example-env.cue on main branch"
+log_info "Found seed-env.cue on main branch"
 
-# Transform example-env.cue into env.cue for an environment
+# Transform seed-env.cue into env.cue for an environment
 transform_env_config() {
     local env=$1
     local source_file=$2
@@ -284,12 +284,12 @@ setup_env_branch() {
         git checkout -b "$env" 2>/dev/null || git checkout "$env"
     fi
 
-    # Transform example-env.cue to env.cue
-    # Always extract from main branch - env branches should not have example-env.cue
-    log_info "Extracting example-env.cue from main branch..."
-    git show main:example-env.cue > /tmp/example-env.cue.tmp
-    transform_env_config "$env" "/tmp/example-env.cue.tmp" "env.cue"
-    rm -f /tmp/example-env.cue.tmp
+    # Transform seed-env.cue to env.cue
+    # Always extract from main branch - env branches should not have seed-env.cue
+    log_info "Extracting seed-env.cue from main branch..."
+    git show main:seed-env.cue > /tmp/seed-env.cue.tmp
+    transform_env_config "$env" "/tmp/seed-env.cue.tmp" "env.cue"
+    rm -f /tmp/seed-env.cue.tmp
 
     # Validate CUE
     if command -v cue &> /dev/null; then
@@ -316,10 +316,10 @@ setup_env_branch() {
         exit 1
     fi
 
-    # Remove example-env.cue - it's a seed template that should only exist on main
-    if [[ -f "example-env.cue" ]]; then
-        git rm example-env.cue
-        log_info "Removed example-env.cue (seed template, only needed on main)"
+    # Remove seed-env.cue - it's a seed template that should only exist on main
+    if [[ -f "seed-env.cue" ]]; then
+        git rm seed-env.cue
+        log_info "Removed seed-env.cue (seed template, only needed on main)"
     fi
 
     # Commit and push
@@ -330,7 +330,7 @@ setup_env_branch() {
     else
         git commit -m "chore: setup ${env} environment configuration
 
-Transformed from example-env.cue with ${env}-specific values:
+Transformed from seed-env.cue with ${env}-specific values:
 - Namespace: ${env}
 - Replicas: ${ENV_REPLICAS[$env]}
 - Debug: ${ENV_DEBUG[$env]}

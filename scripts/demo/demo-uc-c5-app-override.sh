@@ -18,7 +18,7 @@
 # - Pipeline infrastructure running (Jenkins, ArgoCD)
 # - Run from deployment-pipeline root
 #
-# Note: The platform baseline (services/core/app.cue) includes prometheus.io/scrape: "true"
+# Note: The platform baseline (templates/core/app.cue) includes prometheus.io/scrape: "true"
 # so this demo works after reset without needing to run UC-C4 first.
 
 set -euo pipefail
@@ -53,7 +53,7 @@ add_app_annotation_override() {
     demo_action "Adding app-level annotation override to postgres.cue..."
 
     if ! python3 "${CUE_EDIT}" app-annotation add \
-        services/apps/postgres.cue postgres \
+        templates/apps/postgres.cue postgres \
         "$DEMO_ANNOTATION_KEY" "$APP_OVERRIDE_VALUE"; then
         demo_fail "Failed to add app annotation override"
         return 1
@@ -147,7 +147,7 @@ demo_info "  This overrides platform default for postgres only"
 add_app_annotation_override || exit 1
 
 demo_action "Summary of CUE changes:"
-git diff --stat services/apps/postgres.cue 2>/dev/null || echo "    (no diff available)"
+git diff --stat templates/apps/postgres.cue 2>/dev/null || echo "    (no diff available)"
 
 # ---------------------------------------------------------------------------
 # Step 4: Push CUE Change via GitLab API
@@ -166,18 +166,18 @@ demo_action "Creating branch '$FEATURE_BRANCH' from dev in GitLab..."
     exit 1
 }
 
-demo_action "Pushing services/apps/postgres.cue to GitLab..."
-cat services/apps/postgres.cue | "$GITLAB_CLI" file update p2c/k8s-deployments services/apps/postgres.cue \
+demo_action "Pushing templates/apps/postgres.cue to GitLab..."
+cat templates/apps/postgres.cue | "$GITLAB_CLI" file update p2c/k8s-deployments templates/apps/postgres.cue \
     --ref "$FEATURE_BRANCH" \
     --message "feat: disable Prometheus scraping for postgres (UC-C5)" \
     --stdin >/dev/null || {
-    demo_fail "Failed to update services/apps/postgres.cue in GitLab"
+    demo_fail "Failed to update templates/apps/postgres.cue in GitLab"
     exit 1
 }
 demo_verify "Feature branch pushed"
 
 # Restore local changes
-git checkout services/apps/postgres.cue 2>/dev/null || true
+git checkout templates/apps/postgres.cue 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Step 5: MR-Gated Promotion Through Environments
@@ -205,7 +205,7 @@ for env in "${ENVIRONMENTS[@]}"; do
 
         # Verify MR contains expected changes
         demo_action "Verifying MR contains CUE and manifest changes..."
-        assert_mr_contains_diff "$mr_iid" "services/apps/postgres.cue" "podAnnotations" || exit 1
+        assert_mr_contains_diff "$mr_iid" "templates/apps/postgres.cue" "podAnnotations" || exit 1
         assert_mr_contains_diff "$mr_iid" "manifests/postgres/postgres.yaml" 'prometheus.io/scrape: "false"' || exit 1
 
         # Capture baseline time BEFORE merge
@@ -298,9 +298,9 @@ cat << EOF
   - postgres:    prometheus.io/scrape = "false" (app override)
 
   Override Hierarchy Demonstrated:
-    Platform (services/core/app.cue) → prometheus.io/scrape: "true"
+    Platform (templates/core/app.cue) → prometheus.io/scrape: "true"
          ↓
-    App (services/apps/postgres.cue) → prometheus.io/scrape: "false" [OVERRIDES]
+    App (templates/apps/postgres.cue) → prometheus.io/scrape: "false" [OVERRIDES]
          ↓
     Env (env.cue per branch) → could override further if needed
 
